@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Environment — never commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Local artifacts
+*.log
+coverage/
+# Local object store — raw uploads when running without S3
+.data/
+.DS_Store
+Thumbs.db
+
+# Operator downloads produced by the legacy app
+toit-recon-*.json
+toit-recon-*.html

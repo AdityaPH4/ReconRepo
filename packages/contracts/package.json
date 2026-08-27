@@ -1,0 +1,25 @@
+{
+  "name": "@toit/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Wire format shared by @toit/api and @toit/web. Types only — no runtime code.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@toit/recon-core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

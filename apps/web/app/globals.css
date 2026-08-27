@@ -1,0 +1,651 @@
+@import 'tailwindcss';
+
+/* Components live outside the CSS file's own tree, so point Tailwind at them. */
+@source "../components";
+@source "../lib";
+@source "../app";
+
+/* ══════════════════════════════════════════════════════════════════════════
+   1. DESIGN TOKENS
+   ══════════════════════════════════════════════════════════════════════════
+   Change a colour, radius or font here and it changes everywhere. Every value
+   is carried over from `legacy/reconciliation (68).html` lines 50–62, so the
+   app still looks like the tool the GMs already know.
+
+   Each token also generates Tailwind utilities: `--color-accent` gives you
+   `bg-accent`, `text-accent`, `border-accent`, and so on.
+   ══════════════════════════════════════════════════════════════════════════ */
+@theme {
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --color-canvas: #f5f5f4; /* page background */
+  --color-surface: #ffffff; /* cards, header, table body */
+  --color-sunken: #f9f9f8; /* table headers, toolbars, inset panels */
+  --color-sunken-2: #f3f3f1; /* subtotal rows */
+
+  /* ── Lines ────────────────────────────────────────────────────────────── */
+  --color-line: #e5e5e3;
+  --color-line-strong: #d0d0cd;
+
+  /* ── Text ─────────────────────────────────────────────────────────────── */
+  --color-ink: #1a1a18; /* primary */
+  --color-ink-2: #52514e; /* secondary — table headers, labels */
+  --color-ink-3: #898781; /* muted — hints, metadata */
+
+  /* ── Accent (blue) ────────────────────────────────────────────────────── */
+  --color-accent: #2563eb;
+  --color-accent-soft: #eff6ff;
+  --color-accent-ink: #1d4ed8;
+
+  /* ── Success (green) — excess, matched, balanced ──────────────────────── */
+  --color-ok: #16a34a;
+  --color-ok-soft: #f0fdf4;
+  --color-ok-ink: #15803d;
+
+  /* ── Error (red) — shortage, unmatched, over threshold ───────────────── */
+  --color-err: #dc2626;
+  --color-err-soft: #fef2f2;
+  --color-err-ink: #b91c1c;
+
+  /* ── Warning (amber) — ambiguous, needs a human ──────────────────────── */
+  --color-warn: #d97706;
+  --color-warn-soft: #fffbeb;
+  --color-warn-ink: #b45309;
+
+  /* ── Purple — squared off, Manual APOS ───────────────────────────────── */
+  --color-pur: #7c3aed;
+  --color-pur-soft: #f5f3ff;
+  --color-pur-ink: #6d28d9;
+
+  /* ── Brand ────────────────────────────────────────────────────────────── */
+  --color-amex: #016fd0;
+
+  /* ── Radii ────────────────────────────────────────────────────────────── */
+  --radius-control: 8px; /* buttons, inputs, pills */
+  --radius-panel: 12px; /* cards, table wrappers */
+
+  /* ── Shadow ───────────────────────────────────────────────────────────── */
+  --shadow-panel: 0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-modal: 0 20px 60px rgb(0 0 0 / 0.2);
+
+  /* ── Type scale ───────────────────────────────────────────────────────────
+     Named rather than numbered so intent survives a redesign: `text-body` is
+     "the size table cells use", whatever that size becomes. */
+  --text-micro: 11px;
+  --text-tiny: 12px;
+  --text-body: 13px;
+  --text-ui: 14px;
+  --text-lede: 16px;
+  --text-figure: 20px;
+  --text-figure-lg: 22px;
+
+  /* ── Fonts ────────────────────────────────────────────────────────────── */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Mono', Consolas, monospace;
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  --spacing-header: 56px; /* header height; panel tabs stick below it */
+  --container-workspace: 1440px;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2. BASE
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  body {
+    @apply bg-canvas text-ink font-sans text-ui leading-normal min-h-screen;
+  }
+
+  /* Numeric columns must align digit-for-digit; an operator scans them
+     vertically looking for the odd figure out. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   3. COMPONENTS
+   ══════════════════════════════════════════════════════════════════════════
+   Every repeated pattern in the app. Components reference these by name and
+   use raw utilities only for genuine one-offs, so a visual change lands here
+   once instead of across a dozen files.
+   ══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* ── Shell ────────────────────────────────────────────────────────────── */
+  .app-header {
+    @apply bg-surface border-b border-line px-8 flex items-center justify-between
+           h-header sticky top-0 z-100 shadow-panel;
+  }
+
+  .app-brand {
+    @apply text-lede font-semibold flex items-center gap-2;
+  }
+
+  .app-brand-dot {
+    @apply w-2 h-2 bg-accent rounded-full;
+  }
+
+  .app-subtitle {
+    @apply text-tiny text-ink-3;
+  }
+
+  .app-main {
+    @apply max-w-workspace mx-auto p-8 max-sm:p-4;
+  }
+
+  /* ── Cards ────────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-surface border border-line rounded-panel shadow-panel;
+  }
+
+  .card-body {
+    @apply p-6;
+  }
+
+  /* Uppercase group label above a form section or table block. */
+  .eyebrow {
+    @apply text-tiny font-bold uppercase tracking-[0.04em] text-ink-3;
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center gap-[7px] px-[1.1rem] py-2 rounded-control
+           border border-line-strong bg-surface text-ink text-body font-medium
+           cursor-pointer whitespace-nowrap font-sans transition-colors
+           hover:bg-sunken
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-surface;
+  }
+
+  .btn-primary {
+    @apply bg-accent text-white border-transparent
+           hover:bg-accent-ink disabled:hover:bg-accent;
+  }
+
+  .btn-ok {
+    @apply bg-ok text-white border-transparent hover:bg-ok-ink;
+  }
+
+  .btn-sm {
+    @apply px-3 py-[0.35rem] text-tiny;
+  }
+
+  .btn-row {
+    @apply flex gap-2.5 mt-5 items-center flex-wrap;
+  }
+
+  .hint {
+    @apply text-tiny text-ink-3 ml-1;
+  }
+
+  /* ── Upload ───────────────────────────────────────────────────────────── */
+  .dropzone {
+    @apply border-2 border-dashed border-line-strong rounded-[10px] px-8 py-10
+           text-center cursor-pointer bg-sunken relative z-1
+           transition-[border-color,background]
+           hover:border-accent hover:bg-accent-soft;
+  }
+
+  /* Applied while a drag is over the zone. */
+  .dropzone-active {
+    @apply border-accent bg-accent-soft;
+  }
+
+  /* Compact variant for the optional HDFC statement slot. */
+  .dropzone-slim {
+    @apply px-4 py-[0.9rem] min-h-0;
+  }
+
+  .dropzone-icon {
+    @apply text-[40px] mb-3;
+  }
+
+  .dropzone-title {
+    @apply text-lede font-semibold mb-1;
+  }
+
+  .dropzone-sub {
+    @apply text-body text-ink-3;
+  }
+
+  /* Looks like a button but is a label/span — the whole zone is the hit area. */
+  .faux-btn {
+    @apply inline-block px-5 py-[0.4rem] bg-accent text-white rounded-md
+           text-body font-semibold;
+  }
+
+  .faux-btn-quiet {
+    @apply inline-block px-4 py-[0.35rem] bg-sunken border border-line
+           rounded-md text-tiny font-semibold whitespace-nowrap text-ink;
+  }
+
+  .file-grid {
+    @apply grid gap-2.5 mt-4 [grid-template-columns:repeat(auto-fit,minmax(260px,1fr))];
+  }
+
+  .file-pill {
+    @apply flex items-center gap-2.5 bg-sunken border border-line
+           rounded-control px-[0.9rem] py-[0.6rem] text-body;
+  }
+
+  .file-pill-icon {
+    @apply text-figure text-ok;
+  }
+
+  .file-pill-name {
+    @apply font-medium truncate;
+  }
+
+  .file-pill-meta {
+    @apply text-micro text-ink-3;
+  }
+
+  .file-pill-remove {
+    @apply cursor-pointer text-ink-3 text-lg leading-none shrink-0
+           bg-transparent border-none hover:text-err;
+  }
+
+  /* ── KPI tiles (these are the panel navigation) ───────────────────────── */
+  .kpi-grid {
+    @apply grid gap-2.5 mb-5
+           [grid-template-columns:repeat(auto-fit,minmax(150px,1fr))]
+           max-sm:grid-cols-2;
+  }
+
+  .kpi {
+    @apply bg-surface border border-line rounded-control px-4 py-[0.9rem]
+           shadow-panel text-left font-sans block w-full cursor-pointer
+           transition-[border-color,background]
+           hover:border-accent;
+  }
+
+  .kpi-active {
+    @apply border-accent bg-accent-soft;
+  }
+
+  .kpi-label {
+    @apply text-micro text-ink-3 mb-1 font-medium uppercase tracking-[0.04em];
+  }
+
+  .kpi-value {
+    @apply text-figure-lg font-semibold;
+  }
+
+  .kpi-value-ok {
+    @apply text-ok;
+  }
+  .kpi-value-err {
+    @apply text-err;
+  }
+  .kpi-value-warn {
+    @apply text-warn;
+  }
+
+  .kpi-note {
+    @apply text-micro text-ink-3 mt-0.5;
+  }
+
+  /* ── Alerts ───────────────────────────────────────────────────────────── */
+  .alert {
+    @apply rounded-control px-4 py-3 text-body mb-4 flex gap-2 items-start
+           leading-normal border;
+  }
+
+  .alert-info {
+    @apply bg-accent-soft text-accent-ink border-[#93c5fd];
+  }
+  .alert-ok {
+    @apply bg-ok-soft text-ok-ink border-[#86efac];
+  }
+  .alert-warn {
+    @apply bg-warn-soft text-warn-ink border-[#fcd34d];
+  }
+  .alert-err {
+    @apply bg-err-soft text-err-ink border-[#fca5a5];
+  }
+
+  /* ── Pills (metadata chips) ───────────────────────────────────────────── */
+  .pill {
+    @apply inline-flex items-center gap-1.5 bg-surface border border-line
+           rounded-[20px] px-[0.85rem] py-1 text-tiny text-ink-3;
+
+    & strong {
+      @apply text-ink font-semibold;
+    }
+  }
+
+  .pill-accent {
+    @apply bg-accent-soft text-accent-ink border-accent;
+  }
+  .pill-ok {
+    @apply bg-ok-soft text-ok-ink border-ok;
+  }
+
+  /* ── Results header ───────────────────────────────────────────────────── */
+  .results-header {
+    @apply flex items-start justify-between mb-5 flex-wrap gap-3;
+  }
+
+  .results-title {
+    @apply text-figure font-semibold;
+  }
+
+  .results-meta {
+    @apply flex items-center gap-2 flex-wrap mt-[0.35rem];
+  }
+
+  /* ── Master tabs (Transaction Recon / Final Summary) ──────────────────── */
+  .master-tabs {
+    @apply flex bg-surface border-b-2 border-line sticky top-header z-90 shadow-panel;
+  }
+
+  .master-tab {
+    @apply px-8 py-3 text-ui font-bold text-ink-3 cursor-pointer border-none
+           border-b-[3px] border-b-transparent -mb-0.5 whitespace-nowrap
+           bg-transparent font-sans transition-colors hover:text-ink-2;
+  }
+
+  .master-tab-active {
+    @apply text-accent border-b-accent bg-accent-soft;
+  }
+
+  /* ── Sub tabs + panel wrapper ─────────────────────────────────────────── */
+  .panel {
+    @apply bg-surface border border-line rounded-panel shadow-panel overflow-hidden;
+  }
+
+  .subtabs {
+    @apply flex border-b border-line overflow-x-auto bg-sunken px-4;
+
+    &::-webkit-scrollbar {
+      height: 3px;
+    }
+    &::-webkit-scrollbar-thumb {
+      @apply bg-line-strong rounded-sm;
+    }
+  }
+
+  .subtab {
+    @apply px-[0.9rem] py-[0.6rem] text-body font-medium text-ink-3 cursor-pointer
+           border-b-2 border-b-transparent border-t-0 border-x-0 -mb-px
+           whitespace-nowrap shrink-0 bg-transparent font-sans transition-colors
+           hover:text-ink-2;
+  }
+
+  .subtab-active {
+    @apply text-accent border-b-accent;
+  }
+
+  /* Section heading inside a panel, between stacked tables. */
+  .panel-section-title {
+    @apply px-5 pt-[0.85rem] pb-2 text-tiny font-bold uppercase tracking-[0.04em]
+           text-ink-3 border-t border-line bg-sunken;
+  }
+
+  /* ── Badges (counts on tabs) ──────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center justify-center text-micro px-1.5 py-px
+           rounded-[10px] ml-[5px] font-semibold;
+  }
+
+  .badge-ok {
+    @apply bg-ok-soft text-ok-ink;
+  }
+  .badge-err {
+    @apply bg-err-soft text-err-ink;
+  }
+  .badge-warn {
+    @apply bg-warn-soft text-warn-ink;
+  }
+  .badge-pur {
+    @apply bg-pur-soft text-pur-ink;
+  }
+  .badge-neutral {
+    @apply bg-sunken text-ink-3 border border-line;
+  }
+
+  /* ── Tags (row status) ────────────────────────────────────────────────── */
+  .tag {
+    @apply inline-flex items-center gap-[3px] text-micro px-2 py-0.5
+           rounded-[10px] font-medium whitespace-nowrap;
+  }
+
+  .tag-ok {
+    @apply bg-ok-soft text-ok-ink;
+  }
+  .tag-err {
+    @apply bg-err-soft text-err-ink;
+  }
+  .tag-warn {
+    @apply bg-warn-soft text-warn-ink;
+  }
+  .tag-accent {
+    @apply bg-accent-soft text-accent-ink;
+  }
+  .tag-pur {
+    @apply bg-pur-soft text-pur-ink;
+  }
+  .tag-neutral {
+    @apply bg-sunken text-ink-3 border border-line;
+  }
+  .tag-amex {
+    @apply bg-amex text-white;
+  }
+
+  /* Excess and shortage are the two signs of a difference — deliberately the
+     same greens/reds as everywhere else so the meaning never shifts. */
+  .tag-excess {
+    @apply bg-ok-soft text-ok-ink;
+  }
+  .tag-short {
+    @apply bg-err-soft text-err-ink;
+  }
+
+  /* ── Toolbar ──────────────────────────────────────────────────────────── */
+  .toolbar {
+    @apply flex gap-2 px-5 py-4 items-center flex-wrap border-b border-line bg-surface;
+  }
+
+  .toolbar-input,
+  .toolbar-select {
+    @apply px-[0.7rem] py-[0.4rem] border border-line rounded-control bg-sunken
+           text-ink text-body outline-none font-sans focus:border-accent;
+  }
+
+  .toolbar-input {
+    @apply min-w-[180px] flex-1;
+  }
+
+  /* ── Tables ───────────────────────────────────────────────────────────── */
+  .table-wrap {
+    @apply overflow-x-auto;
+  }
+
+  .data-table {
+    @apply w-full border-collapse text-body table-fixed;
+
+    & th {
+      @apply bg-sunken px-[0.9rem] py-[0.6rem] text-left font-semibold text-ink-2
+             border-b border-line whitespace-nowrap text-tiny;
+    }
+
+    & td {
+      @apply px-[0.9rem] py-[0.55rem] border-b border-line text-ink align-middle;
+    }
+
+    & tr:last-child td {
+      @apply border-b-0;
+    }
+
+    & tbody tr:hover td {
+      @apply bg-sunken;
+    }
+  }
+
+  /* Right-aligned, digit-aligned money column. */
+  .num {
+    @apply text-right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .total-row td {
+    @apply font-semibold bg-sunken! border-t-2 border-t-line-strong border-b-0;
+  }
+
+  .table-footer {
+    @apply px-5 py-[0.6rem] text-tiny text-ink-3 border-t border-line text-right bg-sunken;
+  }
+
+  /* Difference cell colouring — positive is excess, negative is shortage. */
+  .diff-excess {
+    @apply text-ok font-semibold;
+  }
+  .diff-short {
+    @apply text-err font-semibold;
+  }
+  .diff-zero {
+    @apply text-ink-3;
+  }
+
+  /* ── Final Recon Summary ──────────────────────────────────────────────── */
+  .frs-section {
+    @apply mb-8;
+  }
+
+  .frs-title {
+    @apply text-[15px] font-bold text-ink-2 mb-4 pb-2 border-b border-line;
+  }
+
+  .frs-table {
+    @apply w-full border-collapse text-body bg-surface rounded-[10px]
+           overflow-hidden border border-line shadow-panel;
+
+    & th {
+      @apply bg-sunken px-4 py-[0.65rem] text-left font-semibold text-ink-2
+             border-b border-line text-tiny whitespace-nowrap;
+    }
+
+    & td {
+      @apply px-4 py-[0.6rem] border-b border-line align-middle whitespace-nowrap;
+    }
+
+    & tr:last-child td {
+      @apply border-b-0;
+    }
+
+    & tbody tr:hover td {
+      @apply bg-sunken;
+    }
+  }
+
+  .frs-subtotal td {
+    @apply font-bold bg-sunken-2! border-t-[1.5px] border-t-line-strong;
+  }
+
+  .frs-grandtotal td {
+    @apply font-bold bg-accent-soft! text-accent-ink border-t-2 border-t-accent;
+  }
+
+  /* Net-difference verdict box under the FRS table. */
+  .net-box {
+    @apply flex items-center justify-between px-5 py-4 rounded-[10px]
+           border-2 mt-4 font-bold;
+  }
+
+  .net-box-ok {
+    @apply bg-ok-soft border-ok text-ok-ink;
+  }
+  .net-box-err {
+    @apply bg-err-soft border-err text-err-ink;
+  }
+  .net-box-neutral {
+    @apply bg-sunken border-line-strong text-ink-2;
+  }
+
+  /* ── Info panels (aggregate methods) ─────────────────────────────────── */
+  .info-panel {
+    @apply p-6;
+  }
+
+  .info-grid {
+    @apply grid gap-3 mb-6 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))];
+  }
+
+  .info-card {
+    @apply bg-sunken border border-line rounded-control p-4;
+  }
+
+  .info-label {
+    @apply text-micro text-ink-3 font-medium uppercase tracking-[0.04em] mb-1;
+  }
+
+  .info-value {
+    @apply text-figure font-semibold;
+  }
+
+  /* ── Empty states ─────────────────────────────────────────────────────── */
+  .empty-state {
+    @apply px-8 py-12 text-center text-ink-3;
+  }
+
+  .empty-icon {
+    @apply text-[40px] mb-2;
+  }
+
+  /* ── Modals (used by the justification layer) ─────────────────────────── */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black/45 z-500 flex items-center justify-center;
+  }
+
+  .modal {
+    @apply bg-surface rounded-panel shadow-modal w-[520px] max-w-[95vw]
+           max-h-[90vh] overflow-y-auto;
+  }
+
+  .modal-header {
+    @apply flex items-center justify-between px-6 py-5 border-b border-line;
+  }
+
+  .modal-body {
+    @apply p-6;
+  }
+
+  .modal-footer {
+    @apply px-6 py-4 border-t border-line flex justify-end gap-2;
+  }
+
+  /* ── Forms ────────────────────────────────────────────────────────────── */
+  .field-label {
+    @apply text-micro font-semibold text-ink-3 uppercase tracking-[0.04em]
+           block mb-1;
+  }
+
+  .field-input {
+    @apply w-full px-[0.7rem] py-[0.45rem] border border-line rounded-control
+           bg-sunken text-ink text-body outline-none font-sans focus:border-accent;
+  }
+
+  .field-grid {
+    @apply grid grid-cols-2 gap-3 mb-3;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   4. UTILITIES
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Monospace for references — RRNs, auth codes, timestamps. Aligning these
+   matters when scanning a column for a near-duplicate. */
+@utility mono {
+  @apply font-mono text-tiny;
+}
+
+@utility spin {
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
