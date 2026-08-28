@@ -5,8 +5,10 @@
  * the selected tile reveals.
  *
  * Split out from `ReconciliationApp` so the same view serves both a session
- * that was just run and one opened from storage at `/sessions/[id]`. Holds only
- * view state (which tab, which panel); all figures come from the API.
+ * that was just run and one opened from storage at `/sessions/[id]`. Holds
+ * view state (which tab, which panel) plus the session itself, since every
+ * justification mutation returns the whole updated `SessionDTO` and this is
+ * where it lands.
  */
 
 import type { SessionDTO } from '@toit/contracts';
@@ -14,7 +16,12 @@ import { fmt } from '@toit/recon-core/display';
 import { useState } from 'react';
 import { FinalReconSummary } from '@/components/FinalReconSummary';
 import { KpiTiles, type PanelId } from '@/components/KpiTiles';
+import { AggregateJustificationPanel } from '@/components/justification/AggregateJustificationPanel';
+import { JustificationProvider } from '@/components/justification/JustificationProvider';
+import { AdvancesPanel } from '@/components/panels/AdvancesPanel';
 import { AggregatePanel } from '@/components/panels/AggregatePanel';
+import { BillsOnHoldPanel } from '@/components/panels/BillsOnHoldPanel';
+import { HdfcUpiPanel } from '@/components/panels/HdfcUpiPanel';
 import { PinelabsPanel } from '@/components/panels/PinelabsPanel';
 
 type MasterTab = 'txn' | 'summary';
@@ -25,12 +32,13 @@ interface Props {
   onNewUpload?: () => void;
 }
 
-export function SessionWorkspace({ session, onNewUpload }: Props) {
+export function SessionWorkspace({ session: initialSession, onNewUpload }: Props) {
+  const [session, setSession] = useState(initialSession);
   const [master, setMaster] = useState<MasterTab>('txn');
   const [panel, setPanel] = useState<PanelId>('pinelabs');
 
   return (
-    <>
+    <JustificationProvider session={session} onSessionUpdate={setSession}>
       <nav className="master-tabs">
         <button
           type="button"
@@ -52,10 +60,10 @@ export function SessionWorkspace({ session, onNewUpload }: Props) {
         {master === 'txn' ? (
           <TransactionView session={session} panel={panel} onPanel={setPanel} onNewUpload={onNewUpload} />
         ) : (
-          <FinalReconSummary frs={session.frs} />
+          <FinalReconSummary session={session} onSessionUpdate={setSession} />
         )}
       </main>
-    </>
+    </JustificationProvider>
   );
 }
 
@@ -70,7 +78,8 @@ function TransactionView({
   onPanel: (p: PanelId) => void;
   onNewUpload?: () => void;
 }) {
-  const { meta, result, counts, totals } = session;
+  const { meta, result, counts, totals, justification } = session;
+  const locked = meta.status === 'submitted';
 
   return (
     <>
@@ -87,6 +96,7 @@ function TransactionView({
             {meta.zipFilteredRows > 0 && (
               <span className="pill">{meta.zipFilteredRows} terminal rows excluded</span>
             )}
+            {locked && <span className="pill pill-ok">✓ Submitted</span>}
           </div>
         </div>
         {onNewUpload && (
@@ -119,38 +129,48 @@ function TransactionView({
         </div>
       )}
 
-      <KpiTiles counts={counts} totals={totals} active={panel} onSelect={onPanel} />
+      <KpiTiles counts={counts} totals={totals} active={panel} onSelect={onPanel} justification={justification} />
 
       {panel === 'pinelabs' && <PinelabsPanel pinelabs={result.pinelabs} />}
 
       {panel === 'cash' && (
-        <AggregatePanel title="Cash" totals={totals.cash} rows={result.cash} />
+        <>
+          <AggregatePanel title="Cash" totals={totals.cash} rows={result.cash} />
+          <AggregateJustificationPanel source="cash" title="Cash" />
+        </>
       )}
 
       {panel === 'upi' && (
-        <AggregatePanel
-          title="Static UPI"
-          totals={totals.hdfcUpi}
-          rows={result.upi}
-          extraStats={[
-            { label: 'HDFC POS total', value: fmt(totals.hdfcUpi.prTotal) },
-            { label: 'Kotak POS total', value: fmt(totals.kotakUpi.prTotal) },
-          ]}
-          note={
-            counts.upiHdfc
-              ? `HDFC Static UPI is reconciled transaction-by-transaction: ${counts.upiHdfc.reconciled} matched, ${counts.upiHdfc.unreconciled} mismatched, ${counts.upiHdfc.onlyPOS} POS-only, ${counts.upiHdfc.onlyTerm} statement-only. Kotak remains on the aggregate flow.`
-              : 'No HDFC statement uploaded — both HDFC and Kotak Static UPI use the aggregate drawer comparison.'
-          }
-        />
+        <>
+          {result.upiHdfc && <HdfcUpiPanel upiHdfc={result.upiHdfc} />}
+          <AggregatePanel
+            title="Static UPI"
+            totals={totals.hdfcUpi}
+            rows={result.upi}
+            extraStats={[
+              { label: 'HDFC POS total', value: fmt(totals.hdfcUpi.prTotal) },
+              { label: 'Kotak POS total', value: fmt(totals.kotakUpi.prTotal) },
+            ]}
+            note={
+              counts.upiHdfc
+                ? `HDFC Static UPI is reconciled transaction-by-transaction: ${counts.upiHdfc.reconciled} matched, ${counts.upiHdfc.unreconciled} mismatched, ${counts.upiHdfc.onlyPOS} POS-only, ${counts.upiHdfc.onlyTerm} statement-only. Kotak remains on the aggregate flow.`
+                : 'No HDFC statement uploaded — both HDFC and Kotak Static UPI use the aggregate drawer comparison.'
+            }
+          />
+          <AggregateJustificationPanel source="upi" title="Static UPI" />
+        </>
       )}
 
       {panel === 'bank' && (
-        <AggregatePanel title="Bank transfer" totals={totals.bank} rows={result.bank} />
+        <>
+          <AggregatePanel title="Bank transfer" totals={totals.bank} rows={result.bank} />
+          <AggregateJustificationPanel source="bank" title="Bank transfer" />
+        </>
       )}
 
-      {panel === 'bills' && (
-        <AggregatePanel title="Bills on hold" totals={totals.bills} rows={result.bills} />
-      )}
+      {panel === 'bills' && <BillsOnHoldPanel rows={result.bills} totals={totals.bills} />}
+
+      {panel === 'advances' && <AdvancesPanel />}
 
       {panel === 'swiggy' && (
         <AggregatePanel

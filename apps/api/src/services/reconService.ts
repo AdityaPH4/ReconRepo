@@ -32,6 +32,7 @@ import {
   parsePaymentReport,
   parsePaymentSummary,
   parseTransactionsZip,
+  pinelabsAcquirerBreakdown,
   reconcile,
 } from '@toit/recon-core';
 import type {
@@ -48,6 +49,7 @@ import type {
   HdfcStatementMetaDTO,
   PanelSummariesDTO,
   PanelTotalsDTO,
+  PinelabsBreakdownDTO,
   ReconCountsDTO,
 } from '@toit/contracts';
 
@@ -73,6 +75,7 @@ export interface RunOutcome {
   frs: FrsDTO;
   counts: ReconCountsDTO;
   totals: PanelSummariesDTO;
+  pinelabsBreakdown: PinelabsBreakdownDTO;
   warnings: string[];
 }
 
@@ -195,6 +198,7 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
     frs: { rows: frsRows, grandPR, grandSum, grandDiff },
     counts: buildCounts(result),
     totals: buildTotals(result, prData, inside, summaryData),
+    pinelabsBreakdown: pinelabsAcquirerBreakdown(prData, inside, result.pinelabs),
     warnings,
   };
 }
@@ -212,14 +216,18 @@ export function outletName(outlet: OutletCode): string {
 
 function buildCounts(result: ReconResult): ReconCountsDTO {
   const p = result.pinelabs;
-  // "Reconciled" mirrors the legacy tile logic: within tolerance, or an
-  // auto-squared-off Manual APOS row.
-  const reconciled = p.reconRows.filter((x) => !isMaterial(x.diff) || x.squaredOff).length;
+  // "Reconciled" mirrors the legacy tile logic (`plRecTotal`): RRN-matched
+  // rows within tolerance or an auto-squared-off Manual APOS row, *plus*
+  // AMEX matches — legacy's own tile always adds `amexOk.length`. Omitting
+  // it here (as this used to) undercounts against both legacy and the
+  // Pinelabs panel's own "Reconciled" tab badge, which already includes it.
+  const reconciledRows = p.reconRows.filter((x) => !isMaterial(x.diff) || x.squaredOff).length;
+  const reconciled = reconciledRows + p.amexOk.length;
 
   return {
     pinelabs: {
       reconciled,
-      unreconciled: p.reconRows.length - reconciled,
+      unreconciled: p.reconRows.length - reconciledRows,
       onlyPOS: p.onlyPOS.length,
       onlyTerm: p.onlyTerm.length,
       dupRRN: p.dupRRN.length,

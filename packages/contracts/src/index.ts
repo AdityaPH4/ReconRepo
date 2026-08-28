@@ -7,9 +7,22 @@
  */
 
 import type {
+  Advance,
+  AdvanceApplication,
+  BohClearance,
+  BohEntry,
+  BohStagingEntry,
+  Direction,
   FileRole,
+  JustificationEntry,
+  JustificationSource,
+  JustificationState,
   OutletCode,
   ReconResult,
+  Remark,
+  Snapshot,
+  SquareOffMap,
+  SubmitStatus,
   SummaryData,
 } from '@toit/recon-core/display';
 
@@ -164,6 +177,43 @@ export interface PanelSummariesDTO {
   pinelabs: { prTotal: number; terminalTotal: number; diff: number };
 }
 
+// ── Pinelabs terminal breakdown by acquirer ───────────────────────────────
+
+export interface AcquirerGroupRowDTO {
+  acquirer: string;
+  count: number;
+  pinelabsTotal: number;
+  /** `null` — no PR-side figure exists for this group (e.g. "Other"). */
+  prTotal: number | null;
+  diff: number | null;
+}
+
+export interface PinelabsBreakdownDTO {
+  rows: AcquirerGroupRowDTO[];
+  totalCount: number;
+  totalPinelabs: number;
+  totalPR: number;
+  totalDiff: number;
+  amexDupCount: number;
+}
+
+// ── FRS explanation of excess/shortage ────────────────────────────────────
+// One row per justification entry that has a resolvable transaction-level
+// row or an aggregate-tab entry behind it — the flat list the FRS screen
+// groups by remark client-side. Ported from legacy's `collectExplained` /
+// `groupByRemark` (reconciliation (68).html lines 3570–3650).
+
+export interface ExplainedItemDTO {
+  source: string;
+  remark: string;
+  label: string;
+  orderNo: string;
+  rrn: string;
+  plAmt: number;
+  prAmt: number;
+  diff: number;
+}
+
 // ── The full session payload ──────────────────────────────────────────────
 
 export interface SessionDTO {
@@ -174,6 +224,15 @@ export interface SessionDTO {
   frs: FrsDTO;
   counts: ReconCountsDTO;
   totals: PanelSummariesDTO;
+  pinelabsBreakdown: PinelabsBreakdownDTO;
+  /** Everything a human has added on top of `result` — remarks, square-off, draft advance/BOH mutations. */
+  justification: JustificationStateDTO;
+  /** Recomputed on every fetch from `justification` + `result` — never stored, so it can never drift from what submit actually gates on. */
+  submitGate: SubmitGateDTO;
+  /** Flat, recomputed-on-every-fetch list backing the FRS "Explanation of Excess/Shortage" tables. */
+  explanation: ExplainedItemDTO[];
+  /** Set only once `meta.status === 'submitted'` — the persisted, immutable settlement record. */
+  snapshot: SnapshotDTO | null;
 }
 
 /** Row shown in the session list. */
@@ -184,6 +243,115 @@ export interface SessionListItemDTO {
   businessDate: string | null;
   createdAt: string;
   grandDiff: number;
+}
+
+// ── Justification & submit layer ─────────────────────────────────────────
+// None of these carry `Date`/`NaN` fields (dates are ISO strings throughout,
+// amounts are validated numbers) — so unlike `ReconResult` they need no
+// `Jsonified<>` wrapping and are re-exported as-is.
+
+export type JustificationSourceDTO = JustificationSource;
+export type DirectionDTO = Direction;
+export type JustificationEntryDTO = JustificationEntry;
+export type SquareOffMapDTO = SquareOffMap;
+export type JustificationStateDTO = JustificationState;
+
+export type AdvanceDTO = Advance;
+export type AdvanceApplicationDTO = AdvanceApplication;
+export type BohEntryDTO = BohEntry;
+export type BohClearanceDTO = BohClearance;
+export type BohStagingEntryDTO = BohStagingEntry;
+export type SnapshotDTO = Snapshot;
+
+export interface EligibleAdvanceDTO {
+  advance: AdvanceDTO;
+  balance: number;
+  eligible: boolean;
+  ineligibleReason: string | null;
+}
+
+export interface EligibleBohEntryDTO {
+  entry: BohEntryDTO;
+  eligible: boolean;
+  ineligibleReason: string | null;
+}
+
+/** Mirrors `canSubmit()`'s return — the single gate the FRS display and the submit route both read. */
+export interface SubmitGateDTO {
+  ok: boolean;
+  blockers: string[];
+  residual: number;
+  status: SubmitStatus;
+  perSource: {
+    pinelabs: boolean;
+    /** `null` when no HDFC statement was uploaded. */
+    hdfcUpi: boolean | null;
+    cash: boolean;
+    upi: boolean;
+    bank: boolean;
+  };
+}
+
+// ── Justification request bodies ──────────────────────────────────────────
+
+/** A justification needing no repository interaction — Tips, Paid In/Out, EPR, Short Collection, Other. */
+export interface AddJustificationEntryRequest {
+  source: JustificationSourceDTO;
+  targetKey: string | null;
+  direction: DirectionDTO;
+  remark: Remark;
+  amount: number;
+  description?: string | null;
+  rrn?: string | null;
+  billNo?: string | null;
+  reason?: string | null;
+  staffName?: string | null;
+  empId?: string | null;
+  clientName?: string | null;
+  comment?: string | null;
+  notes?: string | null;
+}
+
+export interface ToggleSquareOffRequest {
+  a: string;
+  b: string;
+}
+
+/** Backs the "Advance Received" modal. */
+export interface RecordAdvanceRequest {
+  source: JustificationSourceDTO;
+  targetKey: string | null;
+  amount: number;
+  custName: string;
+  phone?: string | null;
+  /** ISO `yyyy-mm-dd`, must be strictly after the session's business date. */
+  eventDate: string;
+  notes?: string | null;
+}
+
+/** Backs the "Advance Applied" modal — always consumes the advance's full remaining balance. */
+export interface ApplyAdvanceRequest {
+  source: JustificationSourceDTO;
+  targetKey: string | null;
+  advanceId: string;
+}
+
+/** Backs "add to BOH repository" from the Bills-on-Hold tab — staged until submit. */
+export interface AddBohStagingRequest {
+  orderNo: string;
+  custName: string;
+  phone?: string | null;
+  amount: number;
+  bohDate: string;
+  notes?: string | null;
+}
+
+/** Backs the "Bill on Hold Cleared" modal — always clears in full. */
+export interface ClearBohRequest {
+  source: JustificationSourceDTO;
+  targetKey: string | null;
+  bohEntryId: string;
+  clearSource: string;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────

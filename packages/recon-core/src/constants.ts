@@ -29,7 +29,35 @@ export const REMARKS_ALL = [...REMARKS_EXCESS, ...REMARKS_SHORTAGE] as const;
 
 export type RemarkExcess = (typeof REMARKS_EXCESS)[number];
 export type RemarkShortage = (typeof REMARKS_SHORTAGE)[number];
-export type Remark = (typeof REMARKS_ALL)[number];
+export type Remark = (typeof REMARKS_ALL)[number] | 'Paid In' | 'Paid Out';
+
+// ── Cash-tab-only remarks — same list as above, plus Paid In/Out ──────────
+export const CASH_REMARKS_EXCESS = ['Paid In', ...REMARKS_EXCESS] as const;
+export const CASH_REMARKS_SHORTAGE = ['Paid Out', ...REMARKS_SHORTAGE] as const;
+
+/** Remarks that require the Bill Number / Reason fields (Cash tab only). */
+export const CASH_BILL_REMARKS = ['Paid In', 'Paid Out'] as const;
+
+/** Remarks that pop a modal to capture supplementary details, across every context. */
+export const MODAL_REMARKS = [
+  'Advance Received',
+  'Advance Applied',
+  'Bill on Hold Cleared',
+  'Extra Payment Received',
+  'Short Collection',
+  'Other',
+] as const;
+
+/**
+ * On the UPI aggregate tab, every remark requires a 12-digit RRN except
+ * these four — they represent money with no identifiable UPI transaction of
+ * its own; whatever *was* actually collected reconciles through normal
+ * transaction matching, not this form.
+ */
+export const NO_RRN_REMARKS = ['Bill on Hold Cleared', 'Advance Applied', 'Short Collection', 'Other'] as const;
+
+/** Sources a Bills-on-Hold clearance can be attributed to when opened from the BOH tab directly. */
+export const BOH_SOURCES = ['Cash', 'Static UPI', 'Pinelabs', 'MPR'] as const;
 
 /** Net-unexplained ceiling (₹) above which a session cannot be submitted. */
 export const THRESHOLD = 300;

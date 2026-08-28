@@ -5,15 +5,18 @@
  * Ported from `reconciliation (68).html` lines 371–392 (markup) and 1592–1879
  * (`renderPinelabs`).
  *
- * Scope note: this renders the reconciled / unreconciled tables and the AMEX
- * buckets. The per-row remark dropdown and square-off controls belong to the
- * justification layer and arrive with the draft-session PATCH endpoints.
+ * Every unreconciled row gets a `RemarkCell` — the shared remark/square-off
+ * picker. `buildPinelabsItems` is called once, over the *unfiltered* result,
+ * so each row's `globalId`/`targetKey` matches exactly what the API computed;
+ * rows are zipped with their item before the search filter runs, so a search
+ * query can never misalign a row with the wrong item.
  */
 
 import type { Jsonified } from '@toit/contracts';
 import type { PinelabsResult } from '@toit/recon-core/display';
-import { AMOUNT_EPSILON, fmt, fmtDate } from '@toit/recon-core/display';
+import { AMOUNT_EPSILON, buildPinelabsItems, fmt, fmtDate } from '@toit/recon-core/display';
 import { useMemo, useState } from 'react';
+import { RemarkCell } from '@/components/justification/RemarkCell';
 import { DiffTag, EmptyRow, PanelSection, diffClass } from '@/components/ui/table';
 
 type PL = Jsonified<PinelabsResult>;
@@ -37,6 +40,24 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
     () => pinelabs.reconRows.filter((x) => !isReconciled(x)),
     [pinelabs.reconRows],
   );
+
+  const allItems = useMemo(() => buildPinelabsItems(pinelabs as never), [pinelabs]);
+  const items = useMemo(() => {
+    let cursor = 0;
+    const take = (n: number) => {
+      const slice = allItems.slice(cursor, cursor + n);
+      cursor += n;
+      return slice;
+    };
+    return {
+      onlyPOS: take(pinelabs.onlyPOS.length),
+      onlyTerm: take(pinelabs.onlyTerm.length),
+      mismatch: take(mismatched.length),
+      dupRRN: take(pinelabs.dupRRN.length),
+      amexDup: take(pinelabs.amexDup.length),
+      amexDupTerm: take(pinelabs.amexDupTerm.length),
+    };
+  }, [allItems, pinelabs, mismatched.length]);
 
   const q = search.trim().toLowerCase();
   const hit = (...fields: Array<string | number | null | undefined>) =>
@@ -90,23 +111,24 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="w-[15%]">RRN</th>
-                  <th className="w-[18%]">Order no</th>
-                  <th className="w-[13%] num">Terminal</th>
-                  <th className="w-[13%] num">POS</th>
-                  <th className="w-[13%] num">Difference</th>
-                  <th className="w-[12%]">Type</th>
-                  <th className="w-[16%]">Payment name</th>
+                  <th className="w-[13%]">RRN</th>
+                  <th className="w-[15%]">Order no</th>
+                  <th className="w-[11%] num">Terminal</th>
+                  <th className="w-[11%] num">POS</th>
+                  <th className="w-[11%] num">Difference</th>
+                  <th className="w-[10%]">Type</th>
+                  <th className="w-[13%]">Payment name</th>
+                  <th className="w-[16%]">Remark</th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
-                  const rows = mismatched.filter((x) =>
-                    hit(x.rrn, x.orders?.join(','), x.diff),
-                  );
+                  const rows = mismatched
+                    .map((x, i) => ({ x, item: items.mismatch[i]! }))
+                    .filter(({ x }) => hit(x.rrn, x.orders?.join(','), x.diff));
                   if (rows.length === 0)
-                    return <EmptyRow cols={7} message="No amount mismatches." />;
-                  return rows.map((x) => (
+                    return <EmptyRow cols={8} message="No amount mismatches." />;
+                  return rows.map(({ x, item }) => (
                     <tr key={x.rrn}>
                       <td className="mono">{x.rrn}</td>
                       <td>{(x.orders ?? []).join(', ')}</td>
@@ -117,6 +139,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                         <DiffTag diff={x.diff ?? 0} />
                       </td>
                       <td>{x.pr?.paymentName}</td>
+                      <td>
+                        <RemarkCell source="pinelabs" item={item} allItems={allItems} />
+                      </td>
                     </tr>
                   ));
                 })()}
@@ -128,29 +153,33 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="w-[15%]">RRN</th>
-                  <th className="w-[20%]">Order no</th>
-                  <th className="w-[15%] num">Amount</th>
-                  <th className="w-[20%]">Payment name</th>
-                  <th className="w-[30%]">Note</th>
+                  <th className="w-[13%]">RRN</th>
+                  <th className="w-[16%]">Order no</th>
+                  <th className="w-[12%] num">Amount</th>
+                  <th className="w-[16%]">Payment name</th>
+                  <th className="w-[22%]">Note</th>
+                  <th className="w-[21%]">Remark</th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
-                  const rows = pinelabs.onlyPOS.filter((x) =>
-                    hit(x.rrn, x.orderNo, x.amount),
-                  );
+                  const rows = pinelabs.onlyPOS
+                    .map((x, i) => ({ x, item: items.onlyPOS[i]! }))
+                    .filter(({ x }) => hit(x.rrn, x.orderNo, x.amount));
                   if (rows.length === 0)
                     return (
-                      <EmptyRow cols={5} message="Every POS row found a terminal match." />
+                      <EmptyRow cols={6} message="Every POS row found a terminal match." />
                     );
-                  return rows.map((x, i) => (
+                  return rows.map(({ x, item }, i) => (
                     <tr key={`${x.rrn}-${x.orderNo}-${i}`}>
                       <td className="mono">{x.rrn || '—'}</td>
                       <td>{(x.orders ?? [x.orderNo]).filter(Boolean).join(', ')}</td>
                       <td className="num">{fmt(x.amount)}</td>
                       <td>{x.paymentName}</td>
                       <td className="text-ink-3 text-tiny">{x._note || '—'}</td>
+                      <td>
+                        <RemarkCell source="pinelabs" item={item} allItems={allItems} />
+                      </td>
                     </tr>
                   ));
                 })()}
@@ -162,23 +191,24 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="w-[18%]">RRN</th>
-                  <th className="w-[18%]">Acquirer</th>
-                  <th className="w-[15%] num">Amount</th>
-                  <th className="w-[25%]">Date</th>
-                  <th className="w-[24%]">Store</th>
+                  <th className="w-[15%]">RRN</th>
+                  <th className="w-[14%]">Acquirer</th>
+                  <th className="w-[12%] num">Amount</th>
+                  <th className="w-[18%]">Date</th>
+                  <th className="w-[18%]">Store</th>
+                  <th className="w-[23%]">Remark</th>
                 </tr>
               </thead>
               <tbody>
                 {(() => {
-                  const rows = pinelabs.onlyTerm.filter((x) =>
-                    hit(x.rrn, x.acquirer, x.amount),
-                  );
+                  const rows = pinelabs.onlyTerm
+                    .map((x, i) => ({ x, item: items.onlyTerm[i]! }))
+                    .filter(({ x }) => hit(x.rrn, x.acquirer, x.amount));
                   if (rows.length === 0)
                     return (
-                      <EmptyRow cols={5} message="Every terminal row found a POS match." />
+                      <EmptyRow cols={6} message="Every terminal row found a POS match." />
                     );
-                  return rows.map((x, i) => (
+                  return rows.map(({ x, item }, i) => (
                     <tr key={`${x.rrn}-${i}`}>
                       <td className="mono">{x.rrn || '—'}</td>
                       <td>
@@ -187,6 +217,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td className="num">{fmt(x.amount)}</td>
                       <td className="mono">{fmtDate(x.date)}</td>
                       <td>{x.store}</td>
+                      <td>
+                        <RemarkCell source="pinelabs" item={item} allItems={allItems} />
+                      </td>
                     </tr>
                   ));
                 })()}
@@ -200,16 +233,18 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                 <span>⚠</span>
                 <span>
                   These rows share a reference, auth code or amount with another row, so no
-                  one-to-one match can be asserted. They are never matched automatically.
+                  one-to-one match can be asserted. They are never matched automatically — but
+                  still need a remark to submit.
                 </span>
               </div>
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th className="w-[18%]">RRN / code</th>
-                    <th className="w-[20%]">Order no</th>
-                    <th className="w-[15%] num">Amount</th>
-                    <th className="w-[47%]">Reason</th>
+                    <th className="w-[15%]">RRN / code</th>
+                    <th className="w-[17%]">Order no</th>
+                    <th className="w-[12%] num">Amount</th>
+                    <th className="w-[33%]">Reason</th>
+                    <th className="w-[23%]">Remark</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -219,6 +254,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td>{(x.orders ?? []).join(', ')}</td>
                       <td className="num">{fmt(x.amount)}</td>
                       <td className="text-warn-ink">{x._note}</td>
+                      <td>
+                        <RemarkCell source="pinelabs" item={items.dupRRN[i]!} allItems={allItems} />
+                      </td>
                     </tr>
                   ))}
                   {pinelabs.amexDup.map((x, i) => (
@@ -227,6 +265,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td>{(x.pr?.orders ?? []).join(', ')}</td>
                       <td className="num">{fmt(x.pr?.amount)}</td>
                       <td className="text-warn-ink">{x._note}</td>
+                      <td>
+                        <RemarkCell source="pinelabs" item={items.amexDup[i]!} allItems={allItems} />
+                      </td>
                     </tr>
                   ))}
                   {pinelabs.amexDupTerm.map((x, i) => (
@@ -235,6 +276,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td>—</td>
                       <td className="num">{fmt(x.amount)}</td>
                       <td className="text-warn-ink">Duplicate on terminal side (AMEX)</td>
+                      <td>
+                        <RemarkCell source="pinelabs" item={items.amexDupTerm[i]!} allItems={allItems} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

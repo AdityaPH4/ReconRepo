@@ -45,10 +45,16 @@ export {
   AMOUNT_EPSILON,
   BANK_NAMES,
   BILLS_NAMES,
+  BOH_SOURCES,
+  CASH_BILL_REMARKS,
   CASH_NAMES,
+  CASH_REMARKS_EXCESS,
+  CASH_REMARKS_SHORTAGE,
   EXPLAIN_TYPES,
   FRS_METHODS,
   HDFC_STATEMENT_CITY_TO_OUTLET,
+  MODAL_REMARKS,
+  NO_RRN_REMARKS,
   OUTLET_CODES,
   OUTLET_NAMES,
   PINELABS_NAMES,
@@ -118,3 +124,64 @@ export {
   pinelabsTerminalPR,
 } from './engine/frs.js';
 export type { FrsContext } from './engine/frs.js';
+
+export { pinelabsAcquirerBreakdown } from './engine/pinelabsBreakdown.js';
+export type { AcquirerGroupRow, PinelabsAcquirerBreakdown } from './engine/pinelabsBreakdown.js';
+
+// ── Justification & submit layer ─────────────────────────────────────────
+export type {
+  Advance,
+  AdvanceApplication,
+  BohClearance,
+  BohEntry,
+  BohSource,
+  BohStagingEntry,
+  Direction,
+  JustificationEntry,
+  JustificationSource,
+  JustificationState,
+  ResolvableItem,
+  SquareOffMap,
+} from './justification/types.js';
+export { emptyJustificationState } from './justification/types.js';
+
+export { buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
+
+export {
+  isEligibleSquareOffPartner,
+  isSquareOffResolved,
+  isSquaredOff,
+  squareOffNet,
+  squareOffPairList,
+  squareOffPartners,
+  toggleSquareOff,
+} from './justification/squareOff.js';
+
+export {
+  bankOk,
+  cashOk,
+  entryNet,
+  hdfcUpiCompleteness,
+  pinelabsCompleteness,
+  upiOk,
+} from './justification/completeness.js';
+export type { CompletenessResult, UpiOkParams } from './justification/completeness.js';
+
+export { collectExplained, explainedTotals } from './justification/residual.js';
+export type { ExplainedItem } from './justification/residual.js';
+
+export { canSubmit } from './justification/submitGate.js';
+export type { CanSubmitInput, SubmitGateResult, SubmitStatus } from './justification/submitGate.js';
+
+export { advanceBalance, eligibleAdvances, isAdvanceExhausted } from './justification/advances.js';
+export type { EligibleAdvance } from './justification/advances.js';
+
+export { eligibleBohEntries } from './justification/boh.js';
+export type { EligibleBohEntry, EligibleBohOptions } from './justification/boh.js';
+
+export { buildSnapshot } from './justification/snapshot.js';
+export type { BuildSnapshotInput, Snapshot, SettlementLedgerRow } from './justification/snapshot.js';
+
+export { buildReportHtml } from './justification/report.js';
+
+export type { FrsRowDTOLike } from './justification/reportTypes.js';

@@ -4,11 +4,15 @@
 
 import { config } from '../config.js';
 import { createLocalObjectStore } from './localObjectStore.js';
+import { createMemoryAdvanceStore } from './memoryAdvanceStore.js';
+import { createMemoryBohStore } from './memoryBohStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
-import type { ObjectStore, SessionStore } from './types.js';
+import type { AdvanceStore, BohStore, ObjectStore, SessionStore } from './types.js';
 
 let objectStore: ObjectStore | null = null;
 let sessionStore: SessionStore | null = null;
+let advanceStore: AdvanceStore | null = null;
+let bohStore: BohStore | null = null;
 
 export function getObjectStore(): ObjectStore {
   if (objectStore) return objectStore;
@@ -38,5 +42,29 @@ export function getSessionStore(): SessionStore {
   return sessionStore;
 }
 
-export type { ObjectStore, SessionStore } from './types.js';
+export function getAdvanceStore(): AdvanceStore {
+  if (advanceStore) return advanceStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    throw new Error(
+      'Postgres advance store is not implemented yet. Unset DATABASE_URL to use the in-memory store.',
+    );
+  }
+
+  advanceStore = createMemoryAdvanceStore();
+  return advanceStore;
+}
+
+export function getBohStore(): BohStore {
+  if (bohStore) return bohStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    throw new Error('Postgres BOH store is not implemented yet. Unset DATABASE_URL to use the in-memory store.');
+  }
+
+  bohStore = createMemoryBohStore();
+  return bohStore;
+}
+
+export type { AdvanceStore, BohStore, ObjectStore, SessionStore } from './types.js';
 export { buildStorageKey } from './types.js';

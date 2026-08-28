@@ -41,8 +41,14 @@ export type {
 
 export {
   AMOUNT_EPSILON,
+  BOH_SOURCES,
+  CASH_BILL_REMARKS,
+  CASH_REMARKS_EXCESS,
+  CASH_REMARKS_SHORTAGE,
   EXPLAIN_TYPES,
   FRS_METHODS,
+  MODAL_REMARKS,
+  NO_RRN_REMARKS,
   OUTLET_CODES,
   OUTLET_NAMES,
   REMARKS_ALL,
@@ -72,3 +78,60 @@ export {
   fmtEventDate,
   fmtWin,
 } from './util/dates.js';
+
+// ── Justification & submit layer (browser-safe subset — no snapshot/report,
+// which are server-only concerns) ────────────────────────────────────────
+export type {
+  Advance,
+  AdvanceApplication,
+  BohClearance,
+  BohEntry,
+  BohSource,
+  BohStagingEntry,
+  Direction,
+  JustificationEntry,
+  JustificationSource,
+  JustificationState,
+  ResolvableItem,
+  SquareOffMap,
+} from './justification/types.js';
+export { emptyJustificationState } from './justification/types.js';
+
+export { buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
+
+export {
+  isEligibleSquareOffPartner,
+  isSquareOffResolved,
+  isSquaredOff,
+  squareOffNet,
+  squareOffPairList,
+  squareOffPartners,
+  toggleSquareOff,
+} from './justification/squareOff.js';
+
+export {
+  bankOk,
+  cashOk,
+  entryNet,
+  hdfcUpiCompleteness,
+  pinelabsCompleteness,
+  upiOk,
+} from './justification/completeness.js';
+export type { CompletenessResult, UpiOkParams } from './justification/completeness.js';
+
+export { collectExplained, explainedTotals } from './justification/residual.js';
+export type { ExplainedItem } from './justification/residual.js';
+
+export { canSubmit } from './justification/submitGate.js';
+export type { CanSubmitInput, SubmitGateResult, SubmitStatus } from './justification/submitGate.js';
+
+export { advanceBalance, eligibleAdvances, isAdvanceExhausted } from './justification/advances.js';
+export type { EligibleAdvance } from './justification/advances.js';
+
+export { eligibleBohEntries } from './justification/boh.js';
+export type { EligibleBohEntry, EligibleBohOptions } from './justification/boh.js';
+
+// Types only — `buildSnapshot`/`buildReportHtml` themselves stay server-only
+// (`@toit/recon-core`'s main entry), but the shape they produce is inert data
+// the web app needs to type a submit response and a stored session against.
+export type { Snapshot, SettlementLedgerRow } from './justification/snapshot.js';

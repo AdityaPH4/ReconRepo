@@ -121,14 +121,34 @@ npm run test --workspace @toit/recon-core
 | Pinelabs panel, aggregate panels, KPI tiles, FRS table | Done, read-only |
 | Tailwind design system in `globals.css` | Done |
 | Reopen a stored session at `/sessions/[id]` | Done |
-| Justification layer (remarks, square-off, advances, BOH, EPR, short collections) | Not started |
-| Submit, snapshot, printable report | Not started |
+| Justification layer (remarks, square-off, advances, BOH, EPR, short collections) | Done, 27 tests |
+| Submit, snapshot, printable report | Done |
 | Postgres + S3 drivers, real auth | Not started |
 
 The justification and submit layers are the operator-input half of the legacy
-tool (roughly legacy lines 1930–5360). Everything currently on screen is derived
-from the uploaded files alone, which is why it can be verified against the
-legacy numbers directly.
+tool (legacy lines ~1930–5777). They are ported behind the same architecture as
+the engine — pure logic in `recon-core`, wire types in `contracts`, storage
+drivers in `apps/api` — with three deliberate corrections over legacy, each
+recorded where it's implemented:
+
+- **Advances are outlet-scoped** (`packages/recon-core/src/justification/advances.ts`).
+  Legacy had no outlet field on an advance at all — harmless only because a
+  browser session held one outlet at a time.
+- **A cleared Bills-on-Hold entry is durably marked `cleared`**
+  (`apps/api/src/storage/memoryBohStore.ts`). Legacy never wrote clearance
+  back to the repository row, so a cleared bill would resurface as clearable
+  forever once the repo is a real, persistent table.
+- **One canonical completeness/residual calculation**
+  (`packages/recon-core/src/justification/{completeness,residual,submitGate}.ts`)
+  serves both the live "can I submit" display and the actual submit gate.
+  Legacy has two independently-drifting versions of this that could disagree.
+
+Advance/BOH mutations a draft session makes stay inside that session's own
+state until submit succeeds — an abandoned draft simply never wrote to the
+cross-session repositories, replacing legacy's clone-based baseline/rollback
+with plain non-persistence. `sessionStore`/`advanceStore`/`bohStore` are all
+still the in-memory dev drivers (see the table above); a Postgres driver for
+each is the next step towards a real deployment.
 
 ## Domain notes worth knowing before changing anything
 

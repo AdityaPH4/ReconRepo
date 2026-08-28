@@ -9,10 +9,10 @@
  * for the panels; clicking a tile reveals its panel below.
  */
 
-import type { PanelSummariesDTO, ReconCountsDTO } from '@toit/contracts';
+import type { PanelSummariesDTO, ReconCountsDTO, SessionDTO } from '@toit/contracts';
 import { fmt } from '@toit/recon-core/display';
 
-export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank';
+export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank' | 'advances';
 
 /** `ok` = nothing outstanding, `err` = needs attention, `neutral` = FYI only. */
 type Stat = 'ok' | 'err' | 'neutral';
@@ -30,6 +30,7 @@ interface Props {
   totals: PanelSummariesDTO;
   active: PanelId;
   onSelect: (id: PanelId) => void;
+  justification: SessionDTO['justification'];
 }
 
 const STAT_CLASS: Record<Stat, string> = {
@@ -38,8 +39,8 @@ const STAT_CLASS: Record<Stat, string> = {
   neutral: 'kpi-value',
 };
 
-export function KpiTiles({ counts, totals, active, onSelect }: Props) {
-  const tiles = buildTiles(counts, totals);
+export function KpiTiles({ counts, totals, active, onSelect, justification }: Props) {
+  const tiles = buildTiles(counts, totals, justification);
 
   return (
     <div className="kpi-grid">
@@ -60,7 +61,11 @@ export function KpiTiles({ counts, totals, active, onSelect }: Props) {
   );
 }
 
-function buildTiles(counts: ReconCountsDTO, totals: PanelSummariesDTO): Tile[] {
+function buildTiles(
+  counts: ReconCountsDTO,
+  totals: PanelSummariesDTO,
+  justification: SessionDTO['justification'],
+): Tile[] {
   // Everything on the Pinelabs panel that still needs a human decision.
   const plOutstanding =
     counts.pinelabs.unreconciled +
@@ -128,6 +133,13 @@ function buildTiles(counts: ReconCountsDTO, totals: PanelSummariesDTO): Tile[] {
       label: 'Swiggy / Zomato',
       main: String(counts.swiggy),
       note: fmt(totals.swiggy.prTotal),
+      stat: 'neutral',
+    },
+    {
+      id: 'advances',
+      label: 'Advances',
+      main: String(justification.draftAdvances.length),
+      note: `${justification.draftApplications.length} applied this session`,
       stat: 'neutral',
     },
   ];

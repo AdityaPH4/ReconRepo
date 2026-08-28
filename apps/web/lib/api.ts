@@ -5,7 +5,18 @@
  * URL shape. Keeps the frontend/backend seam in one reviewable place.
  */
 
-import type { SessionDTO, SessionListItemDTO } from '@toit/contracts';
+import type {
+  AddBohStagingRequest,
+  AddJustificationEntryRequest,
+  ApplyAdvanceRequest,
+  ClearBohRequest,
+  EligibleAdvanceDTO,
+  EligibleBohEntryDTO,
+  RecordAdvanceRequest,
+  SessionDTO,
+  SessionListItemDTO,
+  ToggleSquareOffRequest,
+} from '@toit/contracts';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -61,6 +72,101 @@ export async function getSession(id: string): Promise<SessionDTO> {
 export async function listSessions(): Promise<SessionListItemDTO[]> {
   const res = await fetch(`${API_BASE}/api/sessions`, { cache: 'no-store' });
   return unwrap<SessionListItemDTO[]>(res);
+}
+
+// ── Justification & submit layer ──────────────────────────────────────────
+
+async function postJson<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return unwrap<T>(res);
+}
+
+async function deleteJson<T>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return unwrap<T>(res);
+}
+
+function justificationUrl(sessionId: string, path: string): string {
+  return `${API_BASE}/api/sessions/${sessionId}/justification${path}`;
+}
+
+export function addJustificationEntry(
+  sessionId: string,
+  body: AddJustificationEntryRequest,
+): Promise<SessionDTO> {
+  return postJson(justificationUrl(sessionId, '/entries'), body);
+}
+
+export function removeJustificationEntry(sessionId: string, entryId: string): Promise<SessionDTO> {
+  return deleteJson(justificationUrl(sessionId, `/entries/${entryId}`));
+}
+
+export function setSquareOff(
+  sessionId: string,
+  body: ToggleSquareOffRequest,
+  on: boolean,
+): Promise<SessionDTO> {
+  return on
+    ? postJson(justificationUrl(sessionId, '/square-off'), body)
+    : deleteJson(justificationUrl(sessionId, '/square-off'), body);
+}
+
+export function recordAdvance(sessionId: string, body: RecordAdvanceRequest): Promise<SessionDTO> {
+  return postJson(justificationUrl(sessionId, '/advances'), body);
+}
+
+export function applyAdvance(sessionId: string, body: ApplyAdvanceRequest): Promise<SessionDTO> {
+  return postJson(justificationUrl(sessionId, '/advances/apply'), body);
+}
+
+export function addBohStaging(sessionId: string, body: AddBohStagingRequest): Promise<SessionDTO> {
+  return postJson(justificationUrl(sessionId, '/boh-staging'), body);
+}
+
+export function removeBohStaging(sessionId: string, stagingId: string): Promise<SessionDTO> {
+  return deleteJson(justificationUrl(sessionId, `/boh-staging/${stagingId}`));
+}
+
+export function clearBoh(sessionId: string, body: ClearBohRequest): Promise<SessionDTO> {
+  return postJson(justificationUrl(sessionId, '/boh/clear'), body);
+}
+
+export async function listEligibleAdvances(
+  sessionId: string,
+  amount?: number,
+): Promise<EligibleAdvanceDTO[]> {
+  const params = new URLSearchParams({ sessionId });
+  if (amount !== undefined) params.set('amount', String(amount));
+  const res = await fetch(`${API_BASE}/api/advances/eligible?${params}`, { cache: 'no-store' });
+  return unwrap(res);
+}
+
+export async function listEligibleBoh(
+  sessionId: string,
+  opts: { includeToday?: boolean; amount?: number } = {},
+): Promise<EligibleBohEntryDTO[]> {
+  const params = new URLSearchParams({ sessionId });
+  if (opts.includeToday) params.set('includeToday', 'true');
+  if (opts.amount !== undefined) params.set('amount', String(opts.amount));
+  const res = await fetch(`${API_BASE}/api/boh/eligible?${params}`, { cache: 'no-store' });
+  return unwrap(res);
+}
+
+export function submitSession(sessionId: string): Promise<SessionDTO> {
+  return postJson(`${API_BASE}/api/sessions/${sessionId}/submit`, undefined);
+}
+
+/** URL for the printable report — used directly as an `<a href>`, not fetched here. */
+export function reportUrl(sessionId: string): string {
+  return `${API_BASE}/api/sessions/${sessionId}/report`;
 }
 
 export async function checkHealth(): Promise<{

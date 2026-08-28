@@ -7,7 +7,7 @@
  */
 
 import type { SessionDTO, SessionListItemDTO, SessionStatus, UploadRole } from '@toit/contracts';
-import type { OutletCode } from '@toit/recon-core';
+import type { Advance, AdvanceApplication, BohEntry, OutletCode } from '@toit/recon-core';
 
 // ── Object storage: raw uploaded files, byte-for-byte ────────────────────
 
@@ -59,4 +59,30 @@ export interface SessionStore {
   list(query: SessionQuery): Promise<SessionListItemDTO[]>;
   /** Replaces the stored session. Used by draft edits and by submit. */
   update(id: string, session: SessionDTO): Promise<SessionDTO>;
+}
+
+// ── Advances repository — outlet-scoped cross-session store ──────────────
+//
+// A draft session's own advances/applications are NOT written here until
+// submit succeeds — see `packages/recon-core/src/justification/types.ts`
+// (`JustificationState`) and the plan's "draft-until-submit by
+// non-persistence" decision. This store only ever holds committed rows.
+
+export interface AdvanceStore {
+  readonly driver: 'memory' | 'postgres';
+  create(advance: Advance): Promise<Advance>;
+  list(outlet: OutletCode): Promise<Advance[]>;
+  recordApplication(application: AdvanceApplication): Promise<AdvanceApplication>;
+  listApplications(outlet: OutletCode): Promise<AdvanceApplication[]>;
+}
+
+// ── Bills-on-hold repository — outlet-scoped cross-session store ─────────
+
+export interface BohStore {
+  readonly driver: 'memory' | 'postgres';
+  create(entry: BohEntry): Promise<BohEntry>;
+  get(id: string): Promise<BohEntry | null>;
+  list(outlet: OutletCode): Promise<BohEntry[]>;
+  /** Flips a row from `open` to `cleared` — the durable fix over legacy (see README/plan). */
+  clear(id: string, clearedAt: string, clearedBySessionId: string): Promise<BohEntry>;
 }
