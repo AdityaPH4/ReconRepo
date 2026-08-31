@@ -36,6 +36,13 @@ const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: r
   bank: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
 };
 
+/** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`. */
+const BOH_LOCKED_SOURCE: Record<Source, string> = {
+  cash: 'Cash',
+  upi: 'Static UPI',
+  bank: 'Bank Transfer',
+};
+
 export function AggregateJustificationPanel({ source, title }: { source: Source; title: string }) {
   const { session, locked, updateSession, openModal } = useJustification();
   const [direction, setDirection] = useState<'excess' | 'shortage'>('excess');
@@ -73,13 +80,35 @@ export function AggregateJustificationPanel({ source, title }: { source: Source;
     const amt = Number.parseFloat(amount);
     const validAmount = amount !== '' && !Number.isNaN(amt) && amt > 0;
 
+    // The RRN check runs before *any* branch — modal-backed or not — since
+    // on the UPI tab it applies to "Advance Received"/"Extra Payment
+    // Received" too (real, identifiable transactions), not just the
+    // directly-added remarks. Legacy: `addUpiEntry`'s RRN validation
+    // (reconciliation (68).html:2725-2761) runs ahead of every remark
+    // branch, including the modal-opening ones.
+    if (needsRrn) {
+      if (!/^\d{12}$/.test(rrn)) {
+        setError('A 12-digit RRN is required for this remark.');
+        return;
+      }
+      if (session.justification.entries.some((e) => e.source === 'upi' && e.rrn === rrn)) {
+        setError('This RRN has already been used elsewhere in this session.');
+        return;
+      }
+    }
+
     // Repository-driven remarks fire their modal immediately (BOH Cleared /
     // Advance Applied) or once a valid amount has been entered (everything
     // else that's modal-backed) — matching legacy's `onCashRemarkChange`/
     // `addCashEntry` split.
     const modalKind = modalKindForRemark(remark);
+    // BOH Clear's source is locked to whichever tab triggered it — legacy:
+    // `openBohClearFromCash`/`openBohClearFromUPI`/`openBohClearFromBank`
+    // (reconciliation (68).html:2194, 2832, 3213).
+    const lockedSource = modalKind === 'boh-clear' ? BOH_LOCKED_SOURCE[source] : undefined;
+    const rrnForModal = needsRrn ? rrn : undefined;
     if (modalKind === 'boh-clear' || modalKind === 'advance-applied') {
-      openModal({ kind: modalKind, source, targetKey: null, amount: 0, direction });
+      openModal({ kind: modalKind, source, targetKey: null, amount: 0, direction, lockedSource, rrn: rrnForModal });
       resetForm();
       return;
     }
@@ -88,15 +117,11 @@ export function AggregateJustificationPanel({ source, title }: { source: Source;
         setError('Enter a valid amount.');
         return;
       }
-      openModal({ kind: modalKind, source, targetKey: null, amount: amt, direction });
+      openModal({ kind: modalKind, source, targetKey: null, amount: amt, direction, lockedSource, rrn: rrnForModal });
       resetForm();
       return;
     }
 
-    if (needsRrn && !/^\d{12}$/.test(rrn)) {
-      setError('A 12-digit RRN is required for this remark.');
-      return;
-    }
     if (needsBill && (!billNo.trim() || !reason.trim())) {
       setError('Bill Number and Reason are both required.');
       return;

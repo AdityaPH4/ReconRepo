@@ -7,5 +7,9 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../../packages/recon-core" }, { "path": "../../packages/contracts" }]
+  "references": [
+    { "path": "../../packages/recon-core" },
+    { "path": "../../packages/mpr-core" },
+    { "path": "../../packages/contracts" }
+  ]
 }

@@ -72,13 +72,16 @@ export function pinelabsAcquirerBreakdown(
   const amexPR = prData.filter((r) => r.isAmex).reduce((s, r) => s + (Number.isNaN(r.amount) ? 0 : r.amount), 0);
 
   const rows: AcquirerGroupRow[] = [
-    { acquirer: 'HDFC', count: counts.HDFC, pinelabsTotal: amounts.HDFC, prTotal: hdfcPR || null, diff: hdfcPR ? amounts.HDFC - hdfcPR : null },
+    // `prTotal` displays as "—" when zero (legacy: `prTot?fmt(prTot):'—'`), but
+    // `diff` is always the real computed value — legacy never suppresses it
+    // just because the PR-side total happens to be zero.
+    { acquirer: 'HDFC', count: counts.HDFC, pinelabsTotal: amounts.HDFC, prTotal: hdfcPR || null, diff: amounts.HDFC - hdfcPR },
     {
       acquirer: 'Kotak / RBL',
       count: counts.Kotak,
       pinelabsTotal: amounts.Kotak,
       prTotal: kotakPR || null,
-      diff: kotakPR ? amounts.Kotak - kotakPR : null,
+      diff: amounts.Kotak - kotakPR,
     },
     { acquirer: 'AMEX', count: counts.AMEX, pinelabsTotal: amounts.AMEX, prTotal: amexPR, diff: amounts.AMEX - amexPR },
   ];

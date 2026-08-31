@@ -12,7 +12,7 @@
  */
 
 import { AMOUNT_EPSILON } from '../constants.js';
-import type { OutletCode } from '../types.js';
+import type { OutletCode, PRRow } from '../types.js';
 import type { BohEntry } from './types.js';
 
 export interface EligibleBohEntry {
@@ -51,4 +51,36 @@ export function eligibleBohEntries(
           : `Amount ${b.amount.toFixed(2)} does not match ${exactAmount!.toFixed(2)} — cannot select.`,
       };
     });
+}
+
+export interface AutoStagedBohRow {
+  orderNo: string;
+  custName: string;
+  amount: number;
+  bohDate: string;
+}
+
+/**
+ * Every bills-on-hold PR row that isn't already a known repository entry
+ * (open or cleared, from any prior session) gets staged automatically —
+ * legacy's `runReconciliation` (1263–1284) does this unconditionally on
+ * every recon run, with no customer-name requirement (`custName` falls back
+ * to `''`, unlike the port's manual "+ Add to repository" flow, which
+ * requires one). `bohDate` is the current session's business date, matching
+ * the manual-add flow's own convention — legacy's `r.date` is a PR row's raw
+ * timestamp string, not the ISO date `BohEntry.bohDate` expects.
+ */
+export function autoStageBohRows(
+  bills: readonly PRRow[],
+  existingOrderNos: ReadonlySet<string>,
+  businessDate: string | null,
+): AutoStagedBohRow[] {
+  return bills
+    .filter((b) => !existingOrderNos.has(b.orderNo))
+    .map((b) => ({
+      orderNo: b.orderNo,
+      custName: b.customer || '',
+      amount: Number.isNaN(b.amount) ? 0 : b.amount,
+      bohDate: businessDate ?? '',
+    }));
 }

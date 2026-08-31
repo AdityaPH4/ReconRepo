@@ -291,13 +291,23 @@ function buildTotals(
     .reduce((s, r) => s + (Number.isNaN(r.amount) ? 0 : r.amount), 0);
   const plTerm = sumAmounts(zipInside);
 
+  // Swiggy/Zomato: legacy still splits the drawer comparison per brand
+  // (`summaryData['Swiggy']` vs `summaryData['ZOMATO']`) even though neither
+  // ever blocks submission.
+  const swiggyRows = result.swiggy.filter((r) => /swiggy/i.test(r.paymentName));
+  const zomatoRows = result.swiggy.filter((r) => /zomato/i.test(r.paymentName));
+
   return {
     cash: drawerTotals(sumAmounts(result.cash), drawer('Cash')),
     hdfcUpi: drawerTotals(sumAmounts(hdfcRows), drawer('HDFC Static UPI')),
     kotakUpi: drawerTotals(sumAmounts(kotakRows), drawer('Kotak Static UPI')),
     bank: drawerTotals(sumAmounts(result.bank), drawer('Bank transfer')),
     bills: drawerTotals(sumAmounts(result.bills), drawer('Bills on Hold')),
-    swiggy: { prTotal: sumAmounts(result.swiggy) },
+    swiggy: {
+      prTotal: sumAmounts(result.swiggy),
+      swiggy: drawerTotals(sumAmounts(swiggyRows), drawer('Swiggy')),
+      zomato: drawerTotals(sumAmounts(zomatoRows), drawer('ZOMATO')),
+    },
     pinelabs: { prTotal: plPR, terminalTotal: plTerm, diff: plTerm - plPR },
   };
 }

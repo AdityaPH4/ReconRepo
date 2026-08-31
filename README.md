@@ -1,10 +1,13 @@
 # Toit Payment Reconciliation
 
-Port of the single-file `legacy/reconciliation (68).html` operator tool to a
-Next.js frontend, a Node API, Postgres and S3 — **without changing the
-reconciliation workflow or the numbers it produces.**
+Port of two single-file operator tools — `legacy/reconciliation (68).html`
+(Layer 1: per-outlet, per-business-date reconciliation) and
+`legacy/mpr-recon (10).html` (Layer 2: confirms Layer 1's settlement ledger
+against actual bank settlement files) — to a Next.js frontend, a Node API,
+Postgres and S3 — **without changing the reconciliation workflow or the
+numbers either tool produces.**
 
-The legacy file remains in `legacy/` as the behavioural specification. Every
+Both legacy files remain in `legacy/` as the behavioural specification. Every
 ported module names the legacy line range it came from, so the port stays
 auditable against the original by diffing rather than by memory.
 
@@ -13,14 +16,17 @@ auditable against the original by diffing rather than by memory.
 ```
 RECON/
 ├─ legacy/
-│  └─ reconciliation (68).html   Original app — the behavioural spec. Do not edit.
+│  ├─ reconciliation (68).html   Layer 1 spec — do not edit.
+│  └─ mpr-recon (10).html        Layer 2 spec — do not edit.
 ├─ packages/
-│  ├─ recon-core/               Pure engine: parsers, matchers, FRS arithmetic.
-│  │                            No DOM, no DB, no network, no clock.
+│  ├─ recon-core/               Layer 1 pure engine: parsers, matchers, FRS,
+│  │                            justification/submit. No DOM, no DB, no clock.
+│  ├─ mpr-core/                 Layer 2 pure engine: bank-file adapters,
+│  │                            RRN/AMEX/UPI matcher, CSV export. Same rules.
 │  └─ contracts/                HTTP wire format shared by api + web. Types only.
 └─ apps/
    ├─ api/                      Express: HTTP, auth, object storage, persistence.
-   └─ web/                      Next.js App Router: UI only.
+   └─ web/                      Next.js App Router: UI only, both modules.
 ```
 
 `recon-core` has two entry points, and the split is load-bearing:
@@ -123,6 +129,8 @@ npm run test --workspace @toit/recon-core
 | Reopen a stored session at `/sessions/[id]` | Done |
 | Justification layer (remarks, square-off, advances, BOH, EPR, short collections) | Done, 27 tests |
 | Submit, snapshot, printable report | Done |
+| MPR (Layer 2) engine — bank adapters, RRN/AMEX/UPI matcher, CSV export | Done, 31 tests |
+| MPR upload → run → results flow, persisted runs at `/mpr` and `/mpr/[id]` | Done, end-to-end |
 | Postgres + S3 drivers, real auth | Not started |
 
 The justification and submit layers are the operator-input half of the legacy
@@ -149,6 +157,56 @@ cross-session repositories, replacing legacy's clone-based baseline/rollback
 with plain non-persistence. `sessionStore`/`advanceStore`/`bohStore` are all
 still the in-memory dev drivers (see the table above); a Postgres driver for
 each is the next step towards a real deployment.
+
+## Layer 2 — MPR reconciliation (`packages/mpr-core`, `/mpr`)
+
+Ported from `legacy/mpr-recon (10).html` (lines 223–1753 — the markup and two
+vendored parsing libraries before that don't need porting). This is a
+downstream, second-pass check: it ingests the Layer-1 settlement snapshot
+(one JSON per business date — the same `Snapshot` `buildSnapshot()` produces)
+alongside the actual bank settlement files (Kotak, Pinelabs, AMEX, HDFC UPI)
+and confirms money Layer 1 expected to settle actually did, matching by RRN
+(AMEX matches by daily batch submission instead — it doesn't settle per-RRN).
+
+Two prerequisite/architectural notes:
+
+- **`Snapshot.upi` gained `transactions[]` and `justifications[]`**
+  (`packages/recon-core/src/justification/snapshot.ts`) — Layer 2's entire
+  HDFC Static UPI matching feature depends on these, and the initial Layer-1
+  port hadn't needed them yet. Purely additive; every existing consumer of
+  `Snapshot` is unaffected.
+- **Unlike legacy (stateless — upload, view, reset, nothing saved), MPR runs
+  are persisted** as their own session type (`MprSessionStore`, mirroring the
+  Layer-1 `SessionStore`), reachable again later at `/mpr/[id]`.
+
+Three deliberate corrections over legacy, each recorded where it's
+implemented:
+
+- **A duplicate RRN across MPR rows is flagged as `ambiguous`**, not silently
+  resolved last-write-wins (`packages/mpr-core/src/engine/match.ts`). Legacy's
+  primary matcher is a plain object keyed by RRN; a collision quietly drops
+  the earlier row with no warning, unlike the AMEX/HDFC-UPI matchers in the
+  same file, which both explicitly avoid double-matching.
+- **An unmatched Kotak/Pinelabs MPR credit is surfaced as `unexpected`**
+  (same file). Legacy's results screen is fully built to group and display
+  this for every source — but the matcher only ever populates it from the
+  HDFC-UPI path; a Kotak or Pinelabs credit with no ledger counterpart was
+  simply dropped. Money the bank settled with no record in Layer 1 at all is
+  the case most worth surfacing, not the easiest to skip.
+- **AMEX is included in the CSV export, and "No RRN" pending rows are shown
+  consistently** between the UI and the export
+  (`packages/mpr-core/src/engine/csvExport.ts`). Legacy's export omits AMEX
+  entirely despite it having a full results tab, and shows "No RRN" rows in
+  the CSV while hiding them from the on-screen Pending tab/tile.
+
+Every bank adapter's column-name aliases and detection fingerprints, every
+matching tolerance (₹0.5 primary / ₹1 AMEX / ₹0.5 + 1hr window UPI), the AMEX
+batch/SOC-number logic and its midnight-rollover date rule, and the UPI
+two-pass-plus-justification matching are a faithful port. `.xlsx`/`.xls`
+parsing uses the real `xlsx` npm package rather than legacy's hand-rolled
+JSZip+DOMParser reader — that reader existed only to route around a
+compression quirk in the browser-bundled, minified SheetJS build, which
+doesn't apply server-side.
 
 ## Domain notes worth knowing before changing anything
 

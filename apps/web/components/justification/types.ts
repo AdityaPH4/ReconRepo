@@ -24,6 +24,14 @@ export interface ModalRequest {
   direction: DirectionDTO;
   /** `boh-clear` only — locks the source field when opened from a row/tab rather than the BOH tab itself. */
   lockedSource?: string;
+  /**
+   * The UPI aggregate tab's 12-digit RRN, already validated (format +
+   * session-uniqueness) before the modal opened — legacy captures this on
+   * the form itself and carries it into whichever modal handles the rest of
+   * the entry, since "Advance Received"/"Extra Payment Received" on the UPI
+   * tab represent a real, identifiable transaction the RRN traces back to.
+   */
+  rrn?: string | null;
   /** `boh-add` only — the underlying Bills-on-Hold PR row this stages a repository entry for. */
   bohRow?: { orderNo: string; custName: string; amount: number; bohDate: string };
 }

@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@toit/mpr-core": "*",
     "@toit/recon-core": "*"
   },
   "devDependencies": {

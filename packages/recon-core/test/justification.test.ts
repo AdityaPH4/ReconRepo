@@ -21,6 +21,7 @@ import {
   bankOk,
   collectExplained,
   eligibleAdvances,
+  autoStageBohRows,
   eligibleBohEntries,
   emptyJustificationState,
   entryNet,
@@ -164,17 +165,62 @@ describe('square-off', () => {
   });
 
   it('only offers opposite-sign items as square-off partners', () => {
-    const excess: ResolvableItem = { globalId: 'PL-1', targetKey: 't1', diff: 500, countsTowardResidual: true };
-    const shortage: ResolvableItem = { globalId: 'POS-1', targetKey: 't2', diff: -500, countsTowardResidual: true };
-    const sameSign: ResolvableItem = { globalId: 'POS-2', targetKey: 't3', diff: -100, countsTowardResidual: true };
+    const excess: ResolvableItem = {
+      globalId: 'PL-1',
+      targetKey: 't1',
+      diff: 500,
+      label: 'Only in Terminal',
+      orderNo: '',
+      rrn: '',
+      appearsInExplanation: true,
+      countsTowardGate: true,
+    };
+    const shortage: ResolvableItem = {
+      globalId: 'POS-1',
+      targetKey: 't2',
+      diff: -500,
+      label: 'Only in POS',
+      orderNo: '',
+      rrn: '',
+      appearsInExplanation: true,
+      countsTowardGate: true,
+    };
+    const sameSign: ResolvableItem = {
+      globalId: 'POS-2',
+      targetKey: 't3',
+      diff: -100,
+      label: 'Only in POS',
+      orderNo: '',
+      rrn: '',
+      appearsInExplanation: true,
+      countsTowardGate: true,
+    };
     assert.equal(isEligibleSquareOffPartner(excess, shortage), true);
     assert.equal(isEligibleSquareOffPartner(shortage, sameSign), false);
   });
 
   it('flags a lopsided pair as still net-unresolved', () => {
     const items: ResolvableItem[] = [
-      { globalId: 'PL-1', targetKey: 't1', diff: 500, countsTowardResidual: true },
-      { globalId: 'POS-1', targetKey: 't2', diff: -200, countsTowardResidual: true },
+      {
+        globalId: 'PL-1',
+        targetKey: 't1',
+        diff: 500,
+        label: 'Only in Terminal',
+        orderNo: '',
+        rrn: '',
+        appearsInExplanation: true,
+        countsTowardGate: true,
+      },
+      {
+        globalId: 'POS-1',
+        targetKey: 't2',
+        diff: -200,
+        label: 'Only in POS',
+        orderNo: '',
+        rrn: '',
+        appearsInExplanation: true,
+        countsTowardGate: true,
+      },
     ];
     const map = toggleSquareOff({}, 'PL-1', 'POS-1', true);
     const net = squareOffNet(map, 'PL-1', items);
@@ -229,6 +275,21 @@ describe('completeness', () => {
     assert.equal(hdfcUpiCompleteness(null, [], {}), null);
   });
 
+  it('an unremarked HDFC-UPI dupRRN row is resolvable but never blocks the gate', () => {
+    const upiHdfc = {
+      reconRows: [],
+      onlyPOS: [],
+      onlyTerm: [],
+      dupRRN: [{ rrn: 'R9', orders: [], _dupSrc: 'stmt', _note: 'duplicated' }] as never,
+    };
+    const items = buildHdfcUpiItems(upiHdfc as never);
+    assert.equal(items.length, 1);
+    assert.equal(items[0]!.countsTowardGate, false);
+    const result = hdfcUpiCompleteness(upiHdfc as never, [], {});
+    assert.equal(result!.allResolved, true);
+    assert.equal(result!.unresolvedCount, 0);
+  });
+
   it('Cash gets the ₹300 leniency band that Bank does not', () => {
     assert.equal(cashOk(250, []), true); // under THRESHOLD entirely
     assert.equal(bankOk(true, 250, []), false); // Bank has no such leniency
@@ -267,7 +328,16 @@ describe('completeness', () => {
 describe('residual', () => {
   it('collects row-level and aggregate entries into one signed list', () => {
     const pinelabsItems: ResolvableItem[] = [
-      { globalId: 'MM-1', targetKey: 'R1', diff: 300, countsTowardResidual: true },
+      {
+        globalId: 'MM-1',
+        targetKey: 'R1',
+        diff: 300,
+        label: 'Amount mismatch',
+        orderNo: '',
+        rrn: 'R1',
+        appearsInExplanation: true,
+        countsTowardGate: true,
+      },
     ];
     const entries = [
       entry({ source: 'pinelabs', targetKey: 'R1', remark: 'Tips', direction: 'excess', amount: 300 }),
@@ -280,11 +350,38 @@ describe('residual', () => {
     assert.equal(totals.shortTotal, 100);
   });
 
-  it('a dupRRN row satisfies completeness via a remark but contributes nothing to the residual', () => {
-    const dupItem: ResolvableItem = { globalId: 'DUP-1', targetKey: 'dup-R9', diff: 0, countsTowardResidual: false };
+  it('a Pinelabs dupRRN row satisfies completeness via a remark but never becomes an explained row', () => {
+    const dupItem: ResolvableItem = {
+      globalId: 'DUP-1',
+      targetKey: 'dup-R9',
+      diff: 0,
+      label: 'Ambiguous — duplicate RRN',
+      orderNo: '',
+      rrn: 'R9',
+      appearsInExplanation: false,
+      countsTowardGate: true,
+    };
     const entries = [entry({ source: 'pinelabs', targetKey: 'dup-R9', remark: 'Other', comment: 'ambiguous' })];
     const explained = collectExplained(entries, [dupItem], []);
     assert.equal(explained.length, 0);
+  });
+
+  it('an HDFC-UPI dupRRN row, once remarked, does become an explained row (diff 0)', () => {
+    const udupItem: ResolvableItem = {
+      globalId: 'UDUP-1',
+      targetKey: 'udup-R9',
+      diff: 0,
+      label: 'HDFC UPI — Duplicate RRN',
+      orderNo: '',
+      rrn: 'R9',
+      appearsInExplanation: true,
+      countsTowardGate: false,
+    };
+    const entries = [entry({ source: 'upi_hdfc', targetKey: 'udup-R9', remark: 'Other', comment: 'ambiguous' })];
+    const explained = collectExplained(entries, [], [udupItem]);
+    assert.equal(explained.length, 1);
+    assert.equal(explained[0]!.diff, 0);
+    assert.equal(explained[0]!.label, 'HDFC UPI — Duplicate RRN');
   });
 });
 
@@ -453,6 +550,24 @@ describe('bills on hold', () => {
     const [exact] = eligibleBohEntries([open], { outlet, businessDate: '2026-08-05', exactAmount: 750 });
     assert.equal(exact.eligible, true);
   });
+
+  it('auto-stages every bills-on-hold row not already in the repository, with no name required', () => {
+    const bills = [
+      { orderNo: 'O-1', customer: 'Priya', amount: 400 } as never,
+      { orderNo: 'O-2', customer: '', amount: 250 } as never,
+    ];
+    const staged = autoStageBohRows(bills, new Set(), '2026-08-10');
+    assert.equal(staged.length, 2);
+    assert.equal(staged[0]!.custName, 'Priya');
+    assert.equal(staged[1]!.custName, '');
+    assert.equal(staged[0]!.bohDate, '2026-08-10');
+  });
+
+  it('skips a bills-on-hold row already known to the repository', () => {
+    const bills = [{ orderNo: 'O-500', customer: 'Rahul', amount: 750 } as never];
+    const staged = autoStageBohRows(bills, new Set(['O-500']), '2026-08-10');
+    assert.equal(staged.length, 0);
+  });
 });
 
 // ── Snapshot ──────────────────────────────────────────────────────────────
@@ -496,5 +611,59 @@ describe('buildSnapshot', () => {
     assert.equal(snapshot.finalReconSummary.status, 'balanced');
     assert.deepEqual(snapshot.settlementLedger, []);
     assert.deepEqual(snapshot.billsOnHold, { open: [], cleared: [] });
+    assert.deepEqual(snapshot.cash.transactions, []);
+    assert.deepEqual(snapshot.cash.justifications, []);
+    assert.deepEqual(snapshot.bank.transactions, []);
+    assert.deepEqual(snapshot.bank.justifications, []);
+    assert.deepEqual(snapshot.swiggy.transactions, []);
+    assert.deepEqual(snapshot.extraPayments, []);
+  });
+
+  it('carries per-transaction Cash/Bank/Swiggy rows and cash/bank justifications', () => {
+    const entries = [
+      entry({ source: 'cash', direction: 'excess', remark: 'Tips', amount: 50 }),
+      entry({ source: 'bank', direction: 'shortage', remark: 'Tips', amount: 30 }),
+    ];
+    const snapshot = buildSnapshot({
+      outlet: 'BLRT',
+      businessDate: '2026-08-01',
+      businessWindow: '01 Aug 08:00 – 02 Aug 07:00',
+      businessWindowStart: '2026-08-01T02:30:00.000Z',
+      businessWindowEnd: '2026-08-02T01:30:00.000Z',
+      submittedAt: '2026-08-02T10:00:00.000Z',
+      submittedBy: 'gm@toit.local',
+      prFileRows: 10,
+      zipRows: 8,
+      result: {
+        pinelabs: pinelabsResult(),
+        upiHdfc: null,
+        swiggy: [{ outlet: 'BLRT', orderNo: 'SW-1', date: '2026-08-01', paymentName: 'Swiggy', amount: 200 }],
+        cash: [{ orderNo: 'C-1', date: '2026-08-01', amount: 100 }],
+        upi: [],
+        bills: [],
+        bank: [{ orderNo: 'B-1', date: '2026-08-01', amount: 300 }],
+        other: [],
+        zipFiltered: [],
+      } as never,
+      summaryData: null,
+      methodBreakdown: [],
+      grandDiff: 0,
+      residual: 0,
+      status: 'balanced',
+      justification: { ...emptyJustificationState(), entries },
+      advances: [],
+      applications: [],
+      bohOpen: [],
+      bohClearedThisSession: [],
+    });
+
+    assert.equal(snapshot.cash.transactions.length, 1);
+    assert.equal(snapshot.cash.transactions[0]!.orderNo, 'C-1');
+    assert.equal(snapshot.bank.transactions[0]!.orderNo, 'B-1');
+    assert.equal(snapshot.swiggy.transactions[0]!.orderNo, 'SW-1');
+    assert.equal(snapshot.cash.justifications.length, 1);
+    assert.equal(snapshot.cash.justifications[0]!.remark, 'Tips');
+    assert.equal(snapshot.bank.justifications.length, 1);
+    assert.equal(snapshot.bank.justifications[0]!.sign, 'shortage');
   });
 });

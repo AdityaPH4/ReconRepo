@@ -129,7 +129,7 @@ function TransactionView({
         </div>
       )}
 
-      <KpiTiles counts={counts} totals={totals} active={panel} onSelect={onPanel} justification={justification} />
+      <KpiTiles session={session} active={panel} onSelect={onPanel} />
 
       {panel === 'pinelabs' && <PinelabsPanel pinelabs={result.pinelabs} />}
 
@@ -150,6 +150,14 @@ function TransactionView({
             extraStats={[
               { label: 'HDFC POS total', value: fmt(totals.hdfcUpi.prTotal) },
               { label: 'Kotak POS total', value: fmt(totals.kotakUpi.prTotal) },
+              {
+                label: 'Kotak Drawer summary',
+                value: totals.kotakUpi.summaryTotal === null ? '—' : fmt(totals.kotakUpi.summaryTotal),
+              },
+              {
+                label: 'Kotak Difference',
+                value: totals.kotakUpi.diff === null ? '—' : fmt(totals.kotakUpi.diff),
+              },
             ]}
             note={
               counts.upiHdfc
@@ -176,7 +184,28 @@ function TransactionView({
         <AggregatePanel
           title="Swiggy / Zomato"
           rows={result.swiggy}
-          note="POS-integrated — assumed reconciled, and never blocks submission."
+          showPaymentType
+          extraStats={[
+            { label: 'Swiggy — PR total', value: fmt(totals.swiggy.swiggy.prTotal) },
+            {
+              label: 'Swiggy — Summary total',
+              value: totals.swiggy.swiggy.summaryTotal === null ? '—' : fmt(totals.swiggy.swiggy.summaryTotal),
+            },
+            {
+              label: 'Swiggy difference',
+              value: totals.swiggy.swiggy.diff === null ? '—' : fmt(totals.swiggy.swiggy.diff),
+            },
+            { label: 'Zomato — PR total', value: fmt(totals.swiggy.zomato.prTotal) },
+            {
+              label: 'Zomato — Summary total',
+              value: totals.swiggy.zomato.summaryTotal === null ? '—' : fmt(totals.swiggy.zomato.summaryTotal),
+            },
+            {
+              label: 'Zomato difference',
+              value: totals.swiggy.zomato.diff === null ? '—' : fmt(totals.swiggy.zomato.diff),
+            },
+          ]}
+          note="POS-integrated — never blocks submission, but still compared against the drawer summary for each brand."
         />
       )}
     </>

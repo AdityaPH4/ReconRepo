@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Payment Reconciliation — Toit',
-  description: 'Daily payment reconciliation for Toit outlets.',
+  title: 'Toit Reconciliation',
+  description: 'Payment reconciliation and MPR (Layer 2) settlement matching for Toit outlets.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

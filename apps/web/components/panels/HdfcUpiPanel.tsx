@@ -41,6 +41,7 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
       onlyPOS: take(upiHdfc.onlyPOS.length),
       onlyTerm: take(upiHdfc.onlyTerm.length),
       mismatch: take(mismatched.length),
+      dupRRN: take(upiHdfc.dupRRN.length),
     };
   }, [allItems, upiHdfc, mismatched.length]);
 
@@ -152,8 +153,9 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[30%]">RRN</th>
-                <th className="w-[70%]">Reason</th>
+                <th className="w-[20%]">RRN</th>
+                <th className="w-[50%]">Reason</th>
+                <th className="w-[30%]">Remark</th>
               </tr>
             </thead>
             <tbody>
@@ -161,6 +163,9 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
                 <tr key={`dup-${x.rrn}-${i}`}>
                   <td className="mono">{x.rrn}</td>
                   <td className="text-warn-ink">{x._note}</td>
+                  <td>
+                    <RemarkCell source="upi_hdfc" item={items.dupRRN[i]!} allItems={allItems} />
+                  </td>
                 </tr>
               ))}
             </tbody>

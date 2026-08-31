@@ -111,13 +111,14 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="w-[13%]">RRN</th>
-                  <th className="w-[15%]">Order no</th>
-                  <th className="w-[11%] num">Terminal</th>
-                  <th className="w-[11%] num">POS</th>
-                  <th className="w-[11%] num">Difference</th>
-                  <th className="w-[10%]">Type</th>
-                  <th className="w-[13%]">Payment name</th>
+                  <th className="w-[12%]">RRN</th>
+                  <th className="w-[13%]">Order no</th>
+                  <th className="w-[13%]">Date / Time</th>
+                  <th className="w-[10%] num">Terminal</th>
+                  <th className="w-[10%] num">POS</th>
+                  <th className="w-[10%] num">Difference</th>
+                  <th className="w-[9%]">Type</th>
+                  <th className="w-[12%]">Payment name</th>
                   <th className="w-[16%]">Remark</th>
                 </tr>
               </thead>
@@ -127,11 +128,12 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                     .map((x, i) => ({ x, item: items.mismatch[i]! }))
                     .filter(({ x }) => hit(x.rrn, x.orders?.join(','), x.diff));
                   if (rows.length === 0)
-                    return <EmptyRow cols={8} message="No amount mismatches." />;
+                    return <EmptyRow cols={9} message="No amount mismatches." />;
                   return rows.map(({ x, item }) => (
                     <tr key={x.rrn}>
                       <td className="mono">{x.rrn}</td>
                       <td>{(x.orders ?? []).join(', ')}</td>
+                      <td className="mono text-ink-3 text-tiny">{fmtDate(x.pr?.date)}</td>
                       <td className="num">{fmt(x.plAmt)}</td>
                       <td className="num">{fmt(x.prAmt)}</td>
                       <td className={`num ${diffClass(x.diff)}`}>{fmt(x.diff)}</td>
@@ -153,12 +155,13 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th className="w-[13%]">RRN</th>
-                  <th className="w-[16%]">Order no</th>
-                  <th className="w-[12%] num">Amount</th>
-                  <th className="w-[16%]">Payment name</th>
-                  <th className="w-[22%]">Note</th>
-                  <th className="w-[21%]">Remark</th>
+                  <th className="w-[12%]">RRN</th>
+                  <th className="w-[14%]">Order no</th>
+                  <th className="w-[13%]">Date / Time</th>
+                  <th className="w-[11%] num">Amount</th>
+                  <th className="w-[14%]">Payment name</th>
+                  <th className="w-[18%]">Note</th>
+                  <th className="w-[18%]">Remark</th>
                 </tr>
               </thead>
               <tbody>
@@ -168,12 +171,13 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                     .filter(({ x }) => hit(x.rrn, x.orderNo, x.amount));
                   if (rows.length === 0)
                     return (
-                      <EmptyRow cols={6} message="Every POS row found a terminal match." />
+                      <EmptyRow cols={7} message="Every POS row found a terminal match." />
                     );
                   return rows.map(({ x, item }, i) => (
                     <tr key={`${x.rrn}-${x.orderNo}-${i}`}>
                       <td className="mono">{x.rrn || '—'}</td>
                       <td>{(x.orders ?? [x.orderNo]).filter(Boolean).join(', ')}</td>
+                      <td className="mono text-ink-3 text-tiny">{fmtDate(x.date)}</td>
                       <td className="num">{fmt(x.amount)}</td>
                       <td>{x.paymentName}</td>
                       <td className="text-ink-3 text-tiny">{x._note || '—'}</td>
@@ -228,7 +232,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
           </PanelSection>
 
           {ambiguousCount > 0 && (
-            <PanelSection title="Ambiguous — needs a human">
+            <PanelSection
+              title={`Ambiguous — needs a human (Dup RRN: ${pinelabs.dupRRN.length}, AMEX dup: ${pinelabs.amexDup.length}, AMEX terminal dup: ${pinelabs.amexDupTerm.length})`}
+            >
               <div className="alert alert-warn m-5">
                 <span>⚠</span>
                 <span>
@@ -240,10 +246,11 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th className="w-[15%]">RRN / code</th>
-                    <th className="w-[17%]">Order no</th>
-                    <th className="w-[12%] num">Amount</th>
-                    <th className="w-[33%]">Reason</th>
+                    <th className="w-[13%]">RRN / code</th>
+                    <th className="w-[15%]">Order no</th>
+                    <th className="w-[10%] num">Amount</th>
+                    <th className="w-[14%]">Category</th>
+                    <th className="w-[25%]">Reason</th>
                     <th className="w-[23%]">Remark</th>
                   </tr>
                 </thead>
@@ -253,6 +260,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td className="mono">{x.rrn}</td>
                       <td>{(x.orders ?? []).join(', ')}</td>
                       <td className="num">{fmt(x.amount)}</td>
+                      <td>
+                        <span className="tag tag-warn">Dup RRN (terminal)</span>
+                      </td>
                       <td className="text-warn-ink">{x._note}</td>
                       <td>
                         <RemarkCell source="pinelabs" item={items.dupRRN[i]!} allItems={allItems} />
@@ -264,6 +274,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td className="mono">{x.pr?.authCode || '—'}</td>
                       <td>{(x.pr?.orders ?? []).join(', ')}</td>
                       <td className="num">{fmt(x.pr?.amount)}</td>
+                      <td>
+                        <span className="tag tag-warn">Dup AMEX (code/amount)</span>
+                      </td>
                       <td className="text-warn-ink">{x._note}</td>
                       <td>
                         <RemarkCell source="pinelabs" item={items.amexDup[i]!} allItems={allItems} />
@@ -275,6 +288,9 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                       <td className="mono">{x.approvalCode || '—'}</td>
                       <td>—</td>
                       <td className="num">{fmt(x.amount)}</td>
+                      <td>
+                        <span className="tag tag-warn">Dup AMEX (terminal)</span>
+                      </td>
                       <td className="text-warn-ink">Duplicate on terminal side (AMEX)</td>
                       <td>
                         <RemarkCell source="pinelabs" item={items.amexDupTerm[i]!} allItems={allItems} />
@@ -305,22 +321,32 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                   const rows = reconciled.filter((x) => hit(x.rrn, x.orders?.join(',')));
                   if (rows.length === 0)
                     return <EmptyRow cols={6} message="Nothing reconciled yet." />;
-                  return rows.map((x) => (
-                    <tr key={x.rrn}>
-                      <td className="mono">{x.rrn}</td>
-                      <td>{(x.orders ?? []).join(', ')}</td>
-                      <td className="num">{fmt(x.plAmt)}</td>
-                      <td className="num">{fmt(x.prAmt)}</td>
-                      <td>
-                        {x.squaredOff ? (
-                          <span className="tag tag-pur">Squared off</span>
-                        ) : (
-                          <span className="tag tag-ok">✓ Matched</span>
-                        )}
-                      </td>
-                      <td>{x.pr?.paymentName}</td>
-                    </tr>
-                  ));
+                  return (
+                    <>
+                      {rows.map((x) => (
+                        <tr key={x.rrn}>
+                          <td className="mono">{x.rrn}</td>
+                          <td>{(x.orders ?? []).join(', ')}</td>
+                          <td className="num">{fmt(x.plAmt)}</td>
+                          <td className="num">{fmt(x.prAmt)}</td>
+                          <td>
+                            {x.squaredOff ? (
+                              <span className="tag tag-pur">Squared off</span>
+                            ) : (
+                              <span className="tag tag-ok">✓ Matched</span>
+                            )}
+                          </td>
+                          <td>{x.pr?.paymentName}</td>
+                        </tr>
+                      ))}
+                      <tr className="total-row">
+                        <td colSpan={2}>Total ({rows.length} rows)</td>
+                        <td className="num">{fmt(rows.reduce((s, x) => s + (x.plAmt ?? 0), 0))}</td>
+                        <td className="num">{fmt(rows.reduce((s, x) => s + (x.prAmt ?? 0), 0))}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    </>
+                  );
                 })()}
               </tbody>
             </table>
@@ -342,24 +368,36 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                 {pinelabs.amexOk.length === 0 ? (
                   <EmptyRow cols={6} message="No AMEX transactions in this session." />
                 ) : (
-                  pinelabs.amexOk.map((x, i) => (
-                    <tr key={`amex-ok-${i}`}>
-                      <td className="mono">{x.pr?.authCode || '—'}</td>
-                      <td>{(x.pr?.orders ?? []).join(', ')}</td>
-                      <td className="num">{fmt(x.zip?.amount)}</td>
-                      <td className="num">{fmt(x.pr?.amount)}</td>
-                      <td>
-                        {/* Amount-matching is weaker evidence than a code match,
-                            so it is flagged amber rather than green. */}
-                        <span
-                          className={`tag ${x._matchBy === 'code' ? 'tag-ok' : 'tag-warn'}`}
-                        >
-                          {x._matchBy}
-                        </span>
+                  <>
+                    {pinelabs.amexOk.map((x, i) => (
+                      <tr key={`amex-ok-${i}`}>
+                        <td className="mono">{x.pr?.authCode || '—'}</td>
+                        <td>{(x.pr?.orders ?? []).join(', ')}</td>
+                        <td className="num">{fmt(x.zip?.amount)}</td>
+                        <td className="num">{fmt(x.pr?.amount)}</td>
+                        <td>
+                          {/* Amount-matching is weaker evidence than a code match,
+                              so it is flagged amber rather than green. */}
+                          <span
+                            className={`tag ${x._matchBy === 'code' ? 'tag-ok' : 'tag-warn'}`}
+                          >
+                            {x._matchBy}
+                          </span>
+                        </td>
+                        <td className="mono">{x.zip?.mid || '—'}</td>
+                      </tr>
+                    ))}
+                    <tr className="total-row">
+                      <td colSpan={2}>Total ({pinelabs.amexOk.length} rows)</td>
+                      <td className="num">
+                        {fmt(pinelabs.amexOk.reduce((s, x) => s + (x.zip?.amount ?? 0), 0))}
                       </td>
-                      <td className="mono">{x.zip?.mid || '—'}</td>
+                      <td className="num">
+                        {fmt(pinelabs.amexOk.reduce((s, x) => s + (x.pr?.amount ?? 0), 0))}
+                      </td>
+                      <td colSpan={2} />
                     </tr>
-                  ))
+                  </>
                 )}
               </tbody>
             </table>

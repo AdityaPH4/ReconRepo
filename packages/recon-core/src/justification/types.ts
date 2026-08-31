@@ -196,11 +196,40 @@ export function emptyJustificationState(): JustificationState {
  * submit gate always key against the same `targetKey`/`globalId` scheme.
  */
 export interface ResolvableItem {
-  /** Legacy scheme: `POS-N`/`PL-N`/`MM-N`/`DUP-N`/`ADP-N`/`ADPL-N` (Pinelabs), `UPOS-N`/`USTMT-N`/`UMM-N` (HDFC-UPI). */
+  /** Legacy scheme: `POS-N`/`PL-N`/`MM-N`/`DUP-N`/`ADP-N`/`ADPL-N` (Pinelabs), `UPOS-N`/`USTMT-N`/`UMM-N`/`UDUP-N` (HDFC-UPI). */
   globalId: string;
   targetKey: string;
   /** Positive = excess (terminal/statement side has more), negative = shortage. */
   diff: number;
-  /** Whether this item's diff counts toward the explained-total residual (dupRRN needs a remark to gate submission but carries no amount into the residual — see legacy `collectExplained`, which never lists dupRRN). */
-  countsTowardResidual: boolean;
+  /**
+   * The category legacy's `collectExplainedForSubmit` (5000–5069) labels this
+   * row with in the "Explanation of Variances" report/snapshot — e.g. `'Only
+   * in POS'`, `'HDFC UPI — Amount mismatch'`. Distinct from the internal
+   * `globalId`/`targetKey` scheme, which is never shown to a user.
+   */
+  label: string;
+  /** Order number(s), comma-joined — blank where legacy's own row has none. */
+  orderNo: string;
+  /** RRN, when the row has one. */
+  rrn: string;
+  /**
+   * Whether a remarked instance of this item becomes a row in the
+   * "Explanation of Variances" list. `false` only for Pinelabs' own `dupRRN`
+   * bucket — legacy's `collectExplainedForSubmit` has no `forEach` over
+   * `pinelabs.dupRRN` at all, so a remarked one there is invisible in the
+   * report even though it satisfies the submit gate. HDFC-UPI's own `dupRRN`
+   * bucket, in contrast, *is* explicitly listed there (with `diff: 0`) — see
+   * `buildHdfcUpiItems`.
+   */
+  appearsInExplanation: boolean;
+  /**
+   * Whether an unresolved instance of this item blocks the submit gate.
+   * Pinelabs' `dupRRN` bucket is checked by legacy's `plUnresolvedItems` (it
+   * blocks submission until remarked) but HDFC-UPI's own `dupRRN`/`udup`
+   * bucket is never in `getHdfcCompleteness`'s item list (2249–2273) at
+   * all — legacy lets the operator attach a remark to it for their own
+   * bookkeeping, but never gates on it. Defaults to `true`; only HDFC-UPI's
+   * `dupRRN` items set this `false`.
+   */
+  countsTowardGate: boolean;
 }

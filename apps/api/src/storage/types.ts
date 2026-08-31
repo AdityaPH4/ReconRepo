@@ -6,7 +6,14 @@
  * move to S3 + Postgres later without a single route change.
  */
 
-import type { SessionDTO, SessionListItemDTO, SessionStatus, UploadRole } from '@toit/contracts';
+import type {
+  MprSessionDTO,
+  MprSessionListItemDTO,
+  SessionDTO,
+  SessionListItemDTO,
+  SessionStatus,
+  UploadRole,
+} from '@toit/contracts';
 import type { Advance, AdvanceApplication, BohEntry, OutletCode } from '@toit/recon-core';
 
 // ── Object storage: raw uploaded files, byte-for-byte ────────────────────
@@ -85,4 +92,22 @@ export interface BohStore {
   list(outlet: OutletCode): Promise<BohEntry[]>;
   /** Flips a row from `open` to `cleared` — the durable fix over legacy (see README/plan). */
   clear(id: string, clearedAt: string, clearedBySessionId: string): Promise<BohEntry>;
+}
+
+// ── MPR (Layer 2) session storage ─────────────────────────────────────────
+//
+// Unlike the legacy `mpr-recon` tool (stateless — upload, view, reset,
+// nothing saved), runs are persisted here so a GM can revisit one later.
+// Not outlet-scoped: one run can span snapshots from several outlets.
+
+export interface MprSessionQuery {
+  createdBy?: string;
+  limit?: number;
+}
+
+export interface MprSessionStore {
+  readonly driver: 'memory' | 'postgres';
+  create(session: MprSessionDTO): Promise<MprSessionDTO>;
+  get(id: string): Promise<MprSessionDTO | null>;
+  list(query: MprSessionQuery): Promise<MprSessionListItemDTO[]>;
 }

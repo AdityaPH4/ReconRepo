@@ -14,6 +14,13 @@ import { AMOUNT_EPSILON } from '../constants.js';
 import type { Remark } from '../constants.js';
 import type { JustificationEntry, JustificationSource, ResolvableItem } from './types.js';
 
+/** Per-`JustificationSource` label for the aggregate (Cash/UPI/Bank) tabs — legacy's own `source:` literals in `collectExplainedForSubmit` (5060–5069). */
+const AGGREGATE_LABEL: Record<'cash' | 'upi' | 'bank', string> = {
+  cash: 'Cash',
+  upi: 'HDFC/Kotak UPI',
+  bank: 'Bank Transfer',
+};
+
 export interface ExplainedItem {
   source: JustificationSource;
   remark: Remark;
@@ -21,14 +28,19 @@ export interface ExplainedItem {
   diff: number;
   targetKey: string | null;
   entryId: string;
+  /** Display category for the "Explanation of Variances" report/snapshot — see `ResolvableItem.label`. */
+  label: string;
+  orderNo: string;
+  rrn: string;
 }
 
 /**
  * Walks every entry and resolves it to a signed diff: row-level entries
  * (Pinelabs/HDFC-UPI) look up their row's own diff; aggregate entries
  * (Cash/UPI/Bank) use their own signed `amount`. A row-level entry whose
- * item doesn't `countsTowardResidual` (ambiguous `dupRRN` rows) satisfies the
- * completeness gate but contributes nothing here — matching legacy.
+ * item doesn't `appearsInExplanation` (Pinelabs' own `dupRRN` rows) satisfies
+ * the completeness gate but never becomes a row here — matching legacy's
+ * `collectExplainedForSubmit`, which has no such entry for that bucket.
  */
 export function collectExplained(
   entries: readonly JustificationEntry[],
@@ -41,18 +53,25 @@ export function collectExplained(
   const out: ExplainedItem[] = [];
   for (const e of entries) {
     let diff: number;
+    let label: string;
+    let orderNo = '';
+    let rrn = e.rrn ?? '';
     if (e.source === 'pinelabs' || e.source === 'upi_hdfc') {
       const item = e.targetKey === null ? undefined : (e.source === 'pinelabs' ? plByKey : hdfcByKey).get(e.targetKey);
-      if (!item || !item.countsTowardResidual) continue;
+      if (!item || !item.appearsInExplanation) continue;
       diff = item.diff;
+      label = item.label;
+      orderNo = item.orderNo;
+      rrn = item.rrn;
     } else if (e.source === 'cash' || e.source === 'upi' || e.source === 'bank') {
       diff = e.direction === 'excess' ? e.amount : -e.amount;
+      label = AGGREGATE_LABEL[e.source];
     } else {
       // `'boh'` — a Bills-on-Hold clearance triggered from the BOH tab
       // directly has no diff to offset; see the `JustificationSource` doc.
       continue;
     }
-    out.push({ source: e.source, remark: e.remark, diff, targetKey: e.targetKey, entryId: e.id });
+    out.push({ source: e.source, remark: e.remark, diff, targetKey: e.targetKey, entryId: e.id, label, orderNo, rrn });
   }
   return out;
 }

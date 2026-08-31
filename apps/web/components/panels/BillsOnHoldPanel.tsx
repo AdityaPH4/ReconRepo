@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 import type { EligibleBohEntryDTO, Jsonified, PanelTotalsDTO } from '@toit/contracts';
 import type { PRRow } from '@toit/recon-core/display';
 import { fmt, fmtDate } from '@toit/recon-core/display';
-import { ApiError, listEligibleBoh, removeBohStaging } from '@/lib/api';
+import { ApiError, listEligibleBoh, removeBohStaging, removeJustificationEntry } from '@/lib/api';
 import { EmptyRow, PanelSection } from '@/components/ui/table';
 import { useJustification } from '@/components/justification/JustificationProvider';
 
@@ -42,6 +42,23 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
       updateSession(updated);
     } catch (err) {
       window.alert(err instanceof ApiError ? err.message : 'Failed to remove.');
+    }
+  }
+
+  // A clearance's own row carries no entry id — it's linked the other way,
+  // via the justification entry's `bohClearanceId` (see `clearBoh` in
+  // `justificationService.ts`). `removeJustificationEntry` already cascades
+  // to `removeBohClearance` for any entry that carries one, regardless of
+  // which tab/source created it — legacy's own `removeBohCleared` (4554–4571)
+  // is reachable for a BOH-tab-direct clearance the same way.
+  async function undoClearance(clearanceId: string) {
+    const entry = session.justification.entries.find((e) => e.bohClearanceId === clearanceId);
+    if (!entry) return;
+    try {
+      const updated = await removeJustificationEntry(session.meta.id, entry.id);
+      updateSession(updated);
+    } catch (err) {
+      window.alert(err instanceof ApiError ? err.message : 'Failed to undo.');
     }
   }
 
@@ -199,9 +216,10 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[30%]">Source</th>
-                <th className="w-[30%]">Cleared date</th>
-                <th className="w-[40%] num">Amount</th>
+                <th className="w-[25%]">Source</th>
+                <th className="w-[25%]">Cleared date</th>
+                <th className="w-[25%] num">Amount</th>
+                <th className="w-[25%]" />
               </tr>
             </thead>
             <tbody>
@@ -210,6 +228,13 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
                   <td>{c.source}</td>
                   <td className="mono">{c.clearedDate}</td>
                   <td className="num">{fmt(c.amount)}</td>
+                  <td>
+                    {!locked && (
+                      <button type="button" className="btn btn-sm" onClick={() => undoClearance(c.id)}>
+                        Undo
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

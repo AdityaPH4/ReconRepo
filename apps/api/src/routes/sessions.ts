@@ -9,7 +9,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SessionDTO, UploadRole, UploadedFileDTO } from '@toit/contracts';
-import { buildReportHtml, buildSnapshot, emptyJustificationState } from '@toit/recon-core';
+import { autoStageBohRows, buildReportHtml, buildSnapshot, emptyJustificationState } from '@toit/recon-core';
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
@@ -96,6 +96,24 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       });
     }
 
+    // Every bills-on-hold PR row not already a known repository entry (open
+    // or cleared, from any prior session) is staged automatically, with no
+    // customer-name requirement — legacy's `runReconciliation` (1263–1284)
+    // does this unconditionally on every recon run. The manual "+ Add to
+    // repository" flow stays available for a bills-on-hold row that arrives
+    // after this point (e.g. a remark reclassifies it) or was skipped here.
+    const existingBoh = await getBohStore().list(outcome.outlet);
+    const existingOrderNos = new Set(existingBoh.map((b) => b.orderNo));
+    const bohStaging = autoStageBohRows(outcome.result.bills, existingOrderNos, outcome.businessDate).map((b) => ({
+      id: randomUUID(),
+      orderNo: b.orderNo,
+      custName: b.custName,
+      phone: null,
+      amount: b.amount,
+      bohDate: b.bohDate,
+      notes: null,
+    }));
+
     const session: SessionDTO = {
       meta: {
         id: sessionId,
@@ -125,7 +143,7 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       counts: outcome.counts,
       totals: outcome.totals,
       pinelabsBreakdown: outcome.pinelabsBreakdown,
-      justification: emptyJustificationState(),
+      justification: { ...emptyJustificationState(), bohStaging },
       // Placeholders — replaced below once `session` is fully built, since
       // both read the very object they're being attached to.
       submitGate: null as never,
@@ -360,6 +378,37 @@ sessionsRouter.get('/:id/report', async (req, res, next) => {
     const html = buildReportHtml(session.snapshot as never);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * The raw settlement snapshot as a downloadable JSON file — legacy's
+ * `downloadSnapshot()` alongside `downloadReport()`. This is what the MPR
+ * (Layer 2) module's "Recon Snapshots (JSON)" upload slot expects, one file
+ * per business date.
+ */
+sessionsRouter.get('/:id/snapshot.json', async (req, res, next) => {
+  try {
+    const session = await getSessionStore().get(req.params.id!);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    const scope = outletScope(req);
+    if (scope && session.meta.outlet !== scope) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    if (!session.snapshot) {
+      res.status(409).json({ error: 'Session has not been submitted yet.' });
+      return;
+    }
+    const biz = (session.meta.businessDate ?? 'unknown').replace(/-/g, '');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="toit-recon-${biz}_${session.meta.outlet}.json"`);
+    res.json(session.snapshot);
   } catch (err) {
     next(err);
   }

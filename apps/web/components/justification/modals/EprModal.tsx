@@ -37,6 +37,7 @@ export function EprModal({ session, request, onClose, onSaved }: ModalProps) {
         billNo: billNo.trim(),
         clientName: clientName.trim(),
         notes: notes.trim() || null,
+        rrn: request.rrn ?? null,
       });
       onSaved(updated);
     } catch (err) {

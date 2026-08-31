@@ -15,10 +15,10 @@
     "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run dev --workspace @toit/api",
     "dev:web": "npm run dev --workspace @toit/web",
-    "build:packages": "tsc -b packages/recon-core packages/contracts",
+    "build:packages": "tsc -b packages/recon-core packages/contracts packages/mpr-core",
     "build": "npm run build:packages && npm run build --workspace @toit/api && npm run build --workspace @toit/web",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspace @toit/recon-core"
+    "test": "npm run test --workspace @toit/recon-core && npm run test --workspace @toit/mpr-core"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

@@ -27,9 +27,16 @@ interface Props {
   note?: string;
   /** Extra stat cards, e.g. the HDFC/Kotak split on the UPI panel. */
   extraStats?: Array<{ label: string; value: string }>;
+  /**
+   * Legacy's Swiggy/Zomato table (line 1902) carries a Payment type column
+   * that the other aggregate tables don't. Every aggregate table (Cash,
+   * Bank, Static UPI, Swiggy — lines 2031, 3083, 2600, 1902) shows Employee,
+   * so that column is unconditional here.
+   */
+  showPaymentType?: boolean;
 }
 
-export function AggregatePanel({ title, totals, rows, note, extraStats }: Props) {
+export function AggregatePanel({ title, totals, rows, note, extraStats, showPaymentType }: Props) {
   const diff = totals?.diff ?? null;
   const total = totals?.prTotal ?? sumRows(rows);
 
@@ -87,17 +94,19 @@ export function AggregatePanel({ title, totals, rows, note, extraStats }: Props)
         <table className="data-table">
           <thead>
             <tr>
-              <th className="w-[16%]">Order no</th>
-              <th className="w-[26%]">Date</th>
-              <th className="w-[18%]">Customer</th>
-              <th className="w-[18%]">Payment name</th>
-              <th className="w-[22%] num">Amount</th>
+              <th className="w-[14%]">Order no</th>
+              <th className="w-[20%]">Date</th>
+              <th className="w-[15%]">Customer</th>
+              <th className="w-[15%]">Payment name</th>
+              {showPaymentType && <th className="w-[12%]">Payment type</th>}
+              <th className="w-[16%] num">Amount</th>
+              <th className="w-[13%]">Employee</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <EmptyRow
-                cols={5}
+                cols={showPaymentType ? 7 : 6}
                 icon="📭"
                 message={`No ${title.toLowerCase()} transactions in this session.`}
               />
@@ -109,12 +118,15 @@ export function AggregatePanel({ title, totals, rows, note, extraStats }: Props)
                     <td className="mono">{fmtDate(r.date)}</td>
                     <td>{r.customer || '—'}</td>
                     <td>{r.paymentName}</td>
+                    {showPaymentType && <td>{r.paymentType}</td>}
                     <td className="num">{fmt(r.amount)}</td>
+                    <td>{r.employee || '—'}</td>
                   </tr>
                 ))}
                 <tr className="total-row">
-                  <td colSpan={4}>Total</td>
+                  <td colSpan={showPaymentType ? 5 : 4}>Total</td>
                   <td className="num">{fmt(sumRows(rows))}</td>
+                  <td />
                 </tr>
               </>
             )}

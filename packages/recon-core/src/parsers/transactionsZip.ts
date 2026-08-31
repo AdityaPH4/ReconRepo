@@ -73,27 +73,37 @@ export async function parseTransactionsZip(
 
   const H = headerIndex(rows[0]!);
   const C: ColMap = {
-    acquirer: H.preferExact('acquirer'),
-    paymentMode: H.preferExact('payment mode'),
-    name: H.preferExact('name'),
-    cardIssuer: H.preferExact('card issuer'),
-    amount: H.preferExact('amount'),
-    tip: H.preferExact('tip amount'),
-    date: H.preferExact('date'),
-    batchStatus: H.preferExact('batch status'),
-    txnStatus: H.preferExact('txn status'),
-    rrn: H.preferExact('rrn'),
-    settlementDate: H.preferExact('settlement date'),
-    billInvoice: H.preferExact('bill invoice'),
+    // `loose()` — first header (in file order) that is exactly this key OR
+    // merely contains it — matches legacy's `col()` exactly (line 916:
+    // `h.findIndex(x=>x===k||x.includes(k))`). This is a single ordered scan,
+    // not "search the whole row for an exact match first": if a header that
+    // only *contains* the key appears earlier in the row than the header
+    // that *is* the key (e.g. "Tip Amount" before "Amount"), legacy's (and
+    // this) column resolution locks onto the earlier substring match. A
+    // two-pass "prefer exact anywhere in the row" reader would silently
+    // resolve a different column on such a file — not a hypothetical, since
+    // `amount` feeds directly into every matched-transaction diff.
+    acquirer: H.loose('acquirer'),
+    paymentMode: H.loose('payment mode'),
+    name: H.loose('name'),
+    cardIssuer: H.loose('card issuer'),
+    amount: H.loose('amount'),
+    tip: H.loose('tip amount'),
+    date: H.loose('date'),
+    batchStatus: H.loose('batch status'),
+    txnStatus: H.loose('txn status'),
+    rrn: H.loose('rrn'),
+    settlementDate: H.loose('settlement date'),
+    billInvoice: H.loose('bill invoice'),
     // Exact only — a loose match would collide with "Bill Invoice".
     invoice: H.exact('invoice'),
-    approvalCode: H.preferExact('approval code'),
-    type: H.preferExact('type'),
-    zone: H.preferExact('zone'),
-    store: H.preferExact('store name'),
-    tid: H.preferExact('tid'),
-    mid: H.preferExact('mid'),
-    hardwareModel: H.preferExact('hardware model'),
+    approvalCode: H.loose('approval code'),
+    type: H.loose('type'),
+    zone: H.loose('zone'),
+    store: H.loose('store name'),
+    tid: H.loose('tid'),
+    mid: H.loose('mid'),
+    hardwareModel: H.loose('hardware model'),
   };
 
   const inside: ZipRow[] = [];

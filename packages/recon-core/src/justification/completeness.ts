@@ -34,7 +34,10 @@ function itemsCompleteness(
 ): CompletenessResult {
   const resolvedKeys = new Set(entries.map((e) => e.targetKey));
   const unresolved = items.filter(
-    (item) => !resolvedKeys.has(item.targetKey) && !isSquareOffResolved(squareOff, item.globalId, items),
+    (item) =>
+      item.countsTowardGate &&
+      !resolvedKeys.has(item.targetKey) &&
+      !isSquareOffResolved(squareOff, item.globalId, items),
   );
   return {
     netDiff: unresolved.reduce((s, u) => s + u.diff, 0),

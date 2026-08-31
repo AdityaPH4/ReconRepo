@@ -2,8 +2,11 @@
  * @toit/contracts — the HTTP wire format.
  *
  * The single shared definition of what the API sends and the web app receives.
- * Types only: no runtime code, no dependencies beyond `@toit/recon-core` types,
- * so either side can import it without pulling in the other's stack.
+ * Types only: no runtime code, no dependencies beyond `@toit/recon-core`'s and
+ * `@toit/mpr-core`'s types, so either side can import it without pulling in
+ * the other's stack. `import type` is fully erased at compile time, so
+ * pulling types from `@toit/mpr-core` here never bundles its `xlsx`
+ * dependency into the browser.
  */
 
 import type {
@@ -25,6 +28,16 @@ import type {
   SubmitStatus,
   SummaryData,
 } from '@toit/recon-core/display';
+import type {
+  AdapterKey,
+  AmbiguousMprRow,
+  AmexResult,
+  MatchResult,
+  PendingRow,
+  SettledRow,
+  UnexpectedMprRow,
+  UpiResult,
+} from '@toit/mpr-core';
 
 /**
  * Applies JSON's type erasure to a domain type.
@@ -172,7 +185,14 @@ export interface PanelSummariesDTO {
   kotakUpi: PanelTotalsDTO;
   bank: PanelTotalsDTO;
   bills: PanelTotalsDTO;
-  swiggy: { prTotal: number };
+  /**
+   * Swiggy/Zomato never block submission, but legacy still compared each
+   * brand separately against its own drawer-summary row (`summaryData['Swiggy']`
+   * and `summaryData['ZOMATO']` are distinct keys). `prTotal` is the combined
+   * total (the KPI tile's figure); `swiggy`/`zomato` carry the per-brand
+   * PR-vs-drawer comparison.
+   */
+  swiggy: { prTotal: number; swiggy: PanelTotalsDTO; zomato: PanelTotalsDTO };
   /** Pinelabs is transaction-level, so it reports terminal vs POS instead. */
   pinelabs: { prTotal: number; terminalTotal: number; diff: number };
 }
@@ -327,6 +347,8 @@ export interface RecordAdvanceRequest {
   /** ISO `yyyy-mm-dd`, must be strictly after the session's business date. */
   eventDate: string;
   notes?: string | null;
+  /** The UPI tab's 12-digit RRN, when this advance was recorded from there — a real, identifiable transaction. */
+  rrn?: string | null;
 }
 
 /** Backs the "Advance Applied" modal — always consumes the advance's full remaining balance. */
@@ -352,6 +374,66 @@ export interface ClearBohRequest {
   targetKey: string | null;
   bohEntryId: string;
   clearSource: string;
+}
+
+// ── MPR reconciliation (Layer 2) ──────────────────────────────────────────
+// None of `@toit/mpr-core`'s output types carry `Date`/`NaN` fields (every
+// date is already a normalised `YYYY-MM-DD` string, every amount a validated
+// number) — no `Jsonified<>` wrapping needed, they're re-exported as-is, the
+// same reasoning as the justification-layer DTOs above.
+
+export type MprAdapterKey = AdapterKey;
+export type MprMatchResultDTO = MatchResult;
+export type MprSettledRowDTO = SettledRow;
+export type MprPendingRowDTO = PendingRow;
+export type MprAmbiguousRowDTO = AmbiguousMprRow;
+export type MprUnexpectedRowDTO = UnexpectedMprRow;
+export type MprAmexResultDTO = AmexResult;
+export type MprUpiResultDTO = UpiResult;
+
+export interface ParsedMprFileMetaDTO {
+  filename: string;
+  detected: MprAdapterKey | 'UNKNOWN';
+  rowCount: number;
+  error: string | null;
+}
+
+export interface JsonSnapshotFileMetaDTO {
+  filename: string;
+  businessDate: string | null;
+  outlet: string | null;
+  /** Set when this file was skipped (bad JSON / missing `settlementLedger`) — legacy's `alert()`-and-`continue`, surfaced as a warning instead of aborting the whole upload. */
+  error?: string | null;
+}
+
+export interface MprSessionMetaDTO {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  jsonFiles: JsonSnapshotFileMetaDTO[];
+  mprFiles: ParsedMprFileMetaDTO[];
+  /** Sorted union of business dates across every uploaded JSON snapshot. */
+  businessDates: string[];
+  /** Union of outlets seen across every uploaded JSON snapshot. */
+  outlets: string[];
+}
+
+export interface MprSessionDTO {
+  meta: MprSessionMetaDTO;
+  result: MprMatchResultDTO;
+}
+
+/** Row shown in the MPR session list. */
+export interface MprSessionListItemDTO {
+  id: string;
+  createdAt: string;
+  createdBy: string;
+  businessDates: string[];
+  outlets: string[];
+  settledCount: number;
+  mismatchCount: number;
+  pendingCount: number;
+  unexpectedCount: number;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────

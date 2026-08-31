@@ -10,8 +10,9 @@ import { MulterError } from 'multer';
 import { config, describeConfig } from './config.js';
 import { attachUser } from './middleware/auth.js';
 import { advancesRouter, bohRouter } from './routes/repositories.js';
-import { sessionsRouter } from './routes/sessions.js';
 import { justificationRouter } from './routes/justification.js';
+import { mprSessionsRouter } from './routes/mprSessions.js';
+import { sessionsRouter } from './routes/sessions.js';
 import { BadRequestError } from './services/reconService.js';
 
 const app = express();
@@ -37,6 +38,7 @@ app.use('/api/sessions', sessionsRouter);
 app.use('/api/sessions/:id/justification', justificationRouter);
 app.use('/api/advances', advancesRouter);
 app.use('/api/boh', bohRouter);
+app.use('/api/mpr-sessions', mprSessionsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' } satisfies ApiErrorDTO);

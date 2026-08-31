@@ -39,7 +39,7 @@ export function buildReportHtml(snapshot: Snapshot): string {
   const excess = frs.explanations.filter((x) => x.diff > 0.5);
   const short = frs.explanations.filter((x) => x.diff < -0.5);
   const rowOf = (x: (typeof excess)[number], sign: '+' | '-', color: string) =>
-    `<tr><td>${esc(x.source)}</td><td>${esc(x.remark)}</td><td style="font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#6b7280">${esc(x.targetKey || '—')}</td><td class=ra style="color:${color}">${sign}${fmt(Math.abs(x.diff))}</td></tr>`;
+    `<tr><td>${esc(x.label)}</td><td>${esc(x.remark)}</td><td>${esc(x.orderNo || '—')}</td><td class="mono">${esc(x.rrn || '—')}</td><td class=ra style="color:${color}">${sign}${fmt(Math.abs(x.diff))}</td></tr>`;
   const exrows = excess.map((x) => rowOf(x, '+', '#16a34a')).join('');
   const shrows = short.map((x) => rowOf(x, '-', '#dc2626')).join('');
 
@@ -78,7 +78,7 @@ h3{font-size:12px;font-weight:600;margin:.75rem 0 .4rem;color:#6b7280;text-trans
 table{width:100%;border-collapse:collapse;margin-bottom:1rem;font-size:12px}
 th{background:#f9fafb;padding:.4rem .75rem;text-align:left;font-weight:600;border-bottom:2px solid #e5e7eb}
 td{padding:.35rem .75rem;border-bottom:1px solid #f3f4f6}
-.ra{text-align:right}tfoot td{font-weight:700;background:#f9fafb;border-top:2px solid #e5e7eb}
+.ra{text-align:right}.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#6b7280}tfoot td{font-weight:700;background:#f9fafb;border-top:2px solid #e5e7eb}
 .kpis{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
 .kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.6rem 1rem;min-width:120px}
 .kpi-l{font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.04em}
@@ -102,13 +102,13 @@ td{padding:.35rem .75rem;border-bottom:1px solid #f3f4f6}
 <h2>Explanation of Variances</h2>
 <div class=grid2>
 <div><h3>Excess (${excess.length} items)</h3>
-<table><thead><tr><th>Source</th><th>Remark</th><th>Target</th><th class=ra>Amount</th></tr></thead>
-<tbody>${exrows || '<tr><td colspan=4 style="color:#9ca3af">None</td></tr>'}</tbody>
-<tfoot><tr><td colspan=3>Total Excess</td><td class=ra style="color:#16a34a">+${fmt(frs.totalExcess)}</td></tr></tfoot></table></div>
+<table><thead><tr><th>Source</th><th>Remark</th><th>Order No</th><th>RRN</th><th class=ra>Amount</th></tr></thead>
+<tbody>${exrows || '<tr><td colspan=5 style="color:#9ca3af">None</td></tr>'}</tbody>
+<tfoot><tr><td colspan=4>Total Excess</td><td class=ra style="color:#16a34a">+${fmt(frs.totalExcess)}</td></tr></tfoot></table></div>
 <div><h3>Shortage (${short.length} items)</h3>
-<table><thead><tr><th>Source</th><th>Remark</th><th>Target</th><th class=ra>Amount</th></tr></thead>
-<tbody>${shrows || '<tr><td colspan=4 style="color:#9ca3af">None</td></tr>'}</tbody>
-<tfoot><tr><td colspan=3>Total Shortage</td><td class=ra style="color:#dc2626">-${fmt(frs.totalShortage)}</td></tr></tfoot></table></div>
+<table><thead><tr><th>Source</th><th>Remark</th><th>Order No</th><th>RRN</th><th class=ra>Amount</th></tr></thead>
+<tbody>${shrows || '<tr><td colspan=5 style="color:#9ca3af">None</td></tr>'}</tbody>
+<tfoot><tr><td colspan=4>Total Shortage</td><td class=ra style="color:#dc2626">-${fmt(frs.totalShortage)}</td></tr></tfoot></table></div>
 </div>
 
 <h2>Pinelabs Settlement Ledger</h2>

@@ -169,6 +169,11 @@ export function reportUrl(sessionId: string): string {
   return `${API_BASE}/api/sessions/${sessionId}/report`;
 }
 
+/** URL for the raw settlement snapshot JSON — the MPR (Layer 2) module's "Recon Snapshots" input. */
+export function snapshotUrl(sessionId: string): string {
+  return `${API_BASE}/api/sessions/${sessionId}/snapshot.json`;
+}
+
 export async function checkHealth(): Promise<{
   ok: boolean;
   objectStore: string;

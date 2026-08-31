@@ -65,13 +65,21 @@ export function RemarkCell({ source, item, allItems }: Props) {
   // gets a remark control, matching legacy — ambiguous rows aren't offered a
   // square-off checkbox there either.
   const resolvedTargetKeys = new Set(entries.map((e) => e.targetKey));
-  const eligiblePartners = allItems.filter(
-    (x) =>
-      x.globalId !== item.globalId &&
-      isEligibleSquareOffPartner(item, x) &&
-      !resolvedTargetKeys.has(x.targetKey) &&
-      (session.justification.squareOff[x.globalId] ?? []).length === 0,
-  );
+  // A candidate already paired elsewhere is only excluded once that pairing
+  // is itself net-resolved — a still-unresolved existing pairing doesn't rule
+  // it out. Legacy: `mkCell`'s `otherItems` filter (reconciliation
+  // (68).html:1010-1014): `if(xPartners.length>0&&Math.abs(getSquareOffNet(x.globalId))<0.5) return false`.
+  const eligiblePartners = allItems.filter((x) => {
+    if (x.globalId === item.globalId) return false;
+    if (!isEligibleSquareOffPartner(item, x)) return false;
+    if (resolvedTargetKeys.has(x.targetKey)) return false;
+    const xPartners = session.justification.squareOff[x.globalId] ?? [];
+    if (xPartners.length > 0) {
+      const xNet = squareOffNet(session.justification.squareOff, x.globalId, allItems);
+      if (xNet !== null && Math.abs(xNet) < AMOUNT_EPSILON) return false;
+    }
+    return true;
+  });
 
   async function handleRemarkChange(remark: string) {
     setBusy(true);
@@ -86,7 +94,16 @@ export function RemarkCell({ source, item, allItems }: Props) {
       const direction = item.diff >= 0 ? 'excess' : 'shortage';
       const modalKind = modalKindForRemark(remark);
       if (modalKind) {
-        openModal({ kind: modalKind, source, targetKey: item.targetKey, amount: Math.abs(item.diff), direction });
+        openModal({
+          kind: modalKind,
+          source,
+          targetKey: item.targetKey,
+          amount: Math.abs(item.diff),
+          direction,
+          // BOH Clear's source is locked to whichever row triggered it —
+          // legacy: `openBohClearFromRecon` (reconciliation (68).html:4607-4665).
+          lockedSource: modalKind === 'boh-clear' ? (source === 'pinelabs' ? 'Pinelabs' : 'HDFC Static UPI') : undefined,
+        });
         return;
       }
       const updated = await addJustificationEntry(session.meta.id, {

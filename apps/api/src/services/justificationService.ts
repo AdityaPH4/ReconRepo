@@ -23,6 +23,7 @@ import type {
   SubmitGateDTO,
 } from '@toit/contracts';
 import {
+  NO_RRN_REMARKS,
   advanceBalance,
   canSubmit,
   isAdvanceExhausted,
@@ -67,6 +68,18 @@ function newEntry(base: Partial<JustificationEntry> & Pick<JustificationEntry, '
 // ── Plain entries (no repository interaction) ─────────────────────────────
 
 export function addEntry(state: JustificationState, req: AddJustificationEntryRequest): JustificationState {
+  // Every UPI-tab remark except `NO_RRN_REMARKS` needs a real, identifiable
+  // 12-digit RRN, re-validated server-side — legacy: `addUpiEntry`
+  // (reconciliation (68).html:2725-2761).
+  if (req.source === 'upi' && !NO_RRN_REMARKS.includes(req.remark as never)) {
+    if (!req.rrn || !/^\d{12}$/.test(req.rrn)) {
+      throw new JustificationError('A 12-digit RRN is required for this remark.');
+    }
+    if (state.entries.some((e) => e.source === 'upi' && e.rrn === req.rrn)) {
+      throw new JustificationError('This RRN has already been used elsewhere in this session.');
+    }
+  }
+
   const entry = newEntry({
     source: req.source,
     direction: req.direction,
@@ -162,6 +175,17 @@ export function recordAdvance(
       throw new JustificationError(`Event date must be on or after ${minDate}.`);
     }
   }
+  // The UPI tab requires a real, identifiable-transaction RRN for this
+  // remark — legacy: `addUpiEntry` (reconciliation (68).html:2725-2761).
+  // Re-validated server-side, not just trusted from the client.
+  if (req.source === 'upi') {
+    if (!req.rrn || !/^\d{12}$/.test(req.rrn)) {
+      throw new JustificationError('A 12-digit RRN is required for this remark.');
+    }
+    if (state.entries.some((e) => e.source === 'upi' && e.rrn === req.rrn)) {
+      throw new JustificationError('This RRN has already been used elsewhere in this session.');
+    }
+  }
 
   const advance: Advance = {
     id: randomUUID(),
@@ -182,6 +206,7 @@ export function recordAdvance(
     amount: req.amount,
     targetKey: req.targetKey ?? null,
     createdAdvanceId: advance.id,
+    rrn: req.source === 'upi' ? req.rrn! : null,
   });
 
   return {

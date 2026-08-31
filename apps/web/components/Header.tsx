@@ -32,7 +32,12 @@ export function Header({
         {meta?.status === 'submitted' && <span className="pill pill-ok">✓ Submitted</span>}
       </div>
 
-      <div className="app-subtitle">{subtitle}</div>
+      <div className="flex items-center gap-3">
+        <div className="app-subtitle">{subtitle}</div>
+        <a className="btn btn-sm" href="/">
+          🏠 All modules
+        </a>
+      </div>
     </header>
   );
 }

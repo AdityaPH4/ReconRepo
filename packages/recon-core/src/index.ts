@@ -176,8 +176,8 @@ export type { CanSubmitInput, SubmitGateResult, SubmitStatus } from './justifica
 export { advanceBalance, eligibleAdvances, isAdvanceExhausted } from './justification/advances.js';
 export type { EligibleAdvance } from './justification/advances.js';
 
-export { eligibleBohEntries } from './justification/boh.js';
-export type { EligibleBohEntry, EligibleBohOptions } from './justification/boh.js';
+export { autoStageBohRows, eligibleBohEntries } from './justification/boh.js';
+export type { AutoStagedBohRow, EligibleBohEntry, EligibleBohOptions } from './justification/boh.js';
 
 export { buildSnapshot } from './justification/snapshot.js';
 export type { BuildSnapshotInput, Snapshot, SettlementLedgerRow } from './justification/snapshot.js';

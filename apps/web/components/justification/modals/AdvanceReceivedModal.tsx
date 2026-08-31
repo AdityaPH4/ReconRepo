@@ -47,6 +47,7 @@ export function AdvanceReceivedModal({ session, request, onClose, onSaved }: Mod
         phone: phone.trim() || null,
         eventDate,
         notes: notes.trim() || null,
+        rrn: request.rrn ?? null,
       });
       onSaved(updated);
     } catch (err) {

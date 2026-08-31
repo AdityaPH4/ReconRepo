@@ -19,8 +19,8 @@
 
 import { useState } from 'react';
 import type { ExplainedItemDTO, FrsRowDTO, PinelabsBreakdownDTO, SessionDTO } from '@toit/contracts';
-import { AMOUNT_EPSILON, THRESHOLD, entryNet, fmt } from '@toit/recon-core/display';
-import { ApiError, reportUrl, submitSession } from '@/lib/api';
+import { AMOUNT_EPSILON, THRESHOLD, entryNet, fmt, hdfcUpiCompleteness } from '@toit/recon-core/display';
+import { ApiError, reportUrl, snapshotUrl, submitSession } from '@/lib/api';
 
 export function FinalReconSummary({
   session,
@@ -77,7 +77,7 @@ export function FinalReconSummary({
         colorClass="diff-short"
       />
 
-      <SourceStatusSection submitGate={submitGate} totals={totals} justification={justification} />
+      <SourceStatusSection session={session} />
 
       <div className="frs-section">
         <h2 className="frs-title">Net position</h2>
@@ -120,6 +120,9 @@ export function FinalReconSummary({
                 </button>
                 <a className="btn" href={reportUrl(session.meta.id)} target="_blank" rel="noreferrer">
                   📄 View printable report
+                </a>
+                <a className="btn" href={snapshotUrl(session.meta.id)} target="_blank" rel="noreferrer">
+                  📋 Download snapshot JSON
                 </a>
               </div>
             </>
@@ -280,7 +283,11 @@ function PinelabsBreakdown({ breakdown }: { breakdown: PinelabsBreakdownDTO }) {
                     {r.diff === null
                       ? '—'
                       : Math.abs(r.diff) < AMOUNT_EPSILON
-                        ? '✓ Balanced'
+                        ? // Legacy reserves the "✓ Balanced" label for the AMEX row only —
+                          // HDFC/Kotak just show "—" on a near-zero diff.
+                          r.acquirer === 'AMEX'
+                          ? '✓ Balanced'
+                          : '—'
                         : (r.diff > 0 ? '+' : '') + fmt(Math.abs(r.diff))}
                   </td>
                 </tr>
@@ -412,19 +419,23 @@ function groupByRemark(items: ExplainedItemDTO[]): Array<{ remark: string; rows:
 
 // ── Source reconciliation status ────────────────────────────────────────────
 
-function SourceStatusSection({
-  submitGate,
-  totals,
-  justification,
-}: {
-  submitGate: SessionDTO['submitGate'];
-  totals: SessionDTO['totals'];
-  justification: SessionDTO['justification'];
-}) {
+function SourceStatusSection({ session }: { session: SessionDTO }) {
+  const { submitGate, totals, justification, result } = session;
+
   const cashDiff = totals.cash.diff ?? 0;
   const cashResidual = cashDiff - entryNet(justification.entries, 'cash');
-  const upiDiff = (totals.hdfcUpi.diff ?? 0) + (totals.kotakUpi.diff ?? 0);
+
+  // Once an HDFC statement exists, the "unexplained" figure must be the same
+  // count-based completeness net the submit gate itself uses
+  // (`hdfcUpiCompleteness().netDiff`), not the aggregate drawer-vs-PR diff —
+  // otherwise this caption can show a materially different number than what
+  // `submitGate.perSource.upi` actually gated on.
+  const hdfcCompleteness = hdfcUpiCompleteness(result.upiHdfc as never, justification.entries, justification.squareOff);
+  const hdfcDiff = hdfcCompleteness ? hdfcCompleteness.netDiff : (totals.hdfcUpi.diff ?? 0);
+  const kotakDiff = totals.kotakUpi.diff ?? 0;
+  const upiDiff = hdfcDiff + kotakDiff;
   const upiResidual = upiDiff - entryNet(justification.entries, 'upi');
+
   const bankDiff = totals.bank.diff ?? 0;
   const bankResidual = bankDiff - entryNet(justification.entries, 'bank');
 

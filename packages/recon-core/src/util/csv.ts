@@ -70,12 +70,6 @@ export function headerIndex(headerRow: readonly string[]) {
       const key = k.toLowerCase();
       return h.findIndex((x) => x === key);
     },
-    /** Exact match preferred, falling back to a containment match. */
-    preferExact(k: string): number {
-      const key = k.toLowerCase();
-      const e = h.findIndex((x) => x === key);
-      return e !== -1 ? e : h.findIndex((x) => x.includes(key));
-    },
   };
 }
 
