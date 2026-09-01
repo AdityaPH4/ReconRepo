@@ -12,7 +12,7 @@
  */
 
 import type { SessionDTO } from '@toit/contracts';
-import { fmt } from '@toit/recon-core/display';
+import { fmt, hdfcUpiCompleteness } from '@toit/recon-core/display';
 import { useState } from 'react';
 import { FinalReconSummary } from '@/components/FinalReconSummary';
 import { KpiTiles, type PanelId } from '@/components/KpiTiles';
@@ -81,6 +81,18 @@ function TransactionView({
   const { meta, result, counts, totals, justification } = session;
   const locked = meta.status === 'submitted';
 
+  // Same canonical figure the "HDFC / Kotak UPI" KPI tile shows (`KpiTiles.tsx`):
+  // once an HDFC statement exists, HDFC's own share switches from the aggregate
+  // diff to the transaction-level completeness net — Kotak always stays aggregate.
+  const hdfcCompletenessForDiff = hdfcUpiCompleteness(
+    result.upiHdfc as never,
+    justification.entries,
+    justification.squareOff,
+  );
+  const upiDiff =
+    (hdfcCompletenessForDiff ? hdfcCompletenessForDiff.netDiff : (totals.hdfcUpi.diff ?? 0)) +
+    (totals.kotakUpi.diff ?? 0);
+
   return (
     <>
       <div className="results-header mt-6">
@@ -135,14 +147,15 @@ function TransactionView({
 
       {panel === 'cash' && (
         <>
+          <AggregateJustificationPanel source="cash" title="Cash" diff={totals.cash.diff} />
           <AggregatePanel title="Cash" totals={totals.cash} rows={result.cash} />
-          <AggregateJustificationPanel source="cash" title="Cash" />
         </>
       )}
 
       {panel === 'upi' && (
         <>
           {result.upiHdfc && <HdfcUpiPanel upiHdfc={result.upiHdfc} />}
+          <AggregateJustificationPanel source="upi" title="Static UPI" diff={upiDiff} />
           <AggregatePanel
             title="Static UPI"
             totals={totals.hdfcUpi}
@@ -165,14 +178,13 @@ function TransactionView({
                 : 'No HDFC statement uploaded — both HDFC and Kotak Static UPI use the aggregate drawer comparison.'
             }
           />
-          <AggregateJustificationPanel source="upi" title="Static UPI" />
         </>
       )}
 
       {panel === 'bank' && (
         <>
+          <AggregateJustificationPanel source="bank" title="Bank transfer" diff={totals.bank.diff} />
           <AggregatePanel title="Bank transfer" totals={totals.bank} rows={result.bank} />
-          <AggregateJustificationPanel source="bank" title="Bank transfer" />
         </>
       )}
 

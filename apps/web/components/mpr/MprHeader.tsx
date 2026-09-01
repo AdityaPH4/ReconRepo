@@ -4,6 +4,8 @@
  * own to show (an MPR run can span several outlets and dates at once).
  */
 
+import { UserMenu } from '@/components/auth/UserMenu';
+
 export function MprHeader({ subtitle }: { subtitle: string }) {
   return (
     <header className="app-header">
@@ -18,6 +20,7 @@ export function MprHeader({ subtitle }: { subtitle: string }) {
         <a className="btn btn-sm" href="/">
           🏠 All modules
         </a>
+        <UserMenu />
       </div>
     </header>
   );

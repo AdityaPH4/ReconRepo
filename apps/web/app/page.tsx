@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AdminLink } from '@/components/admin/AdminLink';
 
 /**
  * Landing hub — picks which of the two modules to open.
@@ -19,6 +20,7 @@ export default function HomePage() {
             <span className="pill">Pick a module to continue</span>
           </div>
         </div>
+        <AdminLink />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">

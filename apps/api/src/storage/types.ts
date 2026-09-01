@@ -7,6 +7,8 @@
  */
 
 import type {
+  ApprovalRequestDTO,
+  ApprovalStatus,
   MprSessionDTO,
   MprSessionListItemDTO,
   SessionDTO,
@@ -110,4 +112,21 @@ export interface MprSessionStore {
   create(session: MprSessionDTO): Promise<MprSessionDTO>;
   get(id: string): Promise<MprSessionDTO | null>;
   list(query: MprSessionQuery): Promise<MprSessionListItemDTO[]>;
+}
+
+// ── Approval requests — a GM re-reconciling the same outlet+date needs an ──
+// admin to unblock it. See `services/approvalService.ts`.
+
+export interface ApprovalQuery {
+  outlet?: OutletCode;
+  status?: ApprovalStatus;
+  requestedBy?: string;
+}
+
+export interface ApprovalStore {
+  readonly driver: 'memory' | 'postgres';
+  create(request: ApprovalRequestDTO): Promise<ApprovalRequestDTO>;
+  get(id: string): Promise<ApprovalRequestDTO | null>;
+  list(query: ApprovalQuery): Promise<ApprovalRequestDTO[]>;
+  decide(id: string, status: 'approved' | 'denied', decidedBy: string, decidedAt: string): Promise<ApprovalRequestDTO>;
 }

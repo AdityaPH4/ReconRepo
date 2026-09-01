@@ -14,7 +14,7 @@ import type { MprSessionDTO } from '@toit/contracts';
 import { normDate } from '@toit/mpr-core';
 import { useState } from 'react';
 import { mprExportCsvUrl } from '@/lib/mprApi';
-import { EmptyRow, PanelSection } from '@/components/ui/table';
+import { EmptyRow, PanelSection, diffClass } from '@/components/ui/table';
 
 type TabId = 'settled' | 'mismatch' | 'pending' | 'ambiguous' | 'unexpected' | 'amex' | 'upi';
 
@@ -270,7 +270,7 @@ function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch']
                   <td className="mono">{r._businessDate}</td>
                   <td className="num">{fmt(r.plAmount)}</td>
                   <td className="num">{fmt(r.mpr.grossAmount)}</td>
-                  <td className={`num ${r._diff > 0 ? 'diff-excess' : 'diff-short'}`}>{signedFmt(r._diff)}</td>
+                  <td className={`num ${diffClass(r._diff)}`}>{signedFmt(r._diff)}</td>
                   <td>{r.l1Status || '—'}</td>
                 </tr>
               ))
@@ -280,7 +280,9 @@ function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch']
                 <td colSpan={4}>Total</td>
                 <td className="num">{fmt(rows.reduce((s, r) => s + r.plAmount, 0))}</td>
                 <td className="num">{fmt(rows.reduce((s, r) => s + r.mpr.grossAmount, 0))}</td>
-                <td className="num">{fmt(rows.reduce((s, r) => s + r._diff, 0))}</td>
+                <td className={`num ${diffClass(rows.reduce((s, r) => s + r._diff, 0))}`}>
+                  {signedFmt(rows.reduce((s, r) => s + r._diff, 0))}
+                </td>
                 <td />
               </tr>
             )}
@@ -523,29 +525,20 @@ function AmexTab({ rows }: { rows: MprSessionDTO['result']['amexResults'] }) {
             );
           })
         )}
-        {group.length > 0 && (
-          <tr className="total-row">
-            <td colSpan={6}>Total</td>
-            <td className="num">{fmt(group.reduce((s, r) => s + (r.l1Total || 0), 0))}</td>
-            <td className="num">{fmt(group.reduce((s, r) => s + (r.mprRow?.submissionAmount || 0), 0))}</td>
-            <td
-              className={`num ${
-                Math.abs(
-                  group.reduce((s, r) => s + (r.l1Total || 0), 0) -
-                    group.reduce((s, r) => s + (r.mprRow?.submissionAmount || 0), 0),
-                ) > 0.5
-                  ? 'diff-short'
-                  : 'diff-excess'
-              }`}
-            >
-              {signedFmt(
-                group.reduce((s, r) => s + (r.l1Total || 0), 0) -
-                  group.reduce((s, r) => s + (r.mprRow?.submissionAmount || 0), 0),
-              )}
-            </td>
-            <td colSpan={3} />
-          </tr>
-        )}
+        {group.length > 0 && (() => {
+          const l1Sum = group.reduce((s, r) => s + (r.l1Total || 0), 0);
+          const mprSum = group.reduce((s, r) => s + (r.mprRow?.submissionAmount || 0), 0);
+          const totalDiff = l1Sum - mprSum;
+          return (
+            <tr className="total-row">
+              <td colSpan={6}>Total</td>
+              <td className="num">{fmt(l1Sum)}</td>
+              <td className="num">{fmt(mprSum)}</td>
+              <td className={`num ${diffClass(totalDiff)}`}>{signedFmt(totalDiff)}</td>
+              <td colSpan={3} />
+            </tr>
+          );
+        })()}
       </tbody>
     </table>
   );
@@ -722,9 +715,7 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
                     <td className="text-tiny text-ink-3">{prDate(r)}</td>
                     <td className="num">{fmt(prTotal(r))}</td>
                     <td className="num">{r.mpr ? fmt(r.mpr.grossAmount) : '—'}</td>
-                    <td className={`num ${d.ok ? 'diff-excess' : r._diff != null && r._diff > 0 ? 'diff-excess' : 'diff-short'}`}>
-                      {d.text}
-                    </td>
+                    <td className={`num ${diffClass(r._diff)}`}>{d.text}</td>
                   </tr>
                 );
               })}

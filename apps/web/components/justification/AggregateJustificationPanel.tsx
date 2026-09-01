@@ -25,6 +25,7 @@ import {
   fmt,
 } from '@toit/recon-core/display';
 import { ApiError, addJustificationEntry, removeJustificationEntry } from '@/lib/api';
+import { diffClass } from '@/components/ui/table';
 import { modalKindForRemark } from './types';
 import { useJustification } from './JustificationProvider';
 
@@ -43,7 +44,22 @@ const BOH_LOCKED_SOURCE: Record<Source, string> = {
   bank: 'Bank Transfer',
 };
 
-export function AggregateJustificationPanel({ source, title }: { source: Source; title: string }) {
+export function AggregateJustificationPanel({
+  source,
+  title,
+  diff = null,
+}: {
+  source: Source;
+  title: string;
+  /**
+   * The aggregate PR-vs-summary difference to reconcile against — `null`
+   * when no drawer summary exists yet. Legacy's `renderCash`/`renderUPI`/
+   * `renderBank` show this alongside "Net entries" and "Remaining
+   * unjustified" in one stats row above the entry form (1959–1976,
+   * 2531–2547 for the UPI "Net Entries" tile, 3038–3054).
+   */
+  diff?: number | null;
+}) {
   const { session, locked, updateSession, openModal } = useJustification();
   const [direction, setDirection] = useState<'excess' | 'shortage'>('excess');
   const [remark, setRemark] = useState('');
@@ -57,6 +73,7 @@ export function AggregateJustificationPanel({ source, title }: { source: Source;
 
   const entries = session.justification.entries.filter((e) => e.source === source);
   const net = entries.reduce((s, e) => s + (e.direction === 'excess' ? e.amount : -e.amount), 0);
+  const remaining = diff === null ? null : diff - net;
   const remarks = REMARKS_BY_SOURCE[source][direction];
   const needsBill = source === 'cash' && CASH_BILL_REMARKS.includes(remark as never);
   const isModalRemark = MODAL_REMARKS.includes(remark as never);
@@ -165,6 +182,29 @@ export function AggregateJustificationPanel({ source, title }: { source: Source;
 
   return (
     <div className="panel mt-4">
+      {diff !== null && (
+        <div className="info-panel">
+          <div className="info-grid">
+            <div className="info-card">
+              <p className="info-label">Net entries</p>
+              <p className={`info-value ${diffClass(net)}`}>
+                {net >= 0 ? '+' : ''}
+                {fmt(net)}
+              </p>
+              <p className="text-micro text-ink-3 mt-1">
+                {entries.length ? `${entries.length} line${entries.length === 1 ? '' : 's'}` : 'none yet'}
+              </p>
+            </div>
+            <div className="info-card">
+              <p className="info-label">Remaining unjustified</p>
+              <p className={`info-value ${diffClass(remaining)}`}>
+                {remaining === null ? '—' : `${remaining >= 0 ? '+' : ''}${fmt(remaining)}`}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!locked && (
         <div className="entry-form p-5">
           <h4 className="font-semibold text-body mb-3">Add {title.toLowerCase()} justification</h4>

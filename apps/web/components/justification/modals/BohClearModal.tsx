@@ -38,7 +38,19 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
 
   useEffect(() => {
     listEligibleBoh(session.meta.id, { includeToday, amount: exactAmount })
-      .then(setEntries)
+      .then((result) => {
+        setEntries(result);
+        // Opened from a specific repository row's own "Clear" button — put
+        // it straight into the selection so the operator doesn't have to
+        // re-find it in the list.
+        if (request.preselectBohEntryId && result.some((r) => r.entry.id === request.preselectBohEntryId)) {
+          setSelected((prev) =>
+            prev[request.preselectBohEntryId!] !== undefined
+              ? prev
+              : { ...prev, [request.preselectBohEntryId!]: request.lockedSource ?? '' },
+          );
+        }
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load BOH entries.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.meta.id, includeToday, exactAmount]);
@@ -103,7 +115,7 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
             Cancel
           </button>
           <button type="button" className="btn btn-ok" onClick={save} disabled={saving || selectedIds.length === 0}>
-            {saving ? 'Saving…' : selectedIds.length > 1 ? `Clear ${selectedIds.length}` : 'Clear'}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
         </>
       }

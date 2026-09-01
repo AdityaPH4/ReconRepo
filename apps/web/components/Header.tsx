@@ -4,6 +4,7 @@
  */
 
 import type { SessionMetaDTO } from '@toit/contracts';
+import { UserMenu } from '@/components/auth/UserMenu';
 
 export function Header({
   meta,
@@ -37,6 +38,7 @@ export function Header({
         <a className="btn btn-sm" href="/">
           🏠 All modules
         </a>
+        <UserMenu />
       </div>
     </header>
   );

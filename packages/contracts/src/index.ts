@@ -447,10 +447,74 @@ export interface CurrentUserDTO {
   outlet: OutletCode | null;
 }
 
+// ── Approval workflow — a GM re-reconciling the same outlet+date needs an ──
+// admin to unblock it (guards against a wrong-file re-run going unnoticed).
+
+export type ApprovalStatus = 'pending' | 'approved' | 'denied';
+
+export interface ApprovalRequestDTO {
+  id: string;
+  outlet: OutletCode;
+  /** `yyyy-mm-dd` — the business date this unblocks a re-run for. */
+  businessDate: string;
+  requestedBy: string;
+  requestedAt: string;
+  reason: string | null;
+  status: ApprovalStatus;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
+
+export interface RequestApprovalRequest {
+  outlet: OutletCode;
+  businessDate: string;
+  reason: string | null;
+}
+
+// ── Manager dashboard ────────────────────────────────────────────────────
+
+export interface DashboardTipsRowDTO {
+  /** `'T'`, `'T-1'` … `'T-7'`. */
+  label: string;
+  /** `yyyy-mm-dd`. */
+  date: string;
+  amount: number;
+}
+
+export type BohAgingBucket = '1' | '2' | '3' | '4' | '5' | '5+';
+
+export interface DashboardBohAgingRowDTO {
+  bucket: BohAgingBucket;
+  count: number;
+  amount: number;
+}
+
+export interface DashboardTodayStatusDTO {
+  /** `null` when no session exists yet for `(outlet, today)`. */
+  sessionId: string | null;
+  status: SessionStatus | null;
+  grandDiff: number | null;
+}
+
+export interface DashboardDTO {
+  outlet: OutletCode;
+  today: string;
+  todayStatus: DashboardTodayStatusDTO;
+  tips: DashboardTipsRowDTO[];
+  tipsWeekCurrent: number;
+  tipsWeekPrevious: number;
+  bohAging: DashboardBohAgingRowDTO[];
+  bohTotal: { count: number; amount: number };
+}
+
 // ── Errors ────────────────────────────────────────────────────────────────
 
 export interface ApiErrorDTO {
   error: string;
   /** Field-level detail for validation failures. */
   details?: Record<string, string>;
+  /** Set only on the "already reconciled today" block, so the frontend can offer "Request approval" without string-matching `error`. */
+  code?: 'APPROVAL_REQUIRED';
+  outlet?: OutletCode;
+  businessDate?: string;
 }

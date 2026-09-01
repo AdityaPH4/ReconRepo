@@ -5,16 +5,25 @@
 import { config } from '../config.js';
 import { createLocalObjectStore } from './localObjectStore.js';
 import { createMemoryAdvanceStore } from './memoryAdvanceStore.js';
+import { createMemoryApprovalStore } from './memoryApprovalStore.js';
 import { createMemoryBohStore } from './memoryBohStore.js';
 import { createMemoryMprSessionStore } from './memoryMprSessionStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
-import type { AdvanceStore, BohStore, MprSessionStore, ObjectStore, SessionStore } from './types.js';
+import type {
+  AdvanceStore,
+  ApprovalStore,
+  BohStore,
+  MprSessionStore,
+  ObjectStore,
+  SessionStore,
+} from './types.js';
 
 let objectStore: ObjectStore | null = null;
 let sessionStore: SessionStore | null = null;
 let advanceStore: AdvanceStore | null = null;
 let bohStore: BohStore | null = null;
 let mprSessionStore: MprSessionStore | null = null;
+let approvalStore: ApprovalStore | null = null;
 
 export function getObjectStore(): ObjectStore {
   if (objectStore) return objectStore;
@@ -81,5 +90,18 @@ export function getMprSessionStore(): MprSessionStore {
   return mprSessionStore;
 }
 
-export type { AdvanceStore, BohStore, MprSessionStore, ObjectStore, SessionStore } from './types.js';
+export function getApprovalStore(): ApprovalStore {
+  if (approvalStore) return approvalStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    throw new Error(
+      'Postgres approval store is not implemented yet. Unset DATABASE_URL to use the in-memory store.',
+    );
+  }
+
+  approvalStore = createMemoryApprovalStore();
+  return approvalStore;
+}
+
+export type { AdvanceStore, ApprovalStore, BohStore, MprSessionStore, ObjectStore, SessionStore } from './types.js';
 export { buildStorageKey } from './types.js';

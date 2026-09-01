@@ -8,23 +8,33 @@
  * `/sessions/[id]` and render identically.
  */
 
+import type { OutletCode } from '@toit/recon-core/display';
 import type { SessionDTO } from '@toit/contracts';
 import { useState } from 'react';
+import { Dashboard } from '@/components/Dashboard';
 import { Header } from '@/components/Header';
 import { SessionWorkspace } from '@/components/SessionWorkspace';
 import { UploadPanel, type SelectedFiles } from '@/components/UploadPanel';
-import { ApiError, createSession } from '@/lib/api';
+import { ApiError, createSession, requestApproval } from '@/lib/api';
+
+interface ApprovalBlock {
+  outlet: OutletCode;
+  businessDate: string;
+  requested: boolean;
+}
 
 export function ReconciliationApp() {
   const [files, setFiles] = useState<SelectedFiles>({});
   const [session, setSession] = useState<SessionDTO | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [approvalBlock, setApprovalBlock] = useState<ApprovalBlock | null>(null);
 
   async function run() {
     if (!files.pr || !files.zip) return;
     setRunning(true);
     setError(null);
+    setApprovalBlock(null);
     try {
       const dto = await createSession({
         pr: files.pr,
@@ -34,15 +44,30 @@ export function ReconciliationApp() {
       });
       setSession(dto);
     } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? `Could not reach the API — is it running on port 4000? (${err.message})`
-            : 'Unknown error',
-      );
+      if (err instanceof ApiError && err.code === 'APPROVAL_REQUIRED' && err.outlet && err.businessDate) {
+        setApprovalBlock({ outlet: err.outlet, businessDate: err.businessDate, requested: false });
+        setError(err.message);
+      } else {
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+              ? `Could not reach the API — is it running on port 4000? (${err.message})`
+              : 'Unknown error',
+        );
+      }
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function askForApproval() {
+    if (!approvalBlock) return;
+    try {
+      await requestApproval({ outlet: approvalBlock.outlet, businessDate: approvalBlock.businessDate, reason: null });
+      setApprovalBlock({ ...approvalBlock, requested: true });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to request approval.');
     }
   }
 
@@ -50,6 +75,7 @@ export function ReconciliationApp() {
     setSession(null);
     setFiles({});
     setError(null);
+    setApprovalBlock(null);
   }
 
   const subtitle = session
@@ -64,6 +90,7 @@ export function ReconciliationApp() {
         <SessionWorkspace session={session} onNewUpload={reset} />
       ) : (
         <main className="app-main">
+          <Dashboard />
           <UploadPanel
             files={files}
             onFilesChange={setFiles}
@@ -71,9 +98,12 @@ export function ReconciliationApp() {
             onClear={() => {
               setFiles({});
               setError(null);
+              setApprovalBlock(null);
             }}
             running={running}
             error={error}
+            approvalBlock={approvalBlock}
+            onRequestApproval={askForApproval}
           />
         </main>
       )}

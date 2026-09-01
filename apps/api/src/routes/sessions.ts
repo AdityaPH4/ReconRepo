@@ -14,6 +14,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
 import { outletScope } from '../middleware/auth.js';
+import { assertReconAllowed } from '../services/approvalService.js';
 import { buildExplanationItems, computeSubmitGate } from '../services/justificationService.js';
 import {
   BadRequestError,
@@ -72,6 +73,13 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       ...(sum ? { sum: { buffer: sum.buffer, originalName: sum.originalname } } : {}),
       ...(hdfc ? { hdfc: { buffer: hdfc.buffer, originalName: hdfc.originalname } } : {}),
     });
+
+    // A GM re-reconciling the same outlet+date needs an admin's approval —
+    // parsing is pure (nothing written yet), so this throws before anything
+    // is persisted. Admins are exempt; they're the approvers.
+    if (req.user.role === 'gm') {
+      await assertReconAllowed(outcome.outlet, outcome.businessDate);
+    }
 
     // Raw files are persisted only once reconciliation has succeeded, so a
     // rejected upload leaves nothing half-written behind.

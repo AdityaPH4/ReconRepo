@@ -25,7 +25,7 @@
  */
 
 import type { SessionDTO } from '@toit/contracts';
-import { bankOk, cashOk, fmt, hdfcUpiCompleteness, upiOk } from '@toit/recon-core/display';
+import { bankOk, cashOk, fmt, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from '@toit/recon-core/display';
 
 export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank' | 'advances';
 
@@ -94,13 +94,13 @@ function buildTiles(session: SessionDTO): Tile[] {
   const entries = justification.entries;
 
   // ── Pinelabs ──────────────────────────────────────────────────────────
-  const plOutstanding =
-    counts.pinelabs.unreconciled +
-    counts.pinelabs.onlyPOS +
-    counts.pinelabs.onlyTerm +
-    counts.pinelabs.dupRRN +
-    counts.pinelabs.amexDup +
-    counts.pinelabs.amexDupTerm;
+  // `counts.pinelabs.*` are structural row counts fixed at upload time — they
+  // never shrink as remarks/square-offs resolve rows, so the tile would keep
+  // showing the original total forever. `pinelabsCompleteness`'s
+  // `unresolvedCount` is the same live, entries-aware count the submit gate
+  // itself uses (see `canSubmit`'s `plOk`), so the tile now tracks it too.
+  const plCompleteness = pinelabsCompleteness(result.pinelabs as never, entries, justification.squareOff);
+  const plOutstanding = plCompleteness.unresolvedCount;
   const plRecTotal = counts.pinelabs.reconciled;
 
   // ── Cash ──────────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@
  */
 
 import path from 'node:path';
+import { OUTLET_CODES, type OutletCode } from '@toit/recon-core';
 
 function str(name: string, fallback: string): string {
   const v = process.env[name];
@@ -19,6 +20,33 @@ function int(name: string, fallback: number): number {
   if (v === undefined || v === '') return fallback;
   const n = Number.parseInt(v, 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+/** `ADMIN_EMAILS=alice@toit.in,bob@toit.in` → a lowercased lookup set. */
+function parseAdminEmails(name: string): Set<string> {
+  const v = process.env[name];
+  if (!v) return new Set();
+  return new Set(
+    v
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
+
+/** `GM_OUTLETS=carol@toit.in:BLRT,dave@toit.in:PUNT` → a lowercased email → outlet map. Entries naming an unknown outlet code are dropped, not silently miskeyed. */
+function parseGmOutlets(name: string): Map<string, OutletCode> {
+  const v = process.env[name];
+  const map = new Map<string, OutletCode>();
+  if (!v) return map;
+  for (const pair of v.split(',')) {
+    const [rawEmail, rawOutlet] = pair.split(':').map((s) => s.trim());
+    if (!rawEmail || !rawOutlet) continue;
+    const outlet = rawOutlet.toUpperCase() as OutletCode;
+    if (!(OUTLET_CODES as string[]).includes(outlet)) continue;
+    map.set(rawEmail.toLowerCase(), outlet);
+  }
+  return map;
 }
 
 const repoRoot = path.resolve(process.cwd(), '../..');
@@ -59,9 +87,10 @@ export const config = {
   },
 
   /**
-   * Auth. Real credential auth lands with Postgres; until then a fixed
-   * development identity is injected so every route is already written
-   * user-aware and outlet-scoped, with nothing to unpick later.
+   * Auth. Real Google sign-in is active once `AUTH_SECRET` is set — the same
+   * secret HMAC-signs the app's own bearer token (see `middleware/auth.ts`)
+   * and is never sent to Google. Until then a fixed development identity is
+   * injected so every route stays user-aware and outlet-scoped either way.
    */
   auth: {
     enabled: Boolean(process.env.AUTH_SECRET),
@@ -72,7 +101,20 @@ export const config = {
       role: 'admin' as const,
       outlet: null,
     },
+    /** Case-insensitive; role is resolved once at Google sign-in and baked into that session's bearer token. */
+    adminEmails: parseAdminEmails('ADMIN_EMAILS'),
+    gmOutlets: parseGmOutlets('GM_OUTLETS'),
   },
+
+  /** Google OAuth — Client ID/Secret from Google Cloud Console; redirect URI must match exactly what's registered there. */
+  google: {
+    clientId: str('GOOGLE_CLIENT_ID', ''),
+    clientSecret: str('GOOGLE_CLIENT_SECRET', ''),
+    redirectUri: str('GOOGLE_REDIRECT_URI', ''),
+  },
+
+  /** Where the browser lands after a successful Google sign-in. */
+  webAppUrl: str('WEB_APP_URL', 'http://localhost:3000'),
 } as const;
 
 /** One-line summary of what this process is actually wired to, logged at boot. */

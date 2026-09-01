@@ -16,14 +16,22 @@ import { config } from '../config.js';
 import { BadMprRequestError, runMprReconciliation } from '../services/mprService.js';
 import { getMprSessionStore } from '../storage/index.js';
 
+// MPR reconciliation is a bulk operation by nature — a single run commonly
+// spans many days' worth of JSON snapshots and bank MPR files at once (the
+// upload panel's own hint text says "any count" for MPR files). A low
+// per-field cap here doesn't reject with a clear "too many files" message —
+// multer throws a generic `LIMIT_UNEXPECTED_FILE` ("Unexpected field") once
+// a field's count is exceeded, which reads like an unrelated failure. These
+// caps exist only to bound a single request, not to limit real usage.
+const MAX_FILES_PER_FIELD = 500;
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: config.maxUploadBytes, files: 40 },
+  limits: { fileSize: config.maxUploadBytes, files: MAX_FILES_PER_FIELD * 2 },
 });
 
 const UPLOAD_FIELDS = [
-  { name: 'json', maxCount: 20 },
-  { name: 'mpr', maxCount: 20 },
+  { name: 'json', maxCount: MAX_FILES_PER_FIELD },
+  { name: 'mpr', maxCount: MAX_FILES_PER_FIELD },
 ] as const;
 
 type UploadedFiles = Record<string, Express.Multer.File[] | undefined>;

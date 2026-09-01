@@ -139,20 +139,6 @@ export function RemarkCell({ source, item, allItems }: Props) {
 
   return (
     <div className="flex flex-col gap-1">
-      <select
-        className="field-input"
-        value={entry?.remark ?? ''}
-        disabled={disabled || isSquared}
-        onChange={(e) => handleRemarkChange(e.target.value)}
-      >
-        <option value="">{isSquared ? 'Squared off' : 'Select remark…'}</option>
-        {remarkOptions.map((r) => (
-          <option key={r} value={r}>
-            {r}
-          </option>
-        ))}
-      </select>
-
       {isSquared ? (
         <div className="flex items-center gap-2 text-tiny">
           <span className="tag tag-pur">🔗 Squared off</span>
@@ -185,6 +171,22 @@ export function RemarkCell({ source, item, allItems }: Props) {
             ))}
           </select>
         )
+      )}
+
+      {!isSquared && (
+        <select
+          className="field-input"
+          value={entry?.remark ?? ''}
+          disabled={disabled}
+          onChange={(e) => handleRemarkChange(e.target.value)}
+        >
+          <option value="">Select remark…</option>
+          {remarkOptions.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
       )}
     </div>
   );

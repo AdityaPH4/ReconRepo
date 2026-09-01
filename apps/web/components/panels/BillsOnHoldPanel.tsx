@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react';
 import type { EligibleBohEntryDTO, Jsonified, PanelTotalsDTO } from '@toit/contracts';
 import type { PRRow } from '@toit/recon-core/display';
 import { fmt, fmtDate } from '@toit/recon-core/display';
-import { ApiError, listEligibleBoh, removeBohStaging, removeJustificationEntry } from '@/lib/api';
+import { ApiError, listEligibleBoh, removeJustificationEntry } from '@/lib/api';
 import { EmptyRow, PanelSection } from '@/components/ui/table';
 import { useJustification } from '@/components/justification/JustificationProvider';
 
@@ -36,14 +36,9 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
   const stagedOrderNos = new Set(staged.map((s) => s.orderNo));
   const cleared = session.justification.draftBohClearances;
 
-  async function removeStaging(id: string) {
-    try {
-      const updated = await removeBohStaging(session.meta.id, id);
-      updateSession(updated);
-    } catch (err) {
-      window.alert(err instanceof ApiError ? err.message : 'Failed to remove.');
-    }
-  }
+  const businessDate = session.meta.businessDate;
+  const todayOpen = open?.filter(({ entry }) => entry.bohDate === businessDate) ?? [];
+  const previousOpen = open?.filter(({ entry }) => entry.bohDate !== businessDate) ?? [];
 
   // A clearance's own row carries no entry id — it's linked the other way,
   // via the justification entry's `bohClearanceId` (see `clearBoh` in
@@ -131,7 +126,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
         </table>
       </PanelSection>
 
-      <PanelSection title={`Open in repository (${open?.length ?? 0})`}>
+      <PanelSection title={`Previous / pending BOH (${previousOpen.length})`}>
         <table className="data-table">
           <thead>
             <tr>
@@ -145,10 +140,10 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
           <tbody>
             {!open ? (
               <EmptyRow cols={5} message="Loading…" />
-            ) : open.length === 0 ? (
-              <EmptyRow cols={5} message="No open bills-on-hold entries for this outlet." />
+            ) : previousOpen.length === 0 ? (
+              <EmptyRow cols={5} message="No pending bills-on-hold entries from previous days." />
             ) : (
-              open.map(({ entry }) => (
+              previousOpen.map(({ entry }) => (
                 <tr key={entry.id}>
                   <td>{entry.orderNo}</td>
                   <td>{entry.custName}</td>
@@ -166,6 +161,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
                             targetKey: null,
                             amount: 0,
                             direction: 'excess',
+                            preselectBohEntryId: entry.id,
                           })
                         }
                       >
@@ -180,36 +176,55 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
         </table>
       </PanelSection>
 
-      {staged.length > 0 && (
-        <PanelSection title={`Staged this session — committed on submit (${staged.length})`}>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th className="w-[20%]">Order no</th>
-                <th className="w-[30%]">Customer</th>
-                <th className="w-[20%] num">Amount</th>
-                <th className="w-[30%]" />
-              </tr>
-            </thead>
-            <tbody>
-              {staged.map((s) => (
-                <tr key={s.id}>
-                  <td>{s.orderNo}</td>
-                  <td>{s.custName}</td>
-                  <td className="num">{fmt(s.amount)}</td>
+      <PanelSection title={`Today's BOH (${todayOpen.length})`}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th className="w-[18%]">Order no</th>
+              <th className="w-[26%]">Customer</th>
+              <th className="w-[18%]">BOH date</th>
+              <th className="w-[18%] num">Amount</th>
+              <th className="w-[20%]" />
+            </tr>
+          </thead>
+          <tbody>
+            {!open ? (
+              <EmptyRow cols={5} message="Loading…" />
+            ) : todayOpen.length === 0 ? (
+              <EmptyRow cols={5} message="No bills-on-hold entries staged today." />
+            ) : (
+              todayOpen.map(({ entry }) => (
+                <tr key={entry.id}>
+                  <td>{entry.orderNo}</td>
+                  <td>{entry.custName}</td>
+                  <td className="mono">{entry.bohDate}</td>
+                  <td className="num">{fmt(entry.amount)}</td>
                   <td>
                     {!locked && (
-                      <button type="button" className="btn btn-sm" onClick={() => removeStaging(s.id)}>
-                        Remove
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() =>
+                          openModal({
+                            kind: 'boh-clear',
+                            source: 'boh',
+                            targetKey: null,
+                            amount: 0,
+                            direction: 'excess',
+                            preselectBohEntryId: entry.id,
+                          })
+                        }
+                      >
+                        Clear
                       </button>
                     )}
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </PanelSection>
-      )}
+              ))
+            )}
+          </tbody>
+        </table>
+      </PanelSection>
 
       {cleared.length > 0 && (
         <PanelSection title={`Cleared this session (${cleared.length})`}>

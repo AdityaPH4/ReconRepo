@@ -5,6 +5,7 @@
  */
 
 import type { MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
+import { authHeaders, getToken } from './auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -41,21 +42,22 @@ export async function runMprReconciliation(files: MprRunFiles): Promise<MprSessi
   for (const f of files.json) fd.append('json', f);
   for (const f of files.mpr) fd.append('mpr', f);
 
-  const res = await fetch(`${API_BASE}/api/mpr-sessions`, { method: 'POST', body: fd });
+  const res = await fetch(`${API_BASE}/api/mpr-sessions`, { method: 'POST', body: fd, headers: authHeaders() });
   return unwrap<MprSessionDTO>(res);
 }
 
 export async function getMprSession(id: string): Promise<MprSessionDTO> {
-  const res = await fetch(`${API_BASE}/api/mpr-sessions/${id}`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/${id}`, { cache: 'no-store', headers: authHeaders() });
   return unwrap<MprSessionDTO>(res);
 }
 
 export async function listMprSessions(): Promise<MprSessionListItemDTO[]> {
-  const res = await fetch(`${API_BASE}/api/mpr-sessions`, { cache: 'no-store' });
+  const res = await fetch(`${API_BASE}/api/mpr-sessions`, { cache: 'no-store', headers: authHeaders() });
   return unwrap<MprSessionListItemDTO[]>(res);
 }
 
-/** URL for the CSV export — used directly as an `<a href>`, not fetched here. */
+/** URL for the CSV export — used directly as an `<a href>`, not fetched here; the token rides along as `?token=` since a plain link can't carry a header. */
 export function mprExportCsvUrl(id: string): string {
-  return `${API_BASE}/api/mpr-sessions/${id}/export.csv`;
+  const token = getToken();
+  return `${API_BASE}/api/mpr-sessions/${id}/export.csv${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 }

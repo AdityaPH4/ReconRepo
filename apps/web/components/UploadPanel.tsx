@@ -11,6 +11,7 @@
  */
 
 import type { UploadRole } from '@toit/contracts';
+import type { OutletCode } from '@toit/recon-core/display';
 import { useCallback, useRef, useState } from 'react';
 import { ROLE_ICONS, ROLE_LABELS, detectRole } from '@/lib/detectRole';
 
@@ -23,6 +24,9 @@ interface Props {
   onClear: () => void;
   running: boolean;
   error: string | null;
+  /** Set only when the API blocked this outlet/date pending admin approval. */
+  approvalBlock?: { outlet: OutletCode; businessDate: string; requested: boolean } | null;
+  onRequestApproval?: () => void;
 }
 
 /** Kept off-screen rather than `display:none` so labels and keyboard focus work. */
@@ -35,6 +39,8 @@ export function UploadPanel({
   onClear,
   running,
   error,
+  approvalBlock,
+  onRequestApproval,
 }: Props) {
   const mainInput = useRef<HTMLInputElement>(null);
   const hdfcInput = useRef<HTMLInputElement>(null);
@@ -191,6 +197,22 @@ export function UploadPanel({
           <div className="alert alert-err mt-4">
             <span>✕</span>
             <span>{error}</span>
+          </div>
+        )}
+
+        {approvalBlock && (
+          <div className="alert alert-info mt-2">
+            <span>ℹ</span>
+            {approvalBlock.requested ? (
+              <span>Approval requested — an admin needs to approve this before you can re-run it.</span>
+            ) : (
+              <span className="flex items-center gap-2 flex-wrap">
+                Need to fix a wrong upload?
+                <button type="button" className="btn btn-sm" onClick={onRequestApproval}>
+                  Request approval to re-run
+                </button>
+              </span>
+            )}
           </div>
         )}
 

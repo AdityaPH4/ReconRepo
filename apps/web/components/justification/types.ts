@@ -34,6 +34,8 @@ export interface ModalRequest {
   rrn?: string | null;
   /** `boh-add` only — the underlying Bills-on-Hold PR row this stages a repository entry for. */
   bohRow?: { orderNo: string; custName: string; amount: number; bohDate: string };
+  /** `boh-clear` only — when opened from a specific repository row's own "Clear" button, preselect it so the operator doesn't have to re-find it in the list. */
+  preselectBohEntryId?: string;
 }
 
 /** Shared props every modal component takes. */
