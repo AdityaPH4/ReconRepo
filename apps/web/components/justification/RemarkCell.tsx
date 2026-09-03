@@ -138,7 +138,7 @@ export function RemarkCell({ source, item, allItems }: Props) {
   const disabled = locked || busy;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex items-center gap-1">
       {isSquared ? (
         <div className="flex items-center gap-2 text-tiny">
           <span className="tag tag-pur">🔗 Squared off</span>
@@ -155,38 +155,37 @@ export function RemarkCell({ source, item, allItems }: Props) {
           </button>
         </div>
       ) : (
-        !entry &&
-        eligiblePartners.length > 0 && (
+        <>
+          {!entry && eligiblePartners.length > 0 && (
+            <select
+              className="field-input flex-1 min-w-0"
+              disabled={disabled}
+              value=""
+              onChange={(e) => e.target.value && handleSquareOffToggle(e.target.value)}
+            >
+              <option value="">Square off against…</option>
+              {eligiblePartners.map((p) => (
+                <option key={p.globalId} value={p.globalId}>
+                  {p.globalId} ({fmt(p.diff)})
+                </option>
+              ))}
+            </select>
+          )}
+
           <select
-            className="field-input"
+            className="field-input flex-1 min-w-0"
+            value={entry?.remark ?? ''}
             disabled={disabled}
-            value=""
-            onChange={(e) => e.target.value && handleSquareOffToggle(e.target.value)}
+            onChange={(e) => handleRemarkChange(e.target.value)}
           >
-            <option value="">Square off against…</option>
-            {eligiblePartners.map((p) => (
-              <option key={p.globalId} value={p.globalId}>
-                {p.globalId} ({fmt(p.diff)})
+            <option value="">Select remark…</option>
+            {remarkOptions.map((r) => (
+              <option key={r} value={r}>
+                {r}
               </option>
             ))}
           </select>
-        )
-      )}
-
-      {!isSquared && (
-        <select
-          className="field-input"
-          value={entry?.remark ?? ''}
-          disabled={disabled}
-          onChange={(e) => handleRemarkChange(e.target.value)}
-        >
-          <option value="">Select remark…</option>
-          {remarkOptions.map((r) => (
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
-        </select>
+        </>
       )}
     </div>
   );

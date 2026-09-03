@@ -195,6 +195,20 @@
     @apply px-4 py-[0.9rem] min-h-0;
   }
 
+  /* ── Selectable pick cards (Advance Applied / BOH Clear pickers) ─────────
+     A thin border alone reads as "hovered", not "picked" — fill + a visible
+     checkmark badge make the chosen card unambiguous at a glance. */
+  .pick-card {
+    @apply border border-line rounded-[10px] transition-[border-color,background,box-shadow] relative;
+  }
+  .pick-card-selected {
+    @apply border-2 border-accent bg-accent-soft shadow-[0_0_0_1px_var(--color-accent)];
+  }
+  .pick-card-check {
+    @apply inline-flex items-center justify-center w-5 h-5 mr-2
+           rounded-full bg-accent text-white text-micro font-bold shrink-0;
+  }
+
   .dropzone-icon {
     @apply text-[40px] mb-3;
   }
@@ -508,15 +522,18 @@
     @apply px-5 py-[0.6rem] text-tiny text-ink-3 border-t border-line text-right bg-sunken;
   }
 
-  /* Difference cell colouring — positive is excess, negative is shortage. */
+  /* Difference cell colouring — positive is excess, negative is shortage.
+     `!` forces this over `.data-table td`'s own `text-ink` — same two-selector
+     specificity problem `.num` already documents above; without it, every
+     diff cell inside a table silently rendered in the default ink color. */
   .diff-excess {
-    @apply text-ok font-semibold;
+    @apply text-ok! font-semibold;
   }
   .diff-short {
-    @apply text-err font-semibold;
+    @apply text-err! font-semibold;
   }
   .diff-zero {
-    @apply text-ink-3;
+    @apply text-ink-3!;
   }
 
   /* ── Final Recon Summary ──────────────────────────────────────────────── */

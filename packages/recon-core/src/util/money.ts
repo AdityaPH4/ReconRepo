@@ -39,12 +39,27 @@ export function isMaterial(diff: number): boolean {
   return Math.abs(diff) >= AMOUNT_EPSILON;
 }
 
-/** Formats an amount as Indian-locale rupees; `NaN`/undefined render as `—`. */
+/**
+ * Formats an amount as Indian-locale rupees; `NaN`/undefined render as `—`.
+ *
+ * A negative sign is placed *before* the ₹ symbol (`-₹2,000.00`), not after
+ * it. Legacy's own `fmt()` (reconciliation (68).html:763) builds the string
+ * as `'₹'+n.toLocaleString(...)`, which puts a negative number's own minus
+ * sign from `toLocaleString` *after* the symbol (`₹-2,000.00`) — a real,
+ * user-visible defect the port fixes rather than reproduces, matching the
+ * "keep the fixes" decision already made for other legacy display bugs (see
+ * README). Every existing call site that separately prepends its own `+`
+ * for a positive diff (`` `${diff>0?'+':''}${fmt(diff)}` ``) is unaffected —
+ * this only changes what `fmt()` itself does for a number that is already
+ * negative.
+ */
 export function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  const sign = n < 0 ? '-' : '';
   return (
+    sign +
     '₹' +
-    n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   );
 }
 

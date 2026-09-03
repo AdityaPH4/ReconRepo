@@ -185,14 +185,14 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[17%]">Category / ID</th>
-                <th className="w-[12%]">RRN</th>
-                <th className="w-[12%]">Order(s)</th>
-                <th className="w-[14%]">Date / Time</th>
-                <th className="w-[10%] num">PR</th>
-                <th className="w-[10%] num">Statement</th>
-                <th className="w-[9%] num">Diff</th>
-                <th className="w-[16%]">Action</th>
+                <th className="w-[12%]">Category / ID</th>
+                <th className="w-[8%]">RRN</th>
+                <th className="w-[8%]">Order(s)</th>
+                <th className="w-[13%]">Date / Time</th>
+                <th className="w-[8%] num">PR</th>
+                <th className="w-[8%] num">Statement</th>
+                <th className="w-[7%] num">Diff</th>
+                <th className="w-[36%]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +219,7 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
                             </td>
                             <td className="mono text-tiny">{r.rrn}</td>
                             <td>{r.orderNo}</td>
-                            <td className="text-ink-3 text-tiny">{r.date ? fmtDate(r.date) : '—'}</td>
+                            <td className="text-ink-3 text-micro whitespace-nowrap">{r.date ? fmtDate(r.date) : '—'}</td>
                             <td className="num">{r.pr === null ? '—' : fmt(r.pr)}</td>
                             <td className="num">{r.statement === null ? '—' : fmt(r.statement)}</td>
                             <td className={`num ${diffClass(r.diff)}`}>

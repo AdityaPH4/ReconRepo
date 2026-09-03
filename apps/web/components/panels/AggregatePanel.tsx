@@ -115,7 +115,7 @@ export function AggregatePanel({ title, totals, rows, note, extraStats, showPaym
                 {rows.map((r, i) => (
                   <tr key={`${r.orderNo}-${i}`}>
                     <td>{r.orderNo}</td>
-                    <td className="mono">{fmtDate(r.date)}</td>
+                    <td className="mono whitespace-nowrap">{fmtDate(r.date)}</td>
                     <td>{r.customer || '—'}</td>
                     <td>{r.paymentName}</td>
                     {showPaymentType && <td>{r.paymentType}</td>}

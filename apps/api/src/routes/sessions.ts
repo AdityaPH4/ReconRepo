@@ -112,7 +112,7 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
     // after this point (e.g. a remark reclassifies it) or was skipped here.
     const existingBoh = await getBohStore().list(outcome.outlet);
     const existingOrderNos = new Set(existingBoh.map((b) => b.orderNo));
-    const bohStaging = autoStageBohRows(outcome.result.bills, existingOrderNos, outcome.businessDate).map((b) => ({
+    const bohStaging = autoStageBohRows(outcome.result.bills, existingOrderNos).map((b) => ({
       id: randomUUID(),
       orderNo: b.orderNo,
       custName: b.custName,

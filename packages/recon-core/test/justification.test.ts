@@ -517,7 +517,9 @@ describe('bills on hold', () => {
     custName: 'Rahul',
     phone: null,
     amount: 750,
-    bohDate: '2026-08-01',
+    // The original PR row's own raw date/time string, not a clean ISO date
+    // — see `BohEntry.bohDate`.
+    bohDate: '01-Aug-2026 21:14:03',
     notes: null,
     recordedDate: '2026-08-01',
     status: 'open',
@@ -553,19 +555,22 @@ describe('bills on hold', () => {
 
   it('auto-stages every bills-on-hold row not already in the repository, with no name required', () => {
     const bills = [
-      { orderNo: 'O-1', customer: 'Priya', amount: 400 } as never,
-      { orderNo: 'O-2', customer: '', amount: 250 } as never,
+      { orderNo: 'O-1', customer: 'Priya', amount: 400, date: '10-Aug-2026 21:14:03' } as never,
+      { orderNo: 'O-2', customer: '', amount: 250, date: '10-Aug-2026 22:05:11' } as never,
     ];
-    const staged = autoStageBohRows(bills, new Set(), '2026-08-10');
+    const staged = autoStageBohRows(bills, new Set());
     assert.equal(staged.length, 2);
     assert.equal(staged[0]!.custName, 'Priya');
     assert.equal(staged[1]!.custName, '');
-    assert.equal(staged[0]!.bohDate, '2026-08-10');
+    // Carries the bill's own raw PR timestamp, not a coarse business date —
+    // this is what lets the repository/clear-modal UI show the time a bill
+    // actually went on hold.
+    assert.equal(staged[0]!.bohDate, '10-Aug-2026 21:14:03');
   });
 
   it('skips a bills-on-hold row already known to the repository', () => {
-    const bills = [{ orderNo: 'O-500', customer: 'Rahul', amount: 750 } as never];
-    const staged = autoStageBohRows(bills, new Set(['O-500']), '2026-08-10');
+    const bills = [{ orderNo: 'O-500', customer: 'Rahul', amount: 750, date: '10-Aug-2026 21:00:00' } as never];
+    const staged = autoStageBohRows(bills, new Set(['O-500']));
     assert.equal(staged.length, 0);
   });
 });

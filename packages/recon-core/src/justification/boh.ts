@@ -13,6 +13,7 @@
 
 import { AMOUNT_EPSILON } from '../constants.js';
 import type { OutletCode, PRRow } from '../types.js';
+import { civilToISO, parsePRDate } from '../util/dates.js';
 import type { BohEntry } from './types.js';
 
 export interface EligibleBohEntry {
@@ -31,6 +32,12 @@ export interface EligibleBohOptions {
   exactAmount?: number;
 }
 
+/** `entry.bohDate` is the original PR row's raw date/time string, not a clean ISO date — this pulls out just the calendar date for a same-day comparison, matching legacy's own `parsePRDate(b.bohDate).toLocaleDateString('en-CA')`. */
+function bohCivilDateISO(bohDate: string): string | null {
+  const civil = parsePRDate(bohDate);
+  return civil ? civilToISO(civil) : null;
+}
+
 export function eligibleBohEntries(
   entries: readonly BohEntry[],
   opts: EligibleBohOptions,
@@ -40,7 +47,7 @@ export function eligibleBohEntries(
 
   return entries
     .filter((b) => b.outlet === outlet && b.status === 'open')
-    .filter((b) => includeToday || !businessDate || b.bohDate !== businessDate)
+    .filter((b) => includeToday || !businessDate || bohCivilDateISO(b.bohDate) !== businessDate)
     .map((b) => {
       const eligible = !requiresExact || Math.abs(b.amount - exactAmount!) < AMOUNT_EPSILON;
       return {
@@ -57,6 +64,7 @@ export interface AutoStagedBohRow {
   orderNo: string;
   custName: string;
   amount: number;
+  /** The bill's own raw PR date/time string — see `BohEntry.bohDate`. */
   bohDate: string;
 }
 
@@ -66,14 +74,14 @@ export interface AutoStagedBohRow {
  * legacy's `runReconciliation` (1263–1284) does this unconditionally on
  * every recon run, with no customer-name requirement (`custName` falls back
  * to `''`, unlike the port's manual "+ Add to repository" flow, which
- * requires one). `bohDate` is the current session's business date, matching
- * the manual-add flow's own convention — legacy's `r.date` is a PR row's raw
- * timestamp string, not the ISO date `BohEntry.bohDate` expects.
+ * requires one). `bohDate` carries each row's own raw PR timestamp
+ * (`bohDate:r.date`, reconciliation (68).html:1275) — not the session's
+ * business date — so the repository and clear-modal UI can show exactly when
+ * the bill went on hold, not just which day.
  */
 export function autoStageBohRows(
   bills: readonly PRRow[],
   existingOrderNos: ReadonlySet<string>,
-  businessDate: string | null,
 ): AutoStagedBohRow[] {
   return bills
     .filter((b) => !existingOrderNos.has(b.orderNo))
@@ -81,6 +89,6 @@ export function autoStageBohRows(
       orderNo: b.orderNo,
       custName: b.customer || '',
       amount: Number.isNaN(b.amount) ? 0 : b.amount,
-      bohDate: businessDate ?? '',
+      bohDate: b.date,
     }));
 }

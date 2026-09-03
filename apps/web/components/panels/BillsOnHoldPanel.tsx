@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import type { EligibleBohEntryDTO, Jsonified, PanelTotalsDTO } from '@toit/contracts';
 import type { PRRow } from '@toit/recon-core/display';
-import { fmt, fmtDate } from '@toit/recon-core/display';
+import { civilToISO, fmt, fmtDate, parsePRDate } from '@toit/recon-core/display';
 import { ApiError, listEligibleBoh, removeJustificationEntry } from '@/lib/api';
 import { EmptyRow, PanelSection } from '@/components/ui/table';
 import { useJustification } from '@/components/justification/JustificationProvider';
@@ -36,9 +36,16 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
   const stagedOrderNos = new Set(staged.map((s) => s.orderNo));
   const cleared = session.justification.draftBohClearances;
 
+  // `entry.bohDate` is the bill's own raw PR date/time string, not a clean
+  // ISO date — pull out just the calendar date for the same-day split,
+  // matching legacy's own `parsePRDate(b.bohDate).toLocaleDateString('en-CA')`.
   const businessDate = session.meta.businessDate;
-  const todayOpen = open?.filter(({ entry }) => entry.bohDate === businessDate) ?? [];
-  const previousOpen = open?.filter(({ entry }) => entry.bohDate !== businessDate) ?? [];
+  const bohCivilDateISO = (bohDate: string): string | null => {
+    const civil = parsePRDate(bohDate);
+    return civil ? civilToISO(civil) : null;
+  };
+  const todayOpen = open?.filter(({ entry }) => bohCivilDateISO(entry.bohDate) === businessDate) ?? [];
+  const previousOpen = open?.filter(({ entry }) => bohCivilDateISO(entry.bohDate) !== businessDate) ?? [];
 
   // A clearance's own row carries no entry id — it's linked the other way,
   // via the justification entry's `bohClearanceId` (see `clearBoh` in
@@ -90,7 +97,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
               rows.map((r, i) => (
                 <tr key={`${r.orderNo}-${i}`}>
                   <td>{r.orderNo}</td>
-                  <td className="mono">{fmtDate(r.date)}</td>
+                  <td className="mono whitespace-nowrap">{fmtDate(r.date)}</td>
                   <td>{r.customer || '—'}</td>
                   <td className="num">{fmt(r.amount)}</td>
                   <td>
@@ -109,7 +116,10 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
                               orderNo: r.orderNo,
                               custName: r.customer || '',
                               amount: r.amount ?? 0,
-                              bohDate: session.meta.businessDate ?? '',
+                              // The row's own raw PR date/time, not the
+                              // session's coarse business date — see
+                              // `BohEntry.bohDate`.
+                              bohDate: r.date,
                             },
                           })
                         }
@@ -132,7 +142,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
             <tr>
               <th className="w-[18%]">Order no</th>
               <th className="w-[26%]">Customer</th>
-              <th className="w-[18%]">BOH date</th>
+              <th className="w-[18%]">BOH date / time</th>
               <th className="w-[18%] num">Amount</th>
               <th className="w-[20%]" />
             </tr>
@@ -147,7 +157,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
                 <tr key={entry.id}>
                   <td>{entry.orderNo}</td>
                   <td>{entry.custName}</td>
-                  <td className="mono">{entry.bohDate}</td>
+                  <td className="mono text-tiny whitespace-nowrap">{fmtDate(entry.bohDate)}</td>
                   <td className="num">{fmt(entry.amount)}</td>
                   <td>
                     {!locked && (
@@ -182,7 +192,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
             <tr>
               <th className="w-[18%]">Order no</th>
               <th className="w-[26%]">Customer</th>
-              <th className="w-[18%]">BOH date</th>
+              <th className="w-[18%]">BOH date / time</th>
               <th className="w-[18%] num">Amount</th>
               <th className="w-[20%]" />
             </tr>
@@ -197,7 +207,7 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
                 <tr key={entry.id}>
                   <td>{entry.orderNo}</td>
                   <td>{entry.custName}</td>
-                  <td className="mono">{entry.bohDate}</td>
+                  <td className="mono text-tiny whitespace-nowrap">{fmtDate(entry.bohDate)}</td>
                   <td className="num">{fmt(entry.amount)}</td>
                   <td>
                     {!locked && (
@@ -231,15 +241,21 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[25%]">Source</th>
-                <th className="w-[25%]">Cleared date</th>
-                <th className="w-[25%] num">Amount</th>
-                <th className="w-[25%]" />
+                <th className="w-[14%]">Order no</th>
+                <th className="w-[18%]">Customer</th>
+                <th className="w-[16%]">BOH date / time</th>
+                <th className="w-[14%]">Source</th>
+                <th className="w-[12%]">Cleared date</th>
+                <th className="w-[14%] num">Amount</th>
+                <th className="w-[12%]" />
               </tr>
             </thead>
             <tbody>
               {cleared.map((c) => (
                 <tr key={c.id}>
+                  <td>{c.orderNo}</td>
+                  <td>{c.custName || '—'}</td>
+                  <td className="mono text-tiny whitespace-nowrap">{fmtDate(c.bohDate)}</td>
                   <td>{c.source}</td>
                   <td className="mono">{c.clearedDate}</td>
                   <td className="num">{fmt(c.amount)}</td>

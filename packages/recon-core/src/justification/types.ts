@@ -115,7 +115,15 @@ export interface BohEntry {
   custName: string;
   phone: string | null;
   amount: number;
-  /** ISO `yyyy-mm-dd` — the business date of the original PR row. */
+  /**
+   * The original PR row's own raw date/time string (e.g. `01-Aug-2026
+   * 21:14:03`), not a coarse business date — legacy: `S.bohRepoStaging.push`
+   * (reconciliation (68).html:1274-1275) sets `bohDate:r.date` verbatim, and
+   * `fmtDate(b.bohDate)` (4390) displays it with its time, so an operator can
+   * see exactly when a bill went on hold, not just which day. Same-day
+   * comparisons parse just the date portion via `parsePRDate`/`civilToISO`
+   * (`boh.ts`), matching legacy's own `parsePRDate(b.bohDate)`.
+   */
   bohDate: string;
   notes: string | null;
   /** ISO `yyyy-mm-dd`. */
@@ -141,6 +149,15 @@ export interface BohClearance {
   /** Clearing is always full — legacy hard-codes this; no partial-clear path exists. */
   amount: number;
   clearedDate: string;
+  /**
+   * Denormalized from the `BohEntry`/`BohStagingEntry` this clears, at the
+   * moment of clearing — so a "Cleared this session" list can show which
+   * bill it was without a separate lookup back to the repository.
+   */
+  orderNo: string;
+  custName: string;
+  /** The bill's own raw PR date/time string — see `BohEntry.bohDate`. */
+  bohDate: string;
 }
 
 /** A new BOH repository row proposed from the Bills-on-Hold tab, pending commit at submit. */
@@ -150,6 +167,7 @@ export interface BohStagingEntry {
   custName: string;
   phone: string | null;
   amount: number;
+  /** The original PR row's own raw date/time string — see `BohEntry.bohDate`. */
   bohDate: string;
   notes: string | null;
 }

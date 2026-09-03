@@ -293,7 +293,8 @@ export function clearBoh(
   if (!entry && !staged) throw new JustificationError('Bills-on-hold entry not found.');
   if (entry && entry.status !== 'open') throw new JustificationError('This entry is already cleared.');
 
-  const amount = entry?.amount ?? staged!.amount;
+  const bill = entry ?? staged!;
+  const amount = bill.amount;
   const clearance: BohClearance = {
     id: randomUUID(),
     bohEntryId: req.bohEntryId,
@@ -303,6 +304,9 @@ export function clearBoh(
     // Clearing is always full — legacy hard-codes this; no partial-clear path.
     amount,
     clearedDate: new Date().toISOString().slice(0, 10),
+    orderNo: bill.orderNo,
+    custName: bill.custName,
+    bohDate: bill.bohDate,
   };
 
   const justificationEntry = newEntry({

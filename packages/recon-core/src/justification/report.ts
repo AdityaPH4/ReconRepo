@@ -13,7 +13,7 @@
  */
 
 import { fmt } from '../util/money.js';
-import { fmtEventDate } from '../util/dates.js';
+import { fmtDate, fmtEventDate } from '../util/dates.js';
 import type { Snapshot } from './snapshot.js';
 
 function esc(s: string | null | undefined): string {
@@ -46,7 +46,7 @@ export function buildReportHtml(snapshot: Snapshot): string {
   const bohOpenRows = snapshot.billsOnHold.open
     .map(
       (b) =>
-        `<tr><td>${esc(b.orderNo)}</td><td>${esc(b.custName)}</td><td>${esc(b.bohDate)}</td><td class=ra>${fmt(b.amount)}</td></tr>`,
+        `<tr><td>${esc(b.orderNo)}</td><td>${esc(b.custName)}</td><td>${esc(fmtDate(b.bohDate))}</td><td class=ra>${fmt(b.amount)}</td></tr>`,
     )
     .join('');
   const bohClearedRows = snapshot.billsOnHold.cleared

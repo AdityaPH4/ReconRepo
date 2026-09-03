@@ -77,6 +77,7 @@ export {
   fmtDate,
   fmtEventDate,
   fmtWin,
+  parsePRDate,
 } from './util/dates.js';
 
 // ── Justification & submit layer (browser-safe subset — no snapshot/report,

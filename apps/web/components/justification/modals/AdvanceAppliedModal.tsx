@@ -100,7 +100,7 @@ export function AdvanceAppliedModal({ session, request, onClose, onSaved }: Moda
             return (
               <div
                 key={advance.id}
-                className={`panel px-4 py-3 ${eligible ? 'cursor-pointer' : 'opacity-45 cursor-not-allowed'} ${selected ? 'border-accent' : ''}`}
+                className={`pick-card px-4 py-3 ${eligible ? 'cursor-pointer' : 'opacity-45 cursor-not-allowed'} ${selected ? 'pick-card-selected' : ''}`}
                 onClick={() => {
                   if (!eligible) {
                     setError(ineligibleReason);
@@ -111,21 +111,27 @@ export function AdvanceAppliedModal({ session, request, onClose, onSaved }: Moda
                 }}
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-body">
-                      {advance.custName}
-                      {advance.eventDate && (
-                        <span className="text-ink-3 font-normal"> · 📅 {fmtEventDate(advance.eventDate)}</span>
+                  <div className="flex items-start min-w-0">
+                    {selected && <span className="pick-card-check mt-0.5">✓</span>}
+                    <div className="min-w-0">
+                      <p className={`text-body ${selected ? 'font-bold text-accent-ink' : 'font-semibold'}`}>
+                        {advance.custName}
+                        {advance.eventDate && (
+                          <span className="text-ink-3 font-normal"> · 📅 {fmtEventDate(advance.eventDate)}</span>
+                        )}
+                      </p>
+                      <p className="text-tiny text-ink-3">
+                        {advance.phone || ''}
+                        {advance.phone && advance.notes ? ' · ' : ''}
+                        {advance.notes || (!advance.phone ? '—' : '')}
+                      </p>
+                      {!eligible && <p className="text-tiny text-err mt-1">✗ {ineligibleReason}</p>}
+                      {selected && (
+                        <p className="text-tiny text-accent-ink font-semibold mt-1">Selected — will apply {fmt(balance)}</p>
                       )}
-                    </p>
-                    <p className="text-tiny text-ink-3">
-                      {advance.phone || ''}
-                      {advance.phone && advance.notes ? ' · ' : ''}
-                      {advance.notes || (!advance.phone ? '—' : '')}
-                    </p>
-                    {!eligible && <p className="text-tiny text-err mt-1">✗ {ineligibleReason}</p>}
+                    </div>
                   </div>
-                  <div className="font-bold text-accent">{fmt(balance)}</div>
+                  <div className="font-bold text-accent shrink-0">{fmt(balance)}</div>
                 </div>
               </div>
             );

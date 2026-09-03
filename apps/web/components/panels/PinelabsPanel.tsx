@@ -262,15 +262,15 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[16%]">Category / ID</th>
-                <th className="w-[11%]">RRN</th>
-                <th className="w-[11%]">Order No(s)</th>
-                <th className="w-[12%]">Date / Time</th>
-                <th className="w-[10%]">Payment name</th>
-                <th className="w-[9%] num">Pinelabs</th>
-                <th className="w-[9%] num">PR</th>
-                <th className="w-[8%] num">Difference</th>
-                <th className="w-[14%]">Remark</th>
+                <th className="w-[12%]">Category / ID</th>
+                <th className="w-[8%]">RRN</th>
+                <th className="w-[8%]">Order No(s)</th>
+                <th className="w-[13%]">Date / Time</th>
+                <th className="w-[7%]">Payment name</th>
+                <th className="w-[8%] num">Pinelabs</th>
+                <th className="w-[8%] num">PR</th>
+                <th className="w-[7%] num">Difference</th>
+                <th className="w-[29%]">Remark</th>
               </tr>
             </thead>
             <tbody>
@@ -297,7 +297,7 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                             </td>
                             <td className="mono text-tiny">{r.rrn}</td>
                             <td title={r.ordersTitle}>{r.orderNo}</td>
-                            <td className="text-ink-3 text-tiny">{r.date ? fmtDate(r.date) : '—'}</td>
+                            <td className="text-ink-3 text-micro whitespace-nowrap">{r.date ? fmtDate(r.date) : '—'}</td>
                             <td>{r.paymentName}</td>
                             <td className="num">{r.plAmt === null ? '—' : fmt(r.plAmt)}</td>
                             <td className="num">{r.prAmt === null ? '—' : fmt(r.prAmt)}</td>

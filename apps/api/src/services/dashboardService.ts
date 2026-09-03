@@ -11,11 +11,14 @@
  * since T-7 is already its own row in the daily breakdown.
  *
  * BOH aging: every still-open Bills-on-Hold entry, bucketed by days since
- * `bohDate`.
+ * `bohDate` — which is the bill's own raw PR date/time string, not a clean
+ * ISO date (see `BohEntry.bohDate`), so aging math parses just the calendar
+ * date out of it first.
  */
 
 import type { BohAgingBucket, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core';
+import { civilToISO, parsePRDate } from '@toit/recon-core';
 import { getBohStore, getSessionStore } from '../storage/index.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,6 +36,12 @@ function dateOffset(iso: string, offsetDays: number): string {
 
 function daysBetween(earlier: string, later: string): number {
   return Math.round((Date.parse(`${later}T00:00:00Z`) - Date.parse(`${earlier}T00:00:00Z`)) / DAY_MS);
+}
+
+/** Pulls the calendar date out of a raw PR date/time string — see `BohEntry.bohDate`. `null` when unparseable, rather than silently miscounting an entry's age. */
+function bohCivilDateISO(bohDate: string): string | null {
+  const civil = parsePRDate(bohDate);
+  return civil ? civilToISO(civil) : null;
 }
 
 function bucketFor(ageDays: number): BohAgingBucket {
@@ -89,7 +98,9 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     (['1', '2', '3', '4', '5', '5+'] as const).map((b) => [b, { count: 0, amount: 0 }]),
   );
   for (const entry of open) {
-    const age = daysBetween(entry.bohDate, today);
+    const civilDate = bohCivilDateISO(entry.bohDate);
+    if (!civilDate) continue; // unparseable — don't miscount it into an arbitrary bucket
+    const age = daysBetween(civilDate, today);
     const bucket = buckets.get(bucketFor(age))!;
     bucket.count += 1;
     bucket.amount += entry.amount;

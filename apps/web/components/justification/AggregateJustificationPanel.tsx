@@ -89,6 +89,43 @@ export function AggregateJustificationPanel({
     setError(null);
   }
 
+  // BOH Clear's source is locked to whichever tab triggered it — legacy:
+  // `openBohClearFromCash`/`openBohClearFromUPI`/`openBohClearFromBank`
+  // (reconciliation (68).html:2194, 2832, 3213).
+  const lockedSource = BOH_LOCKED_SOURCE[source];
+
+  /**
+   * "Bill on Hold Cleared" and "Advance Applied" are repository-driven: their
+   * amount comes FROM the BOH/advance the operator picks inside the modal,
+   * not from this form, so legacy pops the modal the instant the remark is
+   * *selected* — no amount to enter first, nothing to click. Every other
+   * modal-backed remark (Advance Received/Extra Payment Received/Short
+   * Collection/Other) still needs a real amount typed in first, so those
+   * stay gated behind "+ Add". Legacy: `onCashRemarkChange` (2079–2090),
+   * `onUpiRemarkChange` (2657–2666), `onBTRemarkChange` (same shape, Bank
+   * tab) — both fire their popup directly from the remark `<select>`'s
+   * `onchange`, not from the Add button.
+   */
+  function handleRemarkSelect(newRemark: string) {
+    setRemark(newRemark);
+    setError(null);
+    const modalKind = modalKindForRemark(newRemark);
+    if (modalKind === 'boh-clear' || modalKind === 'advance-applied') {
+      openModal({
+        kind: modalKind,
+        source,
+        targetKey: null,
+        amount: 0,
+        direction,
+        lockedSource: modalKind === 'boh-clear' ? lockedSource : undefined,
+        // Neither remark needs an RRN (`NO_RRN_REMARKS`) — legacy resets any
+        // typed RRN before opening (`upiRRNReset()`), matching `resetForm()` below.
+        rrn: undefined,
+      });
+      resetForm();
+    }
+  }
+
   async function handleAdd() {
     if (!remark) {
       setError('Select a remark.');
@@ -114,19 +151,15 @@ export function AggregateJustificationPanel({
       }
     }
 
-    // Repository-driven remarks fire their modal immediately (BOH Cleared /
-    // Advance Applied) or once a valid amount has been entered (everything
-    // else that's modal-backed) — matching legacy's `onCashRemarkChange`/
-    // `addCashEntry` split.
+    // Repository-driven remarks already fired their modal on selection
+    // (`handleRemarkSelect`) — reaching here with one of them still selected
+    // means the modal was cancelled, so just re-open it. Legacy:
+    // `addCashEntry`/`addUpiEntry`'s own defensive
+    // `if(remark==='Bill on Hold Cleared'||remark==='Advance Applied'){onCashRemarkChange();return;}`.
     const modalKind = modalKindForRemark(remark);
-    // BOH Clear's source is locked to whichever tab triggered it — legacy:
-    // `openBohClearFromCash`/`openBohClearFromUPI`/`openBohClearFromBank`
-    // (reconciliation (68).html:2194, 2832, 3213).
-    const lockedSource = modalKind === 'boh-clear' ? BOH_LOCKED_SOURCE[source] : undefined;
     const rrnForModal = needsRrn ? rrn : undefined;
     if (modalKind === 'boh-clear' || modalKind === 'advance-applied') {
-      openModal({ kind: modalKind, source, targetKey: null, amount: 0, direction, lockedSource, rrn: rrnForModal });
-      resetForm();
+      handleRemarkSelect(remark);
       return;
     }
     if (modalKind) {
@@ -225,7 +258,7 @@ export function AggregateJustificationPanel({
             </div>
             <div>
               <label className="field-label">Remark</label>
-              <select className="field-input" value={remark} onChange={(e) => setRemark(e.target.value)}>
+              <select className="field-input" value={remark} onChange={(e) => handleRemarkSelect(e.target.value)}>
                 <option value="">Select remark…</option>
                 {remarks.map((r) => (
                   <option key={r} value={r}>
