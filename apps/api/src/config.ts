@@ -8,7 +8,15 @@
  */
 
 import path from 'node:path';
+import dotenv from 'dotenv';
 import { OUTLET_CODES, type OutletCode } from '@toit/recon-core';
+
+// `cwd` is this workspace's own directory (`apps/api`) when launched via
+// `npm run dev --workspace @toit/api`, not the repo root — so the root
+// `.env` (see `.env.example`) has to be loaded by explicit path. A missing
+// file is a silent no-op: in Lambda/ECS, real env vars are injected by the
+// platform and no `.env` is ever packaged into the image.
+dotenv.config({ path: path.resolve(process.cwd(), '../..', '.env') });
 
 function str(name: string, fallback: string): string {
   const v = process.env[name];

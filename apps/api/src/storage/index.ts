@@ -9,6 +9,13 @@ import { createMemoryApprovalStore } from './memoryApprovalStore.js';
 import { createMemoryBohStore } from './memoryBohStore.js';
 import { createMemoryMprSessionStore } from './memoryMprSessionStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
+import { getPool } from './postgres/pool.js';
+import { createPostgresAdvanceStore } from './postgres/postgresAdvanceStore.js';
+import { createPostgresApprovalStore } from './postgres/postgresApprovalStore.js';
+import { createPostgresBohStore } from './postgres/postgresBohStore.js';
+import { createPostgresMprSessionStore } from './postgres/postgresMprSessionStore.js';
+import { createPostgresSessionStore } from './postgres/postgresSessionStore.js';
+import { createS3ObjectStore } from './s3ObjectStore.js';
 import type {
   AdvanceStore,
   ApprovalStore,
@@ -29,11 +36,14 @@ export function getObjectStore(): ObjectStore {
   if (objectStore) return objectStore;
 
   if (config.objectStore.driver === 's3') {
-    // Wired in Step 2 alongside the Prisma layer. Failing loudly is better than
-    // silently writing production uploads to a developer's disk.
-    throw new Error(
-      'S3 object store is not implemented yet. Unset S3_BUCKET to use local disk.',
-    );
+    objectStore = createS3ObjectStore({
+      region: config.objectStore.region,
+      bucket: config.objectStore.bucket,
+      endpoint: config.objectStore.endpoint || undefined,
+      accessKeyId: config.objectStore.accessKeyId || undefined,
+      secretAccessKey: config.objectStore.secretAccessKey || undefined,
+    });
+    return objectStore;
   }
 
   objectStore = createLocalObjectStore(config.objectStore.localRoot);
@@ -44,9 +54,8 @@ export function getSessionStore(): SessionStore {
   if (sessionStore) return sessionStore;
 
   if (config.sessionStore.driver === 'postgres') {
-    throw new Error(
-      'Postgres session store is not implemented yet. Unset DATABASE_URL to use the in-memory store.',
-    );
+    sessionStore = createPostgresSessionStore(getPool());
+    return sessionStore;
   }
 
   sessionStore = createMemorySessionStore();
@@ -57,9 +66,8 @@ export function getAdvanceStore(): AdvanceStore {
   if (advanceStore) return advanceStore;
 
   if (config.sessionStore.driver === 'postgres') {
-    throw new Error(
-      'Postgres advance store is not implemented yet. Unset DATABASE_URL to use the in-memory store.',
-    );
+    advanceStore = createPostgresAdvanceStore(getPool());
+    return advanceStore;
   }
 
   advanceStore = createMemoryAdvanceStore();
@@ -70,7 +78,8 @@ export function getBohStore(): BohStore {
   if (bohStore) return bohStore;
 
   if (config.sessionStore.driver === 'postgres') {
-    throw new Error('Postgres BOH store is not implemented yet. Unset DATABASE_URL to use the in-memory store.');
+    bohStore = createPostgresBohStore(getPool());
+    return bohStore;
   }
 
   bohStore = createMemoryBohStore();
@@ -81,9 +90,8 @@ export function getMprSessionStore(): MprSessionStore {
   if (mprSessionStore) return mprSessionStore;
 
   if (config.sessionStore.driver === 'postgres') {
-    throw new Error(
-      'Postgres MPR session store is not implemented yet. Unset DATABASE_URL to use the in-memory store.',
-    );
+    mprSessionStore = createPostgresMprSessionStore(getPool());
+    return mprSessionStore;
   }
 
   mprSessionStore = createMemoryMprSessionStore();
@@ -94,9 +102,8 @@ export function getApprovalStore(): ApprovalStore {
   if (approvalStore) return approvalStore;
 
   if (config.sessionStore.driver === 'postgres') {
-    throw new Error(
-      'Postgres approval store is not implemented yet. Unset DATABASE_URL to use the in-memory store.',
-    );
+    approvalStore = createPostgresApprovalStore(getPool());
+    return approvalStore;
   }
 
   approvalStore = createMemoryApprovalStore();

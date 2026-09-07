@@ -2,6 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // Bundles a minimal, self-contained server (only the deps actually
+  // traced/used) into `.next/standalone` — what the Docker image runs, so
+  // it doesn't need the whole `node_modules` tree copied into the final
+  // image.
+  output: 'standalone',
+
   // Workspace packages ship as ESM with NodeNext-style specifiers; letting Next
   // transpile them keeps the app working whether or not `dist/` has been built
   // by a prior `tsc -b`.

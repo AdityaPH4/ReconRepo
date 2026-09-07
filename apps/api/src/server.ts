@@ -1,100 +1,10 @@
 /**
- * API entry point.
+ * Local dev / container entry point — binds a port and listens.
+ * For Lambda, see `lambda.ts`, which wraps the same `app` instead.
  */
 
-import type { ApiErrorDTO } from '@toit/contracts';
-import cors from 'cors';
-import express from 'express';
-import type { NextFunction, Request, Response } from 'express';
-import { MulterError } from 'multer';
+import { app } from './app.js';
 import { config, describeConfig } from './config.js';
-import { attachUser } from './middleware/auth.js';
-import { approvalRequestsRouter } from './routes/approvalRequests.js';
-import { authRouter } from './routes/auth.js';
-import { dashboardRouter } from './routes/dashboard.js';
-import { advancesRouter, bohRouter } from './routes/repositories.js';
-import { justificationRouter } from './routes/justification.js';
-import { mprSessionsRouter } from './routes/mprSessions.js';
-import { sessionsRouter } from './routes/sessions.js';
-import { ApprovalRequiredError } from './services/approvalService.js';
-import { BadRequestError } from './services/reconService.js';
-
-const app = express();
-
-app.use(cors({ origin: config.corsOrigins, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
-
-// Public — no bearer token required. `/auth/*` is how one is obtained in the
-// first place; the health check is a plain liveness probe.
-app.use('/auth', authRouter);
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
-    objectStore: config.objectStore.driver,
-    sessionStore: config.sessionStore.driver,
-    authEnabled: config.auth.enabled,
-  });
-});
-
-app.use(attachUser);
-
-app.get('/api/me', (req, res) => {
-  res.json(req.user);
-});
-
-app.use('/api/sessions', sessionsRouter);
-app.use('/api/sessions/:id/justification', justificationRouter);
-app.use('/api/advances', advancesRouter);
-app.use('/api/boh', bohRouter);
-app.use('/api/mpr-sessions', mprSessionsRouter);
-app.use('/api/approval-requests', approvalRequestsRouter);
-app.use('/api/dashboard', dashboardRouter);
-
-app.use((_req, res) => {
-  res.status(404).json({ error: 'Not found' } satisfies ApiErrorDTO);
-});
-
-// Error handler. Upload and parse problems are the caller's to fix and must say
-// what is wrong; anything else is logged in full and reported generically.
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  if (err instanceof BadRequestError) {
-    res.status(400).json({ error: err.message } satisfies ApiErrorDTO);
-    return;
-  }
-  if (err instanceof ApprovalRequiredError) {
-    res.status(err.status).json({
-      error: err.message,
-      code: 'APPROVAL_REQUIRED',
-      outlet: err.outlet,
-      businessDate: err.businessDate,
-    } satisfies ApiErrorDTO);
-    return;
-  }
-  if (err instanceof MulterError) {
-    const message =
-      err.code === 'LIMIT_FILE_SIZE'
-        ? `File too large. Limit is ${Math.round(config.maxUploadBytes / 1024 / 1024)} MB.`
-        : err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT'
-          ? `Too many files in one upload for field "${err.field ?? 'unknown'}". Split this into more than one run.`
-          : `Upload rejected: ${err.message}`;
-    res.status(400).json({ error: message } satisfies ApiErrorDTO);
-    return;
-  }
-  // Justification/submit routes throw plain errors carrying a `status` (404
-  // for out-of-scope/missing sessions, 409 for an already-submitted session,
-  // 400 for `JustificationError`) rather than dedicated classes — one escape
-  // hatch is enough for what are all, ultimately, "the caller's request was
-  // invalid" cases.
-  if (err instanceof Error && 'status' in err && typeof (err as { status?: unknown }).status === 'number') {
-    res.status((err as { status: number }).status).json({ error: err.message } satisfies ApiErrorDTO);
-    return;
-  }
-
-  console.error('[api] unhandled error:', err);
-  res.status(500).json({
-    error: err instanceof Error ? err.message : 'Internal server error',
-  } satisfies ApiErrorDTO);
-});
 
 app.listen(config.port, () => {
   console.log(`[api] listening on http://localhost:${config.port}`);
