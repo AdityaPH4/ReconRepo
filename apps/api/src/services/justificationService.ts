@@ -293,8 +293,22 @@ export function clearBoh(
   if (!entry && !staged) throw new JustificationError('Bills-on-hold entry not found.');
   if (entry && entry.status !== 'open') throw new JustificationError('This entry is already cleared.');
 
+  // A BOH clearance sourced from an HDFC-UPI row needs the same 12-digit RRN
+  // discipline as any other HDFC-UPI justification — legacy never asked for
+  // one here, but that just meant a cleared bill couldn't be tied back to the
+  // bank statement line that actually paid it.
+  if (req.clearSource === 'HDFC Static UPI') {
+    if (!req.rrn || !/^\d{12}$/.test(req.rrn)) {
+      throw new JustificationError('A 12-digit RRN is required to clear a bill through HDFC Static UPI.');
+    }
+    if (state.entries.some((e) => e.source === 'upi_hdfc' && e.rrn === req.rrn)) {
+      throw new JustificationError('This RRN has already been used elsewhere in this session.');
+    }
+  }
+
   const bill = entry ?? staged!;
   const amount = bill.amount;
+  const rrn = req.clearSource === 'HDFC Static UPI' ? req.rrn! : null;
   const clearance: BohClearance = {
     id: randomUUID(),
     bohEntryId: req.bohEntryId,
@@ -307,6 +321,7 @@ export function clearBoh(
     orderNo: bill.orderNo,
     custName: bill.custName,
     bohDate: bill.bohDate,
+    rrn,
   };
 
   const justificationEntry = newEntry({
@@ -316,6 +331,7 @@ export function clearBoh(
     amount,
     targetKey: req.targetKey ?? null,
     bohClearanceId: clearance.id,
+    rrn,
   });
 
   return {

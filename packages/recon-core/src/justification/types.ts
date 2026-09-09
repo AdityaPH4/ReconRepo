@@ -158,6 +158,8 @@ export interface BohClearance {
   custName: string;
   /** The bill's own raw PR date/time string — see `BohEntry.bohDate`. */
   bohDate: string;
+  /** Set (12-digit) when cleared with `source === 'HDFC Static UPI'`; `null` for every other source. */
+  rrn: string | null;
 }
 
 /** A new BOH repository row proposed from the Bills-on-Hold tab, pending commit at submit. */

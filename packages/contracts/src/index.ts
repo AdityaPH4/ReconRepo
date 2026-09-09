@@ -374,6 +374,8 @@ export interface ClearBohRequest {
   targetKey: string | null;
   bohEntryId: string;
   clearSource: string;
+  /** Required (12-digit) when `clearSource === 'HDFC Static UPI'`; ignored otherwise. */
+  rrn?: string | null;
 }
 
 // ── MPR reconciliation (Layer 2) ──────────────────────────────────────────

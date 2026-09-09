@@ -31,6 +31,7 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
   const [entries, setEntries] = useState<EligibleBohEntryDTO[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [includeToday, setIncludeToday] = useState(false);
+  const [rrn, setRrn] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -38,6 +39,14 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
   // whichever row/tab locked it, or 'MPR' when opened from the BOH tab
   // directly (see module doc comment above).
   const effectiveSource = request.lockedSource ?? 'MPR';
+
+  // A bill cleared through an HDFC-UPI row needs the same 12-digit RRN
+  // discipline as any other HDFC-UPI justification, re-validated server-side
+  // in `clearBoh()` — legacy never asked for one here, but that just meant a
+  // cleared bill couldn't be tied back to the bank statement line that
+  // actually paid it. `lockedSource` forces single selection (see `toggle`
+  // below), so one RRN field per modal instance is enough.
+  const needsRrn = effectiveSource === 'HDFC Static UPI';
 
   const exactAmount = request.amount > 0.5 ? request.amount : undefined;
 
@@ -71,6 +80,16 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
       setError('Select at least one bill to clear.');
       return;
     }
+    if (needsRrn) {
+      if (!/^\d{12}$/.test(rrn)) {
+        setError('A 12-digit RRN is required to clear a bill through HDFC Static UPI.');
+        return;
+      }
+      if (session.justification.entries.some((e) => e.source === 'upi_hdfc' && e.rrn === rrn)) {
+        setError('This RRN has already been used elsewhere in this session.');
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     try {
@@ -81,6 +100,7 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
           targetKey: request.targetKey,
           bohEntryId: entryId,
           clearSource: effectiveSource,
+          rrn: needsRrn ? rrn : undefined,
         });
       }
       onSaved(updated);
@@ -115,6 +135,16 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
           🔒 Source is fixed to <strong>{effectiveSource}</strong> for this entry.
         </p>
       </div>
+      {needsRrn && (
+        <div className="mb-3">
+          <label className="field-label">12 Digit RRN *</label>
+          <input
+            className="field-input"
+            value={rrn}
+            onChange={(e) => setRrn(e.target.value.replace(/\D/g, '').slice(0, 12))}
+          />
+        </div>
+      )}
       <label className="flex items-center gap-2 mb-3 text-tiny text-ink-3">
         <input type="checkbox" checked={includeToday} onChange={(e) => setIncludeToday(e.target.checked)} />
         Show today&apos;s BOH <span className="text-warn">(exceptional cases only)</span>
