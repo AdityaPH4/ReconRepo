@@ -9,7 +9,7 @@ applications:
         build:
           commands:
             - npm run build:packages --prefix "$(git rev-parse --show-toplevel)"
-            - npm run build --workspace=apps/web
+            - npm run build --prefix "$(git rev-parse --show-toplevel)/apps/web"
       artifacts:
         baseDirectory: .next
         files:
