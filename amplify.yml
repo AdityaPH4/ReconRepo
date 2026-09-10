@@ -1,17 +1,19 @@
 version: 1
-frontend:
-  phases:
-    preBuild:
-      commands:
-        - npm ci
-    build:
-      commands:
-        - npm run build:packages
-        - npm run build --workspace @toit/web
-  artifacts:
-    baseDirectory: apps/web/.next
-    files:
-      - '**/*'
-  cache:
-    paths:
-      - node_modules/**/*
+applications:
+  - appRoot: apps/web
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci --prefix "$(git rev-parse --show-toplevel)"
+        build:
+          commands:
+            - npm run build:packages --prefix "$(git rev-parse --show-toplevel)"
+            - npm run build --workspace=apps/web
+      artifacts:
+        baseDirectory: .next
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
