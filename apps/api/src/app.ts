@@ -11,7 +11,6 @@ import { MulterError } from 'multer';
 import { config } from './config.js';
 import { attachUser } from './middleware/auth.js';
 import { approvalRequestsRouter } from './routes/approvalRequests.js';
-import { authRouter } from './routes/auth.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { advancesRouter, bohRouter } from './routes/repositories.js';
 import { justificationRouter } from './routes/justification.js';
@@ -25,9 +24,10 @@ export const app = express();
 app.use(cors({ origin: config.corsOrigins, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-// Public — no bearer token required. `/auth/*` is how one is obtained in the
-// first place; the health check is a plain liveness probe.
-app.use('/auth', authRouter);
+// `/auth/*` lives on a separate, non-VPC Lambda (`authApp.ts`) — this app
+// needs VPC access for RDS, which cuts off its route to Google's own
+// servers, so it can no longer serve the OAuth round trip itself. Public —
+// no bearer token required; the health check is a plain liveness probe.
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,

@@ -10,6 +10,11 @@
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+// The OAuth round trip runs on a separate, non-VPC Lambda from the main API
+// (the main one needs VPC access for RDS, which cuts off its route to
+// Google's own servers) — falls back to API_BASE for local dev, where one
+// process serves everything.
+const AUTH_BASE = process.env.NEXT_PUBLIC_AUTH_URL ?? API_BASE;
 const STORAGE_KEY = 'toit_auth_token';
 
 export function getToken(): string | null {
@@ -34,7 +39,7 @@ export function authHeaders(): Record<string, string> {
 /** Redirects the browser into the Google sign-in round trip. `returnTo` is where the app lands after a successful sign-in. */
 export function login(returnTo: string = '/'): void {
   const params = new URLSearchParams({ redirect: returnTo });
-  window.location.href = `${API_BASE}/auth/google/login?${params}`;
+  window.location.href = `${AUTH_BASE}/auth/google/login?${params}`;
 }
 
 export function logout(): void {
