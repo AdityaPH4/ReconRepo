@@ -104,7 +104,7 @@ export { cell, headerIndex, parseCSV } from './util/csv.js';
 // ── Parsers ───────────────────────────────────────────────────────────────
 export { parsePaymentReport } from './parsers/paymentReport.js';
 export { parseTransactionsZip } from './parsers/transactionsZip.js';
-export { parsePaymentSummary } from './parsers/paymentSummary.js';
+export { parsePaymentSummary, parseSaleSummaryDrawerSection } from './parsers/paymentSummary.js';
 export { HdfcStatementFormatError, parseHdfcStatement } from './parsers/hdfcStatement.js';
 
 // ── Engine ────────────────────────────────────────────────────────────────
