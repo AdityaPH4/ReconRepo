@@ -26,6 +26,7 @@ import {
   parseHdfcStatement,
   parsePaymentReport,
   parsePaymentSummary,
+  parseSaleSummaryDrawerSection,
   parseTransactionsZip,
   reconcile,
   routePayName,
@@ -90,6 +91,38 @@ const ZIP_CSV = [
 const SUMMARY_CSV = [
   'Business Date,Cash,Pinelabs APOS,HDFC Static UPI,Kotak Static UPI,Bills on Hold,Bank transfer',
   '01-Aug-2026,"450.00","5,020.00","350.00","0.00","275.00","525.00"',
+].join('\n');
+
+// A trimmed-down excerpt of a real Sale Summary export — the PAYMENT SUMMARY
+// section before the DRAWER SUMMARY one, and the start of the Department
+// Summary section after it, are kept to exercise the "stop at the next
+// section" boundary the same way a full export would.
+const SALE_SUMMARY_CSV = [
+  'Sale Summary,Toit(Toit - Bengaluru),From : 01/09/2026  To : 09/09/2026,Generated On : 10-Sep-2026 11:25 AM',
+  'PAYMENT SUMMARY',
+  'Bills on Hold ,"38,022.00"',
+  'Cash,"685,890.00"',
+  'Total,"14,272,816.36"',
+  'DRAWER SUMMARY',
+  'Opening Balance,0.00',
+  'Paid In,0.00',
+  'Paid Out,"1,770.00"',
+  'Refund,0.00',
+  'Cash Drop,0.00',
+  'Total Expected,"14,271,046.36"',
+  'Pinelabs APOS,"13,081,221.00"',
+  'Swiggy,"203,667.00"',
+  'Bills on Hold ,"38,022.00"',
+  'HDFC Static UPI ,"11,183.00"',
+  'PINELABS-CI,0.00',
+  'Card/UPI ,0.00',
+  'Cash,"684,590.00"',
+  'Manual APOS ,"257,319.00"',
+  'Closing Balance,"14,276,002.00"',
+  'Over Shortage,"4,955.64"',
+  'Department Summary',
+  'Label,Quantity,Base Price,Net Sales',
+  'ALCOHOL,6059,"2,901,715.00","2,893,391.24"',
 ].join('\n');
 
 async function makeZip(csv: string): Promise<Buffer> {
@@ -248,6 +281,28 @@ describe('parsePaymentSummary()', () => {
 
   it('returns null when the business-date header is absent', () => {
     assert.equal(parsePaymentSummary('a,b,c\n1,2,3'), null);
+  });
+});
+
+describe('parseSaleSummaryDrawerSection()', () => {
+  it('reads the DRAWER SUMMARY section, trimming labels with a trailing space', () => {
+    const sum = parseSaleSummaryDrawerSection(SALE_SUMMARY_CSV);
+    assert.ok(sum);
+    assert.equal(sum!['Cash'], '684,590.00');
+    assert.equal(sum!['HDFC Static UPI'], '11,183.00');
+    assert.equal(sum!['Bills on Hold'], '38,022.00');
+    assert.equal(sum!['Card/UPI'], '0.00');
+  });
+
+  it('stops at the next section rather than reading past it', () => {
+    const sum = parseSaleSummaryDrawerSection(SALE_SUMMARY_CSV);
+    assert.ok(sum);
+    assert.equal('Label' in sum!, false);
+    assert.equal('ALCOHOL' in sum!, false);
+  });
+
+  it('returns null when no DRAWER SUMMARY section exists', () => {
+    assert.equal(parseSaleSummaryDrawerSection('a,b,c\n1,2,3'), null);
   });
 });
 
@@ -436,6 +491,16 @@ describe('FRS amounts', () => {
     assert.equal(a.pr, 450);
     assert.equal(a.drawerAmt, 450);
     assert.equal(a.diff, 0);
+  });
+
+  it('feeds a Sale-Summary-extracted drawer figure into FRS amounts the same way a native summary does', async () => {
+    const { prMap, ctx } = await frsCtx(false);
+    const sumMap = buildSumMap(parseSaleSummaryDrawerSection(SALE_SUMMARY_CSV));
+    const m = FRS_METHODS.find((x) => x.label === 'Cash')!;
+    const a = frsRowAmounts(m, prMap, sumMap, ctx);
+
+    assert.equal(a.usingSource, false);
+    assert.equal(a.drawerAmt, 684590);
   });
 
   it('switches HDFC Static UPI to transaction level once a statement exists', async () => {

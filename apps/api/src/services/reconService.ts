@@ -31,6 +31,7 @@ import {
   parseHdfcStatement,
   parsePaymentReport,
   parsePaymentSummary,
+  parseSaleSummaryDrawerSection,
   parseTransactionsZip,
   pinelabsAcquirerBreakdown,
   reconcile,
@@ -120,12 +121,30 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
   }
 
   // 5. Optional inputs.
-  const summaryData = files.sum
-    ? parsePaymentSummary(files.sum.buffer.toString('utf8'))
-    : null;
+  const summaryText = files.sum?.buffer.toString('utf8');
+  let summaryData: SummaryData | null = null;
+  if (summaryText) {
+    summaryData = parsePaymentSummary(summaryText);
+    if (!summaryData) {
+      summaryData = parseSaleSummaryDrawerSection(summaryText);
+      if (summaryData) {
+        // A Sale Summary's own DRAWER SUMMARY section doesn't break out every
+        // channel a native Drawer Summary Report does — flag which ones this
+        // upload can't cover rather than silently letting them read as zero.
+        const uncovered = FRS_METHODS.filter(
+          (m) => m.sourceType === 'drawer' && !m.sumKeys.some((k) => k in summaryData!),
+        ).map((m) => m.label);
+        if (uncovered.length) {
+          warnings.push(
+            `Drawer summary extracted from a Sale Summary report — it doesn't break out ${uncovered.join(', ')}; those will show as unreconciled if used today.`,
+          );
+        }
+      }
+    }
+  }
   if (files.sum && !summaryData) {
     warnings.push(
-      'The Payment Summary file could not be read (no "Business Date" header row found) — drawer comparisons are unavailable.',
+      'The Payment Summary file could not be read as either a Drawer Summary Report or a Sale Summary report — drawer comparisons are unavailable.',
     );
   }
 
