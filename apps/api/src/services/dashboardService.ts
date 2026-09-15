@@ -72,9 +72,10 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     const full = await sessionStore.get(item.id);
     const businessDate = full?.meta.businessDate;
     if (!full || !businessDate) continue;
-    const tips = full.justification.entries
-      .filter((e) => (e.source === 'cash' || e.source === 'upi' || e.source === 'bank') && e.remark === 'Tips')
-      .reduce((s, e) => s + e.amount, 0);
+    // The Payment Report's own `tips` column — auto-populated, not a
+    // manually-entered justification remark (which is what this used to
+    // read; that required an operator to notice and log it by hand).
+    const tips = full.totals.tipsTotal;
     if (tips === 0) continue;
     tipsByDate.set(businessDate, (tipsByDate.get(businessDate) ?? 0) + tips);
   }

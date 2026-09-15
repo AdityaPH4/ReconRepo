@@ -1,12 +1,15 @@
 /**
  * The daily re-reconciliation gate.
  *
- * A GM (never an admin — admins are the approvers) is blocked from creating
- * a second session for the same outlet+business-date in one day; this
- * guards against a GM uploading the wrong files, not noticing, and
- * re-running blind with nothing to flag it. Once an admin approves a
- * request for that exact pair, it stays unlocked — not single-use — so a GM
- * fixing a genuine mistake isn't gated again on the very next attempt.
+ * Re-running reconciliation for the same outlet+business-date is always
+ * allowed — a GM can reconcile as many times as they need while nothing has
+ * been submitted yet. The gate only fires once a session for that exact
+ * pair has already been *submitted*: a GM (never an admin — admins are the
+ * approvers) is then blocked from submitting again without sign-off, which
+ * guards against uploading the wrong files, not noticing, submitting, and
+ * only then wanting a redo. Once an admin approves a request for that exact
+ * pair, it stays unlocked — not single-use — so a GM fixing a genuine
+ * mistake isn't gated again on the very next attempt.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -30,16 +33,16 @@ export class ApprovalRequiredError extends Error {
 export async function assertReconAllowed(outlet: OutletCode, businessDate: string | null): Promise<void> {
   if (!businessDate) return; // nothing to key the gate on — let it through, matching legacy's own tolerance for an unparseable date.
 
-  const existing = await getSessionStore().list({ outlet });
-  const alreadyRanToday = existing.some((s) => s.businessDate === businessDate);
-  if (!alreadyRanToday) return;
+  const existing = await getSessionStore().list({ outlet, status: 'submitted' });
+  const alreadySubmitted = existing.some((s) => s.businessDate === businessDate);
+  if (!alreadySubmitted) return;
 
   const approvals = await getApprovalStore().list({ outlet, status: 'approved' });
   const covered = approvals.some((a) => a.businessDate === businessDate);
   if (covered) return;
 
   throw new ApprovalRequiredError(
-    `${outlet} has already been reconciled for ${businessDate} today. Ask an admin to approve a re-run.`,
+    `${outlet} has already been submitted for ${businessDate} today. Ask an admin to approve a re-run.`,
     outlet,
     businessDate,
   );
