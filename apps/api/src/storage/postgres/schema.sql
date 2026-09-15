@@ -46,6 +46,16 @@ CREATE TABLE IF NOT EXISTS recon.boh_entries (
 );
 CREATE INDEX IF NOT EXISTS boh_entries_outlet_status_idx ON recon.boh_entries (outlet, status);
 
+CREATE TABLE IF NOT EXISTS recon.tds_entries (
+  id TEXT PRIMARY KEY,
+  outlet TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
+  data JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS tds_entries_outlet_status_idx ON recon.tds_entries (outlet, status);
+CREATE INDEX IF NOT EXISTS tds_entries_status_idx ON recon.tds_entries (status);
+
 CREATE TABLE IF NOT EXISTS recon.mpr_sessions (
   id TEXT PRIMARY KEY,
   created_by TEXT NOT NULL,

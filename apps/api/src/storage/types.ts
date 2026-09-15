@@ -16,7 +16,7 @@ import type {
   SessionStatus,
   UploadRole,
 } from '@toit/contracts';
-import type { Advance, AdvanceApplication, BohEntry, OutletCode } from '@toit/recon-core';
+import type { Advance, AdvanceApplication, BohEntry, OutletCode, TdsEntry } from '@toit/recon-core';
 
 // ── Object storage: raw uploaded files, byte-for-byte ────────────────────
 
@@ -94,6 +94,17 @@ export interface BohStore {
   list(outlet: OutletCode): Promise<BohEntry[]>;
   /** Flips a row from `open` to `cleared` — the durable fix over legacy (see README/plan). */
   clear(id: string, clearedAt: string, clearedBySessionId: string): Promise<BohEntry>;
+}
+
+// ── Unreconciled TDS repository — outlet-scoped, admin closes cross-outlet ──
+
+export interface TdsStore {
+  readonly driver: 'memory' | 'postgres';
+  create(entry: TdsEntry): Promise<TdsEntry>;
+  get(id: string): Promise<TdsEntry | null>;
+  /** `outlet: null` lists across every outlet — for the admin/Accounts view. */
+  list(outlet: OutletCode | null, status?: 'open' | 'closed'): Promise<TdsEntry[]>;
+  close(id: string, closedAt: string, closedBy: string, closedNote: string | null): Promise<TdsEntry>;
 }
 
 // ── MPR (Layer 2) session storage ─────────────────────────────────────────

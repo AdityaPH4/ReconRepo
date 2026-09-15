@@ -15,6 +15,7 @@
 import { useState } from 'react';
 import type { JustificationEntryDTO, SessionDTO } from '@toit/contracts';
 import {
+  BANK_REMARKS_SHORTAGE,
   CASH_BILL_REMARKS,
   CASH_REMARKS_EXCESS,
   CASH_REMARKS_SHORTAGE,
@@ -34,7 +35,10 @@ type Source = 'cash' | 'upi' | 'bank';
 const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: readonly string[] }> = {
   cash: { excess: CASH_REMARKS_EXCESS, shortage: CASH_REMARKS_SHORTAGE },
   upi: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
-  bank: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
+  // Bank gets its own shortage list — "TDS Deducted" is a Bank-only remark
+  // (a formal, traceable-payment phenomenon; it doesn't happen on Cash or
+  // consumer UPI), so it must not leak onto the UPI tab by sharing its array.
+  bank: { excess: REMARKS_EXCESS, shortage: BANK_REMARKS_SHORTAGE },
 };
 
 /** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`. */

@@ -27,6 +27,7 @@ import type {
   SquareOffMap,
   SubmitStatus,
   SummaryData,
+  TdsEntry,
 } from '@toit/recon-core/display';
 import type {
   AdapterKey,
@@ -281,6 +282,7 @@ export type AdvanceApplicationDTO = AdvanceApplication;
 export type BohEntryDTO = BohEntry;
 export type BohClearanceDTO = BohClearance;
 export type BohStagingEntryDTO = BohStagingEntry;
+export type TdsEntryDTO = TdsEntry;
 export type SnapshotDTO = Snapshot;
 
 export interface EligibleAdvanceDTO {
@@ -376,6 +378,20 @@ export interface ClearBohRequest {
   clearSource: string;
   /** Required (12-digit) when `clearSource === 'HDFC Static UPI'`; ignored otherwise. */
   rrn?: string | null;
+}
+
+/** Backs the "TDS Deducted" modal — Bank tab only. Resolves the session's shortage immediately; the repository entry stays open until Accounts verifies it in Form 26AS, months later. */
+export interface RecordTdsRequest {
+  source: JustificationSourceDTO;
+  targetKey: string | null;
+  amount: number;
+  clientName: string;
+  notes?: string | null;
+}
+
+/** Backs the admin-only "Mark verified in 26AS" action on `/tds`. */
+export interface CloseTdsRequest {
+  closedNote?: string | null;
 }
 
 // ── MPR reconciliation (Layer 2) ──────────────────────────────────────────

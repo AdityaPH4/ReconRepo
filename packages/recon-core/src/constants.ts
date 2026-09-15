@@ -29,11 +29,20 @@ export const REMARKS_ALL = [...REMARKS_EXCESS, ...REMARKS_SHORTAGE] as const;
 
 export type RemarkExcess = (typeof REMARKS_EXCESS)[number];
 export type RemarkShortage = (typeof REMARKS_SHORTAGE)[number];
-export type Remark = (typeof REMARKS_ALL)[number] | 'Paid In' | 'Paid Out';
+export type Remark = (typeof REMARKS_ALL)[number] | 'Paid In' | 'Paid Out' | 'TDS Deducted';
 
 // ── Cash-tab-only remarks — same list as above, plus Paid In/Out ──────────
 export const CASH_REMARKS_EXCESS = ['Paid In', ...REMARKS_EXCESS] as const;
 export const CASH_REMARKS_SHORTAGE = ['Paid Out', ...REMARKS_SHORTAGE] as const;
+
+/**
+ * Bank-tab-only shortage remarks — same list as `REMARKS_SHORTAGE`, plus "TDS
+ * Deducted". TDS withholding is a formal, traceable-payment phenomenon
+ * (NEFT/RTGS from a corporate client) that doesn't happen on Cash or
+ * consumer UPI payments, so this stays off `REMARKS_SHORTAGE` itself rather
+ * than leaking onto every tab that shares it.
+ */
+export const BANK_REMARKS_SHORTAGE = [...REMARKS_SHORTAGE, 'TDS Deducted'] as const;
 
 /** Remarks that require the Bill Number / Reason fields (Cash tab only). */
 export const CASH_BILL_REMARKS = ['Paid In', 'Paid Out'] as const;
@@ -46,6 +55,7 @@ export const MODAL_REMARKS = [
   'Extra Payment Received',
   'Short Collection',
   'Other',
+  'TDS Deducted',
 ] as const;
 
 /**

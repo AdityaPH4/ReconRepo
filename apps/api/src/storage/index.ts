@@ -9,12 +9,14 @@ import { createMemoryApprovalStore } from './memoryApprovalStore.js';
 import { createMemoryBohStore } from './memoryBohStore.js';
 import { createMemoryMprSessionStore } from './memoryMprSessionStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
+import { createMemoryTdsStore } from './memoryTdsStore.js';
 import { getPool } from './postgres/pool.js';
 import { createPostgresAdvanceStore } from './postgres/postgresAdvanceStore.js';
 import { createPostgresApprovalStore } from './postgres/postgresApprovalStore.js';
 import { createPostgresBohStore } from './postgres/postgresBohStore.js';
 import { createPostgresMprSessionStore } from './postgres/postgresMprSessionStore.js';
 import { createPostgresSessionStore } from './postgres/postgresSessionStore.js';
+import { createPostgresTdsStore } from './postgres/postgresTdsStore.js';
 import { createS3ObjectStore } from './s3ObjectStore.js';
 import type {
   AdvanceStore,
@@ -23,6 +25,7 @@ import type {
   MprSessionStore,
   ObjectStore,
   SessionStore,
+  TdsStore,
 } from './types.js';
 
 let objectStore: ObjectStore | null = null;
@@ -31,6 +34,7 @@ let advanceStore: AdvanceStore | null = null;
 let bohStore: BohStore | null = null;
 let mprSessionStore: MprSessionStore | null = null;
 let approvalStore: ApprovalStore | null = null;
+let tdsStore: TdsStore | null = null;
 
 export function getObjectStore(): ObjectStore {
   if (objectStore) return objectStore;
@@ -110,5 +114,25 @@ export function getApprovalStore(): ApprovalStore {
   return approvalStore;
 }
 
-export type { AdvanceStore, ApprovalStore, BohStore, MprSessionStore, ObjectStore, SessionStore } from './types.js';
+export function getTdsStore(): TdsStore {
+  if (tdsStore) return tdsStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    tdsStore = createPostgresTdsStore(getPool());
+    return tdsStore;
+  }
+
+  tdsStore = createMemoryTdsStore();
+  return tdsStore;
+}
+
+export type {
+  AdvanceStore,
+  ApprovalStore,
+  BohStore,
+  MprSessionStore,
+  ObjectStore,
+  SessionStore,
+  TdsStore,
+} from './types.js';
 export { buildStorageKey } from './types.js';

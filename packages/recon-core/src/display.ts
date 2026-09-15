@@ -41,6 +41,7 @@ export type {
 
 export {
   AMOUNT_EPSILON,
+  BANK_REMARKS_SHORTAGE,
   BOH_SOURCES,
   CASH_BILL_REMARKS,
   CASH_REMARKS_EXCESS,
@@ -95,6 +96,7 @@ export type {
   JustificationState,
   ResolvableItem,
   SquareOffMap,
+  TdsEntry,
 } from './justification/types.js';
 export { emptyJustificationState } from './justification/types.js';
 
