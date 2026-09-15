@@ -57,7 +57,7 @@ export function AggregatePanel({ title, totals, rows, note, extraStats, showPaym
                   {totals.summaryTotal === null ? '—' : fmt(totals.summaryTotal)}
                 </p>
                 {totals.summaryTotal === null && (
-                  <p className="text-micro text-ink-3 mt-1">No Payment Summary uploaded</p>
+                  <p className="text-micro text-ink-3 mt-1">No Sales Summary uploaded</p>
                 )}
               </div>
 

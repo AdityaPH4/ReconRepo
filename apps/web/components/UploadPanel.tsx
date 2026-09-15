@@ -82,7 +82,7 @@ export function UploadPanel({
   const hint = ready
     ? files.sum
       ? 'All files ready.'
-      : 'Payment Summary optional — proceed without it.'
+      : 'Sales Summary optional — proceed without it.'
     : 'Still needed: ' + missing.join(', ');
 
   const requiredPills = (['pr', 'zip', 'sum'] as const).filter((r) => files[r]);
@@ -123,7 +123,7 @@ export function UploadPanel({
           <div className="dropzone-sub mt-2">
             <span className="faux-btn">📁 Browse files</span>
             <span className="ml-2">
-              Payment Report (CSV) · All Transactions (ZIP) · Payment Summary (CSV)
+              Payment Report (CSV) · All Transactions (ZIP) · Sales Summary (CSV)
             </span>
           </div>
         </div>

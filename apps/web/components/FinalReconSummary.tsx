@@ -167,7 +167,7 @@ function MethodBreakdown({ frs, hasSummary }: { frs: SessionDTO['frs']; hasSumma
       {!hasSummary && (
         <div className="alert alert-info">
           <span>ℹ</span>
-          <span>Upload Payment Summary CSV to see comparison.</span>
+          <span>Upload Sales Summary CSV to see comparison.</span>
         </div>
       )}
       <div className="table-wrap">

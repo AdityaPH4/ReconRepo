@@ -144,7 +144,7 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
   }
   if (files.sum && !summaryData) {
     warnings.push(
-      'The Payment Summary file could not be read as either a Drawer Summary Report or a Sale Summary report — drawer comparisons are unavailable.',
+      'The Sales Summary file could not be read as either a Drawer Summary Report or a Sale Summary report — drawer comparisons are unavailable.',
     );
   }
 
