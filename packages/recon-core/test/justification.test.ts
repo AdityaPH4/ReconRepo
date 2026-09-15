@@ -227,6 +227,25 @@ describe('square-off', () => {
     assert.equal(net, 300);
     assert.ok(Math.abs(net!) >= AMOUNT_EPSILON);
   });
+
+  it('nets a whole group correctly for every member, not just the hub two pairwise toggles built', () => {
+    // Two ordinary pairwise square-offs sharing one row (A) build a star —
+    // A: [B, C], B: [A], C: [A] — not a fully-connected group. The group
+    // still nets to 0 (500 - 200 - 300), and every member should see that,
+    // not just A (whose own array happens to already list everyone).
+    const items: ResolvableItem[] = [
+      { globalId: 'A', targetKey: 'a', diff: 500, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+      { globalId: 'B', targetKey: 'b', diff: -200, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+      { globalId: 'C', targetKey: 'c', diff: -300, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+    ];
+    let map = toggleSquareOff({}, 'A', 'B', true);
+    map = toggleSquareOff(map, 'A', 'C', true);
+    assert.deepEqual(map, { A: ['B', 'C'], B: ['A'], C: ['A'] });
+
+    assert.equal(squareOffNet(map, 'A', items), 0);
+    assert.equal(squareOffNet(map, 'B', items), 0);
+    assert.equal(squareOffNet(map, 'C', items), 0);
+  });
 });
 
 // ── Completeness ──────────────────────────────────────────────────────────
@@ -255,6 +274,25 @@ describe('completeness', () => {
     const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
     const result = pinelabsCompleteness(pinelabs, [], map);
     assert.equal(result.allResolved, true);
+  });
+
+  it('a 3-row square-off group (built via two pairwise toggles sharing one row) resolves every row', () => {
+    const pinelabs = pinelabsResult({
+      reconRows: [reconRow({ rrn: 'R1', diff: 500 })] as never,
+      onlyPOS: [
+        { orders: ['O1'], amount: 200, rrn: 'R2' },
+        { orders: ['O2'], amount: 300, rrn: 'R3' },
+      ] as never,
+    });
+    // MM-1 (+500) squared off with POS-1 (-200) and, separately, with POS-2
+    // (-300) — an ordinary pair of pairwise actions sharing MM-1, which
+    // builds a star (MM-1: [POS-1, POS-2], POS-1: [MM-1], POS-2: [MM-1]),
+    // not a fully-connected group. All three rows should resolve.
+    let map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    map = toggleSquareOff(map, 'MM-1', 'POS-2', true);
+    const result = pinelabsCompleteness(pinelabs, [], map);
+    assert.equal(result.allResolved, true);
+    assert.equal(result.unresolvedCount, 0);
   });
 
   it('count-based HDFC completeness is not fooled by opposite-sign items netting near zero', () => {

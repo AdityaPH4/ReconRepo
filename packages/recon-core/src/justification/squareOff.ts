@@ -34,19 +34,40 @@ export function isSquaredOff(map: SquareOffMap, id: string): boolean {
   return squareOffPartners(map, id).length > 0;
 }
 
-/** Net diff of an item plus every item it's paired with. `null` if `id` isn't a known item. */
+/**
+ * Every id reachable from `id` through the square-off graph, `id` included.
+ * Sequential pairwise toggles that share a row build a star (hub lists every
+ * partner, each partner only lists the hub) rather than a fully-connected
+ * clique — the group is still one logical unit, so resolution has to walk
+ * the whole connected component, not just `id`'s own direct entry.
+ */
+function squareOffComponent(map: SquareOffMap, id: string): string[] {
+  const seen = new Set<string>([id]);
+  const queue = [id];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const next of map[cur] ?? []) {
+      if (!seen.has(next)) {
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+  }
+  return [...seen];
+}
+
+/** Net diff of an item plus every item in its square-off group. `null` if `id` isn't a known item. */
 export function squareOffNet(
   map: SquareOffMap,
   id: string,
   items: readonly ResolvableItem[],
 ): number | null {
   const byId = new Map(items.map((x) => [x.globalId, x]));
-  const self = byId.get(id);
-  if (!self) return null;
-  return squareOffPartners(map, id).reduce((sum, partnerId) => {
-    const partner = byId.get(partnerId);
-    return partner ? sum + partner.diff : sum;
-  }, self.diff);
+  if (!byId.has(id)) return null;
+  return squareOffComponent(map, id).reduce((sum, memberId) => {
+    const member = byId.get(memberId);
+    return member ? sum + member.diff : sum;
+  }, 0);
 }
 
 /** A pair is only offered as partners if they carry opposite signs — mirrors legacy `mkCell`. */
