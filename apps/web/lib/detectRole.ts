@@ -17,7 +17,7 @@ export function detectRole(name: string): UploadRole | null {
   // The optional HDFC statement is the only .xlsx the flow accepts.
   if (l.endsWith('.xlsx')) return 'hdfc';
 
-  // Payment Summary first — it is the more specific match.
+  // Sales Summary (or a native Drawer Summary Report) first — it is the more specific match.
   if (l.includes('summary') || l.includes('drawer') || l.includes('payment_summary')) {
     return 'sum';
   }
@@ -37,7 +37,7 @@ export function detectRole(name: string): UploadRole | null {
 export const ROLE_LABELS: Record<UploadRole, string> = {
   pr: 'Payment Report',
   zip: 'All Transactions',
-  sum: 'Payment Summary',
+  sum: 'Sales Summary',
   hdfc: 'HDFC UPI Statement',
 };
 
