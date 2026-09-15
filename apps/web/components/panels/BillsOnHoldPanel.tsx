@@ -241,13 +241,15 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[14%]">Order no</th>
-                <th className="w-[18%]">Customer</th>
-                <th className="w-[16%]">BOH date / time</th>
-                <th className="w-[14%]">Source</th>
-                <th className="w-[12%]">Cleared date</th>
-                <th className="w-[14%] num">Amount</th>
-                <th className="w-[12%]" />
+                <th className="w-[12%]">Order no</th>
+                <th className="w-[14%]">Customer</th>
+                <th className="w-[14%]">BOH date / time</th>
+                <th className="w-[11%]">Source</th>
+                <th className="w-[11%]">RRN</th>
+                <th className="w-[11%]">MPR date</th>
+                <th className="w-[10%]">Cleared date</th>
+                <th className="w-[11%] num">Amount</th>
+                <th className="w-[6%]" />
               </tr>
             </thead>
             <tbody>
@@ -257,6 +259,8 @@ export function BillsOnHoldPanel({ rows, totals }: { rows: Row[]; totals: PanelT
                   <td>{c.custName || '—'}</td>
                   <td className="mono text-tiny whitespace-nowrap">{fmtDate(c.bohDate)}</td>
                   <td>{c.source}</td>
+                  <td className="mono text-tiny">{c.rrn || '—'}</td>
+                  <td className="mono text-tiny whitespace-nowrap">{c.mprDate || '—'}</td>
                   <td className="mono">{c.clearedDate}</td>
                   <td className="num">{fmt(c.amount)}</td>
                   <td>

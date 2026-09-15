@@ -158,8 +158,10 @@ export interface BohClearance {
   custName: string;
   /** The bill's own raw PR date/time string — see `BohEntry.bohDate`. */
   bohDate: string;
-  /** Set (12-digit) when cleared with `source === 'HDFC Static UPI'`; `null` for every other source. */
+  /** Set (12-digit) when cleared with `source` `'HDFC Static UPI'`, `'MPR'`, or `'Pinelabs'`; `null` for every other source. */
   rrn: string | null;
+  /** ISO `yyyy-mm-dd` — the date this transaction actually shows up in the bank/Pinelabs settlement (MPR) report, which can lag the recon's own business date. Set only when `source` is `'MPR'` or `'Pinelabs'`; `null` otherwise. */
+  mprDate: string | null;
 }
 
 /** A new BOH repository row proposed from the Bills-on-Hold tab, pending commit at submit. */
