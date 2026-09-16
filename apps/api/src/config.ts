@@ -61,6 +61,8 @@ const repoRoot = path.resolve(process.cwd(), '../..');
 
 export const config = {
   port: int('API_PORT', 4000),
+  /** Local-dev-only: the port `authServer.ts` listens on (see its own doc comment — Lambda deploys `authApp` as its own function instead, with no port to configure here). */
+  authPort: int('AUTH_PORT', 4001),
 
   corsOrigins: str('CORS_ORIGIN', 'http://localhost:3000')
     .split(',')

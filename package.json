@@ -12,9 +12,10 @@
   },
   "scripts": {
     "predev": "npm run build:packages",
-    "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "dev": "concurrently -n api,web,auth -c cyan,magenta,yellow \"npm:dev:api\" \"npm:dev:web\" \"npm:dev:auth\"",
     "dev:api": "npm run dev --workspace @toit/api",
     "dev:web": "npm run dev --workspace @toit/web",
+    "dev:auth": "npm run dev:auth --workspace @toit/api",
     "build:packages": "tsc -b packages/recon-core packages/contracts packages/mpr-core",
     "build": "npm run build:packages && npm run build --workspace @toit/api && npm run build --workspace @toit/web",
     "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
