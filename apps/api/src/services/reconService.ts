@@ -20,6 +20,7 @@ import {
   buildWin,
   civilToISO,
   detectOutletFromZip,
+  findUnsettledSuccessRows,
   fmtWin,
   FRS_METHODS,
   frsRowAmounts,
@@ -105,6 +106,17 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
   if (!inside.length && !filtered.length) {
     throw new BadRequestError(
       'No transaction rows found inside the ZIP. Check it contains the Pinelabs All Transactions CSV.',
+    );
+  }
+
+  // Batch Settle Check — blocks the whole upload rather than silently
+  // reconciling against not-yet-final money. See `findUnsettledSuccessRows`.
+  const unsettled = findUnsettledSuccessRows(inside, filtered);
+  if (unsettled.length) {
+    const sample = unsettled.slice(0, 10).map((r) => r.rrn || r.name || '(no RRN)');
+    const more = unsettled.length > sample.length ? `, +${unsettled.length - sample.length} more` : '';
+    throw new BadRequestError(
+      `${unsettled.length} transaction(s) in the Pinelabs report show as Success but are not yet Settled (Batch Status) — RRN(s): ${sample.join(', ')}${more}. Settle them in Pinelabs before uploading.`,
     );
   }
 

@@ -18,6 +18,7 @@ import {
   buildWin,
   civilToISO,
   detectOutletFromZip,
+  findUnsettledSuccessRows,
   fmtDate,
   frsRowAmounts,
   grandTotals,
@@ -268,6 +269,52 @@ describe('parseTransactionsZip()', () => {
     const win = buildWin({ y: 2026, m: 7, d: 1 });
     const { inside } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
     assert.equal(detectOutletFromZip(inside), 'BLRT');
+  });
+});
+
+describe('findUnsettledSuccessRows() — Batch Settle Check', () => {
+  it('finds nothing when every Success row is Settled', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    const { inside, filtered } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
+    assert.deepEqual(findUnsettledSuccessRows(inside, filtered), []);
+  });
+
+  it('flags a Success row whose Batch Status is not Settled', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    const csv =
+      ZIP_CSV +
+      '\nPINELABS,CARD,Unsettled,VISA,444.00,0,01/08/2026 10:30:00 PM,Pending,Success,100000000096,02/08/2026,B13,INV13,A13,Sale,South,Toit- Bangalore,T1,M1,APOS';
+    const { inside, filtered } = await parseTransactionsZip(await makeZip(csv), win);
+    const unsettled = findUnsettledSuccessRows(inside, filtered);
+    assert.equal(unsettled.length, 1);
+    assert.equal(unsettled[0]!.rrn, '100000000096');
+    assert.equal(unsettled[0]!.batchStatus, 'Pending');
+  });
+
+  it('still flags an unsettled row even when Paper-POS/window filtering excluded it from `inside`', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    // Paper POS *and* unsettled — a row can be excluded from reconciliation
+    // math for one reason while still surfacing a genuine settle problem.
+    const csv =
+      ZIP_CSV +
+      '\nPINELABS,PAPER POS,UnsettledPaper,VISA,555.00,0,01/08/2026 10:35:00 PM,Pending,Success,100000000095,02/08/2026,B14,INV14,A14,Sale,South,Toit- Bangalore,T1,M1,PAPER POS';
+    const { inside, filtered } = await parseTransactionsZip(await makeZip(csv), win);
+    assert.equal(inside.some((r) => r.rrn === '100000000095'), false);
+    const unsettled = findUnsettledSuccessRows(inside, filtered);
+    assert.ok(unsettled.some((r) => r.rrn === '100000000095'));
+  });
+
+  it('does not flag a row excluded for being non-successful, even if also unsettled', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    const { inside, filtered } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
+    // The fixture's own FAILED row is `Pending` in Batch Status — confirms the
+    // check is scoped to Success rows only, not "any non-Settled row".
+    const failedRow = filtered.find((f) => f._fReason?.startsWith('Not successful'));
+    assert.equal(failedRow?.batchStatus, 'Pending');
+    assert.equal(
+      findUnsettledSuccessRows(inside, filtered).some((r) => r.rrn === failedRow?.rrn),
+      false,
+    );
   });
 });
 
