@@ -371,6 +371,30 @@
     @apply bg-surface border border-line rounded-panel shadow-panel overflow-hidden;
   }
 
+  /* ── Panel header (icon + title/subtitle + a trailing control) — the
+     dashboard's Tips/BOH cards; reusable for any future panel that wants
+     the same "what is this and why" framing at a glance. ─────────────── */
+  .panel-header {
+    @apply flex items-center justify-between gap-3 p-5 border-b border-line flex-wrap;
+  }
+
+  .panel-header-left {
+    @apply flex items-center gap-3 min-w-0;
+  }
+
+  .panel-icon {
+    @apply w-11 h-11 rounded-full flex items-center justify-center text-[22px] shrink-0
+           bg-warn-soft;
+  }
+
+  .panel-title {
+    @apply text-lede font-semibold leading-tight;
+  }
+
+  .panel-subtitle {
+    @apply text-tiny text-ink-3 leading-tight;
+  }
+
   .subtabs {
     @apply flex border-b border-line overflow-x-auto bg-sunken px-4;
 
