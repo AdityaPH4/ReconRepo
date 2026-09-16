@@ -103,6 +103,11 @@ export function RemarkCell({ source, item, allItems }: Props) {
           // BOH Clear's source is locked to whichever row triggered it —
           // legacy: `openBohClearFromRecon` (reconciliation (68).html:4607-4665).
           lockedSource: modalKind === 'boh-clear' ? (source === 'pinelabs' ? 'Pinelabs' : 'HDFC Static UPI') : undefined,
+          // A row-level HDFC-UPI item already carries its own RRN (that's how
+          // it got matched/listed in the first place) — `BohClearModal` uses
+          // this to skip asking the operator to re-type an RRN the system
+          // already knows, when the source is HDFC Static UPI specifically.
+          rrn: item.rrn || undefined,
         });
         return;
       }
