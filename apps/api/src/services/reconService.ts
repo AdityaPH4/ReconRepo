@@ -322,6 +322,8 @@ function buildTotals(
     .reduce((s, r) => s + (Number.isNaN(r.amount) ? 0 : r.amount), 0);
   const plTerm = sumAmounts(zipInside);
 
+  const tipsTotal = prData.reduce((s, r) => s + (Number.isNaN(r.tips) ? 0 : r.tips), 0);
+
   // Swiggy/Zomato: legacy still splits the drawer comparison per brand
   // (`summaryData['Swiggy']` vs `summaryData['ZOMATO']`) even though neither
   // ever blocks submission.
@@ -340,6 +342,7 @@ function buildTotals(
       zomato: drawerTotals(sumAmounts(zomatoRows), drawer('ZOMATO')),
     },
     pinelabs: { prTotal: plPR, terminalTotal: plTerm, diff: plTerm - plPR },
+    tipsTotal,
   };
 }
 

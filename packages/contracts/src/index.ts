@@ -196,6 +196,8 @@ export interface PanelSummariesDTO {
   swiggy: { prTotal: number; swiggy: PanelTotalsDTO; zomato: PanelTotalsDTO };
   /** Pinelabs is transaction-level, so it reports terminal vs POS instead. */
   pinelabs: { prTotal: number; terminalTotal: number; diff: number };
+  /** Sum of every Payment Report row's own `tips` column — the dashboard's Tips figures come from here, not a manually-entered remark. */
+  tipsTotal: number;
 }
 
 // ── Pinelabs terminal breakdown by acquirer ───────────────────────────────
@@ -510,6 +512,14 @@ export interface DashboardTipsRowDTO {
   amount: number;
 }
 
+/** Inclusive calendar-date bounds for a rolling 7-day Tips window. */
+export interface DashboardDateRangeDTO {
+  /** `yyyy-mm-dd`. */
+  from: string;
+  /** `yyyy-mm-dd`. */
+  to: string;
+}
+
 export type BohAgingBucket = '1' | '2' | '3' | '4' | '5' | '5+';
 
 export interface DashboardBohAgingRowDTO {
@@ -532,6 +542,8 @@ export interface DashboardDTO {
   tips: DashboardTipsRowDTO[];
   tipsWeekCurrent: number;
   tipsWeekPrevious: number;
+  tipsWeekCurrentRange: DashboardDateRangeDTO;
+  tipsWeekPreviousRange: DashboardDateRangeDTO;
   bohAging: DashboardBohAgingRowDTO[];
   bohTotal: { count: number; amount: number };
 }

@@ -72,9 +72,10 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     const full = await sessionStore.get(item.id);
     const businessDate = full?.meta.businessDate;
     if (!full || !businessDate) continue;
-    const tips = full.justification.entries
-      .filter((e) => (e.source === 'cash' || e.source === 'upi' || e.source === 'bank') && e.remark === 'Tips')
-      .reduce((s, e) => s + e.amount, 0);
+    // The Payment Report's own `tips` column — auto-populated, not a
+    // manually-entered justification remark (which is what this used to
+    // read; that required an operator to notice and log it by hand).
+    const tips = full.totals.tipsTotal;
     if (tips === 0) continue;
     tipsByDate.set(businessDate, (tipsByDate.get(businessDate) ?? 0) + tips);
   }
@@ -90,6 +91,10 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
   };
   const tipsWeekCurrent = sumRange(0, 6);
   const tipsWeekPrevious = sumRange(7, 13);
+  // Real calendar boundaries for the two rolling windows above — the
+  // dashboard UI shows these instead of the old "Week X"/"Week X-1" labels.
+  const tipsWeekCurrentRange = { from: dateOffset(today, -6), to: today };
+  const tipsWeekPreviousRange = { from: dateOffset(today, -13), to: dateOffset(today, -7) };
 
   // ── Bills-on-Hold aging ──────────────────────────────────────────────
   const bohEntries = await getBohStore().list(outlet);
@@ -111,5 +116,16 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     { count: 0, amount: 0 },
   );
 
-  return { outlet, today, todayStatus, tips, tipsWeekCurrent, tipsWeekPrevious, bohAging, bohTotal };
+  return {
+    outlet,
+    today,
+    todayStatus,
+    tips,
+    tipsWeekCurrent,
+    tipsWeekPrevious,
+    tipsWeekCurrentRange,
+    tipsWeekPreviousRange,
+    bohAging,
+    bohTotal,
+  };
 }
