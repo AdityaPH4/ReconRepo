@@ -5,16 +5,35 @@
  * rolling Tips breakdown, and a Bills-on-Hold aging table.
  */
 
-import type { DashboardDTO } from '@toit/contracts';
+import type { DashboardDateRangeDTO, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
 import { fmt } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ApiError, getDashboard } from '@/lib/api';
+import { diffClass } from '@/components/ui/table';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft — not yet submitted',
   submitted: 'Submitted',
 };
+
+/** `row.label` is internal shorthand ('T', 'T-1', …) — a GM needs an actual day, not engineering notation. */
+function tipsDayLabel(row: DashboardTipsRowDTO): string {
+  if (row.label === 'T') return 'Today';
+  if (row.label === 'T-1') return 'Yesterday';
+  return new Date(`${row.date}T00:00:00Z`).toLocaleDateString('en-IN', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
+function tipsRangeLabel(range: DashboardDateRangeDTO): string {
+  const fmtShort = (iso: string) =>
+    new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return `${fmtShort(range.from)} – ${fmtShort(range.to)}`;
+}
 
 export function Dashboard() {
   const user = useCurrentUser();
@@ -60,14 +79,17 @@ export function Dashboard() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Tips</th>
+                  <th>Day</th>
                   <th className="num">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {dashboard.tips.map((row) => (
-                  <tr key={row.label}>
-                    <td>{row.label}</td>
+                  <tr key={row.label} className={row.label === 'T' ? 'font-semibold' : undefined}>
+                    <td>
+                      {tipsDayLabel(row)}
+                      {row.label === 'T' && <span className="tag tag-accent ml-2">Today</span>}
+                    </td>
                     <td className="num">{fmt(row.amount)}</td>
                   </tr>
                 ))}
@@ -75,16 +97,35 @@ export function Dashboard() {
                   <td colSpan={2} />
                 </tr>
                 <tr className="total-row">
-                  <td>Week X</td>
+                  <td>
+                    This week <span className="text-tiny text-ink-3">({tipsRangeLabel(dashboard.tipsWeekCurrentRange)})</span>
+                  </td>
                   <td className="num">{fmt(dashboard.tipsWeekCurrent)}</td>
                 </tr>
                 <tr className="total-row">
-                  <td>Week X-1</td>
+                  <td>
+                    Last week <span className="text-tiny text-ink-3">({tipsRangeLabel(dashboard.tipsWeekPreviousRange)})</span>
+                  </td>
                   <td className="num">{fmt(dashboard.tipsWeekPrevious)}</td>
                 </tr>
+                {dashboard.tipsWeekPrevious > 0 && (
+                  <tr>
+                    <td className="text-tiny text-ink-3">vs. last week</td>
+                    <td className={`num text-tiny font-semibold ${diffClass(dashboard.tipsWeekCurrent - dashboard.tipsWeekPrevious)}`}>
+                      {dashboard.tipsWeekCurrent >= dashboard.tipsWeekPrevious ? '▲' : '▼'}{' '}
+                      {fmt(Math.abs(dashboard.tipsWeekCurrent - dashboard.tipsWeekPrevious))}
+                      {' '}({Math.round((Math.abs(dashboard.tipsWeekCurrent - dashboard.tipsWeekPrevious) / dashboard.tipsWeekPrevious) * 100)}%)
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+          {dashboard.tipsWeekCurrent === 0 && dashboard.tipsWeekPrevious === 0 && (
+            <p className="text-tiny text-ink-3 mt-2">
+              No tips recorded in the last 14 days — this fills in automatically from the Payment Report&apos;s Tips column once a session is submitted.
+            </p>
+          )}
         </div>
 
         <div className="panel">

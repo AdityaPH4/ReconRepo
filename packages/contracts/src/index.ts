@@ -485,6 +485,14 @@ export interface DashboardTipsRowDTO {
   amount: number;
 }
 
+/** Inclusive calendar-date bounds for a rolling 7-day Tips window. */
+export interface DashboardDateRangeDTO {
+  /** `yyyy-mm-dd`. */
+  from: string;
+  /** `yyyy-mm-dd`. */
+  to: string;
+}
+
 export type BohAgingBucket = '1' | '2' | '3' | '4' | '5' | '5+';
 
 export interface DashboardBohAgingRowDTO {
@@ -507,6 +515,8 @@ export interface DashboardDTO {
   tips: DashboardTipsRowDTO[];
   tipsWeekCurrent: number;
   tipsWeekPrevious: number;
+  tipsWeekCurrentRange: DashboardDateRangeDTO;
+  tipsWeekPreviousRange: DashboardDateRangeDTO;
   bohAging: DashboardBohAgingRowDTO[];
   bohTotal: { count: number; amount: number };
 }
