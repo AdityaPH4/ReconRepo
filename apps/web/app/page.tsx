@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { AdminLink } from '@/components/admin/AdminLink';
-import { TdsLink } from '@/components/tds/TdsLink';
 
 /**
  * Landing hub — picks which of the two modules to open.
@@ -21,13 +20,10 @@ export default function HomePage() {
             <span className="pill">Pick a module to continue</span>
           </div>
         </div>
-        <div className="flex gap-2">
-          <TdsLink />
-          <AdminLink />
-        </div>
+        <AdminLink />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-6">
         <ModuleCard
           href="/recon"
           icon="🧾"
@@ -39,6 +35,12 @@ export default function HomePage() {
           icon="🏦"
           title="MPR Reconciliation"
           description="Layer-2 check: confirms a submitted session's settlement ledger against the actual bank settlement files (Kotak, Pinelabs, AMEX, HDFC UPI)."
+        />
+        <ModuleCard
+          href="/tds"
+          icon="🗂️"
+          title="Unreconciled TDS"
+          description="Every TDS deduction a corporate client has made, logged from the Bank tab and Pinelabs/HDFC-UPI rows — stays open until Accounts verifies it in Form 26AS, sometimes months later."
         />
       </div>
     </main>
