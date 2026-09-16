@@ -384,8 +384,10 @@ export interface ClearBohRequest {
   targetKey: string | null;
   bohEntryId: string;
   clearSource: string;
-  /** Required (12-digit) when `clearSource === 'HDFC Static UPI'`; ignored otherwise. */
+  /** Required (12-digit) when `clearSource` is `'HDFC Static UPI'`, `'MPR'`, or `'Pinelabs'`; ignored otherwise. */
   rrn?: string | null;
+  /** Required (ISO `yyyy-mm-dd`) when `clearSource` is `'MPR'` or `'Pinelabs'`; ignored otherwise. */
+  mprDate?: string | null;
 }
 
 /** Backs the "Close advance" action on the standalone Advance Closure module — outside of any recon session. Reason is required, unlike `CloseTdsRequest.closedNote`: this closure exists for a specific business reason (e.g. "returned to POC — full payment via company card") worth recording every time. */

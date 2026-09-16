@@ -32,6 +32,7 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [includeToday, setIncludeToday] = useState(false);
   const [rrn, setRrn] = useState('');
+  const [mprDate, setMprDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -40,13 +41,27 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
   // directly (see module doc comment above).
   const effectiveSource = request.lockedSource ?? 'MPR';
 
-  // A bill cleared through an HDFC-UPI row needs the same 12-digit RRN
-  // discipline as any other HDFC-UPI justification, re-validated server-side
-  // in `clearBoh()` — legacy never asked for one here, but that just meant a
-  // cleared bill couldn't be tied back to the bank statement line that
-  // actually paid it. `lockedSource` forces single selection (see `toggle`
-  // below), so one RRN field per modal instance is enough.
-  const needsRrn = effectiveSource === 'HDFC Static UPI';
+  // A bill cleared through HDFC-UPI, MPR, or Pinelabs needs the same
+  // 12-digit RRN discipline as any other justification for that source,
+  // re-validated server-side in `clearBoh()` — legacy never asked for one
+  // here, but that just meant a cleared bill couldn't be tied back to the
+  // bank/terminal record that actually paid it. MPR and Pinelabs
+  // additionally need the date the transaction actually shows up in the
+  // bank/Pinelabs settlement (MPR) report, since that can lag the recon's
+  // own business date. `lockedSource` forces single selection (see `toggle`
+  // below), so one field per modal instance is enough.
+  const rrnRequired = effectiveSource === 'HDFC Static UPI' || effectiveSource === 'MPR' || effectiveSource === 'Pinelabs';
+  const needsMprDate = effectiveSource === 'MPR' || effectiveSource === 'Pinelabs';
+
+  // A row-level HDFC-UPI item already carries its own RRN — an HDFC UPI
+  // Statement had to be uploaded to get transaction-level items at all, and
+  // that match is what produced this RRN. `RemarkCell` passes it straight
+  // through as `request.rrn`, so there's nothing to ask the operator to
+  // re-type. Every other RRN-required source (no statement backs MPR at
+  // all) still has no known RRN, so those keep asking manually.
+  const knownRrn =
+    effectiveSource === 'HDFC Static UPI' && request.rrn && /^\d{12}$/.test(request.rrn) ? request.rrn : null;
+  const needsRrn = rrnRequired && !knownRrn;
 
   const exactAmount = request.amount > 0.5 ? request.amount : undefined;
 
@@ -80,15 +95,20 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
       setError('Select at least one bill to clear.');
       return;
     }
-    if (needsRrn) {
-      if (!/^\d{12}$/.test(rrn)) {
-        setError('A 12-digit RRN is required to clear a bill through HDFC Static UPI.');
+    const finalRrn = knownRrn ?? rrn;
+    if (rrnRequired) {
+      if (!/^\d{12}$/.test(finalRrn)) {
+        setError(`A 12-digit RRN is required to clear a bill through ${effectiveSource}.`);
         return;
       }
-      if (session.justification.entries.some((e) => e.source === 'upi_hdfc' && e.rrn === rrn)) {
+      if (session.justification.entries.some((e) => e.source === request.source && e.rrn === finalRrn)) {
         setError('This RRN has already been used elsewhere in this session.');
         return;
       }
+    }
+    if (needsMprDate && !mprDate) {
+      setError(`An MPR date is required to clear a bill through ${effectiveSource}.`);
+      return;
     }
     setSaving(true);
     setError(null);
@@ -100,7 +120,8 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
           targetKey: request.targetKey,
           bohEntryId: entryId,
           clearSource: effectiveSource,
-          rrn: needsRrn ? rrn : undefined,
+          rrn: rrnRequired ? finalRrn : undefined,
+          mprDate: needsMprDate ? mprDate : undefined,
         });
       }
       onSaved(updated);
@@ -135,6 +156,15 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
           🔒 Source is fixed to <strong>{effectiveSource}</strong> for this entry.
         </p>
       </div>
+      {knownRrn && (
+        <div className="mb-3">
+          <label className="field-label">12 Digit RRN</label>
+          <p className="text-body">
+            ✓ <span className="mono font-semibold">{knownRrn}</span>{' '}
+            <span className="text-tiny text-ink-3">— taken from the HDFC UPI statement</span>
+          </p>
+        </div>
+      )}
       {needsRrn && (
         <div className="mb-3">
           <label className="field-label">12 Digit RRN *</label>
@@ -142,6 +172,19 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
             className="field-input"
             value={rrn}
             onChange={(e) => setRrn(e.target.value.replace(/\D/g, '').slice(0, 12))}
+          />
+        </div>
+      )}
+      {needsMprDate && (
+        <div className="mb-3">
+          <label className="field-label">
+            MPR Date * <span className="hint">the date this shows up in the bank/Pinelabs settlement report</span>
+          </label>
+          <input
+            type="date"
+            className="field-input"
+            value={mprDate}
+            onChange={(e) => setMprDate(e.target.value)}
           />
         </div>
       )}

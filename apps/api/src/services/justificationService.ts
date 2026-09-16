@@ -314,22 +314,34 @@ export function clearBoh(
   if (!entry && !staged) throw new JustificationError('Bills-on-hold entry not found.');
   if (entry && entry.status !== 'open') throw new JustificationError('This entry is already cleared.');
 
-  // A BOH clearance sourced from an HDFC-UPI row needs the same 12-digit RRN
-  // discipline as any other HDFC-UPI justification — legacy never asked for
-  // one here, but that just meant a cleared bill couldn't be tied back to the
-  // bank statement line that actually paid it.
-  if (req.clearSource === 'HDFC Static UPI') {
+  // A BOH clearance sourced from HDFC-UPI, MPR, or Pinelabs needs the same
+  // 12-digit RRN discipline as any other justification for that source —
+  // legacy never asked for one here, but that just meant a cleared bill
+  // couldn't be tied back to the bank/terminal record that actually paid it.
+  // MPR and Pinelabs additionally need the date the transaction actually
+  // shows up in the bank/Pinelabs settlement (MPR) report, since that can
+  // lag the recon's own business date by a day or more.
+  const needsRrn = req.clearSource === 'HDFC Static UPI' || req.clearSource === 'MPR' || req.clearSource === 'Pinelabs';
+  const needsMprDate = req.clearSource === 'MPR' || req.clearSource === 'Pinelabs';
+  if (needsRrn) {
     if (!req.rrn || !/^\d{12}$/.test(req.rrn)) {
-      throw new JustificationError('A 12-digit RRN is required to clear a bill through HDFC Static UPI.');
+      throw new JustificationError(`A 12-digit RRN is required to clear a bill through ${req.clearSource}.`);
     }
-    if (state.entries.some((e) => e.source === 'upi_hdfc' && e.rrn === req.rrn)) {
+    // Scoped to the same JustificationSource this clearance's own entry will
+    // carry — not global — matching how RRN uniqueness already works for
+    // aggregate UPI-tab entries elsewhere in this file.
+    if (state.entries.some((e) => e.source === req.source && e.rrn === req.rrn)) {
       throw new JustificationError('This RRN has already been used elsewhere in this session.');
     }
+  }
+  if (needsMprDate && (!req.mprDate || !/^\d{4}-\d{2}-\d{2}$/.test(req.mprDate))) {
+    throw new JustificationError(`An MPR date is required to clear a bill through ${req.clearSource}.`);
   }
 
   const bill = entry ?? staged!;
   const amount = bill.amount;
-  const rrn = req.clearSource === 'HDFC Static UPI' ? req.rrn! : null;
+  const rrn = needsRrn ? req.rrn! : null;
+  const mprDate = needsMprDate ? req.mprDate! : null;
   const clearance: BohClearance = {
     id: randomUUID(),
     bohEntryId: req.bohEntryId,
@@ -343,6 +355,7 @@ export function clearBoh(
     custName: bill.custName,
     bohDate: bill.bohDate,
     rrn,
+    mprDate,
   };
 
   const justificationEntry = newEntry({
