@@ -141,3 +141,18 @@ export async function parseTransactionsZip(
 
   return { inside, filtered };
 }
+
+/**
+ * "Batch Settle Check": every row with `Txn Status = Success` must also carry
+ * `Batch Status = Settled` — a Success row Pinelabs hasn't finished settling
+ * yet means any figure built from it (terminal totals, RRN matching) isn't
+ * final. Checked across `inside` *and* `filtered` — an unsettled row is the
+ * same underlying problem (the report was pulled before the batch finished
+ * settling) whether or not the window/Paper-POS filters would also have
+ * excluded that particular row from today's reconciliation math.
+ */
+export function findUnsettledSuccessRows(inside: readonly ZipRow[], filtered: readonly ZipRow[]): ZipRow[] {
+  return [...inside, ...filtered].filter(
+    (r) => r.txnStatus.toLowerCase() === 'success' && r.batchStatus.trim().toLowerCase() !== 'settled',
+  );
+}
