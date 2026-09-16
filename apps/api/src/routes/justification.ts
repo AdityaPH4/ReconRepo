@@ -15,6 +15,7 @@ import type {
   ApplyAdvanceRequest,
   ClearBohRequest,
   RecordAdvanceRequest,
+  RecordTdsRequest,
   SessionDTO,
   ToggleSquareOffRequest,
 } from '@toit/contracts';
@@ -29,6 +30,7 @@ import {
   clearBoh,
   computeSubmitGate,
   recordAdvance,
+  recordTds,
   removeBohStaging,
   removeEntry,
   setSquareOff,
@@ -184,6 +186,22 @@ justificationRouter.post('/boh/clear', async (req, res, next) => {
       sessionId: session.meta.id,
       entries,
       staging: session.justification.bohStaging,
+    });
+    const updated = await persist({ ...session, justification });
+    res.status(201).json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+justificationRouter.post('/tds', async (req, res, next) => {
+  try {
+    const session = await loadDraftSession(req);
+    const body = req.body as RecordTdsRequest;
+    const justification = recordTds(session.justification, body, {
+      sessionId: session.meta.id,
+      outlet: session.meta.outlet,
+      businessDate: session.meta.businessDate,
     });
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);

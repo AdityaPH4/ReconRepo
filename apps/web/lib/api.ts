@@ -15,14 +15,17 @@ import type {
   ApprovalRequestDTO,
   ClearBohRequest,
   CloseAdvanceRequest,
+  CloseTdsRequest,
   CurrentUserDTO,
   DashboardDTO,
   EligibleAdvanceDTO,
   EligibleBohEntryDTO,
   RecordAdvanceRequest,
+  RecordTdsRequest,
   RequestApprovalRequest,
   SessionDTO,
   SessionListItemDTO,
+  TdsEntryDTO,
   ToggleSquareOffRequest,
 } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core/display';
@@ -162,6 +165,10 @@ export function clearBoh(sessionId: string, body: ClearBohRequest): Promise<Sess
   return postJson(justificationUrl(sessionId, '/boh/clear'), body);
 }
 
+export function recordTds(sessionId: string, body: RecordTdsRequest): Promise<SessionDTO> {
+  return postJson(justificationUrl(sessionId, '/tds'), body);
+}
+
 export async function listEligibleAdvances(
   sessionId: string,
   amount?: number,
@@ -241,6 +248,18 @@ export function approveRequest(id: string): Promise<ApprovalRequestDTO> {
 
 export function denyRequest(id: string): Promise<ApprovalRequestDTO> {
   return postJson(`${API_BASE}/api/approval-requests/${id}/deny`, undefined);
+}
+
+// ── Unreconciled TDS (admin-only, cross-outlet) ───────────────────────────
+
+export async function listTds(status?: 'open' | 'closed'): Promise<TdsEntryDTO[]> {
+  const params = status ? `?status=${status}` : '';
+  const res = await fetch(`${API_BASE}/api/tds${params}`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap(res);
+}
+
+export function closeTds(id: string, closedNote?: string | null): Promise<TdsEntryDTO> {
+  return postJson(`${API_BASE}/api/tds/${id}/close`, { closedNote } satisfies CloseTdsRequest);
 }
 
 export async function getDashboard(outlet?: OutletCode): Promise<DashboardDTO> {

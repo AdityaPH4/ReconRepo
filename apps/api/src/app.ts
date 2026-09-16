@@ -16,6 +16,7 @@ import { advancesRouter, bohRouter } from './routes/repositories.js';
 import { justificationRouter } from './routes/justification.js';
 import { mprSessionsRouter } from './routes/mprSessions.js';
 import { sessionsRouter } from './routes/sessions.js';
+import { tdsRouter } from './routes/tds.js';
 import { ApprovalRequiredError } from './services/approvalService.js';
 import { BadRequestError } from './services/reconService.js';
 
@@ -50,6 +51,7 @@ app.use('/api/boh', bohRouter);
 app.use('/api/mpr-sessions', mprSessionsRouter);
 app.use('/api/approval-requests', approvalRequestsRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/tds', tdsRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' } satisfies ApiErrorDTO);

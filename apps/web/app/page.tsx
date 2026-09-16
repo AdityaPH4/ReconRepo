@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { AdminLink } from '@/components/admin/AdminLink';
+import { TdsLink } from '@/components/tds/TdsLink';
 
 /**
  * Landing hub — picks which module to open.
@@ -20,7 +21,10 @@ export default function HomePage() {
             <span className="pill">Pick a module to continue</span>
           </div>
         </div>
-        <AdminLink />
+        <div className="flex gap-2">
+          <TdsLink />
+          <AdminLink />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">

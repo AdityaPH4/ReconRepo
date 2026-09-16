@@ -27,6 +27,7 @@ import type {
   SquareOffMap,
   SubmitStatus,
   SummaryData,
+  TdsEntry,
 } from '@toit/recon-core/display';
 import type {
   AdapterKey,
@@ -281,6 +282,7 @@ export type AdvanceApplicationDTO = AdvanceApplication;
 export type BohEntryDTO = BohEntry;
 export type BohClearanceDTO = BohClearance;
 export type BohStagingEntryDTO = BohStagingEntry;
+export type TdsEntryDTO = TdsEntry;
 export type SnapshotDTO = Snapshot;
 
 export interface EligibleAdvanceDTO {
@@ -387,6 +389,20 @@ export interface ClearBohRequest {
 /** Backs the "Close advance" action on the standalone Advance Closure module — outside of any recon session. Reason is required, unlike `CloseTdsRequest.closedNote`: this closure exists for a specific business reason (e.g. "returned to POC — full payment via company card") worth recording every time. */
 export interface CloseAdvanceRequest {
   closedReason: string;
+}
+
+/** Backs the "TDS Deducted" modal — Bank tab, and Pinelabs/HDFC-UPI row-level shortage remarks. Resolves the session's shortage immediately; the repository entry stays open until Accounts verifies it in Form 26AS, months later. */
+export interface RecordTdsRequest {
+  source: JustificationSourceDTO;
+  targetKey: string | null;
+  amount: number;
+  clientName: string;
+  notes?: string | null;
+}
+
+/** Backs the admin-only "Mark verified in 26AS" action on `/tds`. */
+export interface CloseTdsRequest {
+  closedNote?: string | null;
 }
 
 // ── MPR reconciliation (Layer 2) ──────────────────────────────────────────

@@ -54,6 +54,7 @@ export {
   REMARKS_ALL,
   REMARKS_EXCESS,
   REMARKS_SHORTAGE,
+  REMARKS_SHORTAGE_WITH_TDS,
   THRESHOLD,
   routePayName,
   storeToOutlet,
@@ -95,6 +96,7 @@ export type {
   JustificationState,
   ResolvableItem,
   SquareOffMap,
+  TdsEntry,
 } from './justification/types.js';
 export { emptyJustificationState } from './justification/types.js';
 

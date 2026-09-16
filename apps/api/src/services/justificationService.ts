@@ -19,6 +19,7 @@ import type {
   ClearBohRequest,
   ExplainedItemDTO,
   RecordAdvanceRequest,
+  RecordTdsRequest,
   SessionDTO,
   SubmitGateDTO,
 } from '@toit/contracts';
@@ -39,6 +40,7 @@ import {
   type PinelabsResult,
   type MatchResult,
   type HdfcStatementRow,
+  type TdsEntry,
 } from '@toit/recon-core';
 
 export class JustificationError extends Error {
@@ -61,6 +63,7 @@ function newEntry(base: Partial<JustificationEntry> & Pick<JustificationEntry, '
     createdAdvanceId: null,
     appliedApplicationId: null,
     bohClearanceId: null,
+    createdTdsEntryId: null,
     createdAt: new Date().toISOString(),
     ...base,
   };
@@ -122,6 +125,9 @@ export function removeEntry(state: JustificationState, entryId: string): Justifi
   if (entry.bohClearanceId) {
     next = removeBohClearance(next, entry.bohClearanceId);
   }
+  if (entry.createdTdsEntryId) {
+    next = removeTdsDraft(next, entry.createdTdsEntryId);
+  }
   return next;
 }
 
@@ -152,6 +158,13 @@ function removeBohClearance(state: JustificationState, clearanceId: string): Jus
   return {
     ...state,
     draftBohClearances: state.draftBohClearances.filter((c) => c.id !== clearanceId),
+  };
+}
+
+function removeTdsDraft(state: JustificationState, tdsEntryId: string): JustificationState {
+  return {
+    ...state,
+    draftTdsEntries: state.draftTdsEntries.filter((t) => t.id !== tdsEntryId),
   };
 }
 
@@ -346,6 +359,64 @@ export function clearBoh(
     ...state,
     entries: [...state.entries, justificationEntry],
     draftBohClearances: [...state.draftBohClearances, clearance],
+  };
+}
+
+// ── Unreconciled TDS ─────────────────────────────────────────────────────
+//
+// A corporate client deducting TDS before remitting is a real, expected
+// shortage on the Bank tab — not a reconciliation error. `recordTds` mirrors
+// `recordAdvance`: it resolves the session's shortage immediately via a
+// normal shortage-signed `JustificationEntry` (so it never blocks same-day
+// submit, exactly like every other modal-backed remark), while the durable
+// repository record it also creates stays `open` for months, independent of
+// this or any other session's submit state, until an admin closes it once
+// the deducted amount shows up in Form 26AS (see `closeTds` in
+// `routes/tds.ts` — that step is store-mutating and admin/session-
+// independent, so it lives with the route rather than here).
+
+export function recordTds(
+  state: JustificationState,
+  req: RecordTdsRequest,
+  ctx: { sessionId: string; outlet: TdsEntry['outlet']; businessDate: string | null },
+): JustificationState {
+  if (!req.clientName.trim()) throw new JustificationError('Client name is required.');
+  if (!(req.amount > 0)) throw new JustificationError('Amount must be greater than zero.');
+
+  const tds: TdsEntry = {
+    id: randomUUID(),
+    outlet: ctx.outlet,
+    clientName: req.clientName.trim(),
+    amount: req.amount,
+    notes: req.notes?.trim() || null,
+    recordedDate: new Date().toISOString().slice(0, 10),
+    recordedBySessionId: ctx.sessionId,
+    status: 'open',
+    closedAt: null,
+    closedBy: null,
+    closedNote: null,
+  };
+
+  const entry = newEntry({
+    source: req.source,
+    // Always a shortage — legacy has no concept of this remark at all, and
+    // the port only ever offers it from the Bank tab's shortage dropdown
+    // (`BANK_REMARKS_SHORTAGE`), so there's no caller-supplied direction to
+    // trust or distrust here, matching `recordAdvance`'s own hardcoded
+    // `'excess'`.
+    direction: 'shortage',
+    remark: 'TDS Deducted',
+    amount: req.amount,
+    targetKey: req.targetKey ?? null,
+    clientName: tds.clientName,
+    notes: tds.notes,
+    createdTdsEntryId: tds.id,
+  });
+
+  return {
+    ...state,
+    entries: [...state.entries, entry],
+    draftTdsEntries: [...state.draftTdsEntries, tds],
   };
 }
 

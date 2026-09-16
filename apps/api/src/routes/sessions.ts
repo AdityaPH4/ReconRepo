@@ -22,7 +22,14 @@ import {
   runReconciliation,
   windowLabel,
 } from '../services/reconService.js';
-import { buildStorageKey, getAdvanceStore, getBohStore, getObjectStore, getSessionStore } from '../storage/index.js';
+import {
+  buildStorageKey,
+  getAdvanceStore,
+  getBohStore,
+  getObjectStore,
+  getSessionStore,
+  getTdsStore,
+} from '../storage/index.js';
 
 /**
  * Files are buffered in memory rather than spooled to disk: they are parsed
@@ -272,6 +279,7 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
     const outlet = session.meta.outlet;
     const advanceStore = getAdvanceStore();
     const bohStore = getBohStore();
+    const tdsStore = getTdsStore();
 
     // Commit draft advances and applications.
     for (const advance of justification.draftAdvances) {
@@ -279,6 +287,13 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
     }
     for (const application of justification.draftApplications) {
       await advanceStore.recordApplication(application);
+    }
+
+    // Commit draft TDS entries — stays `open` in the repository independent
+    // of this session's own submit state; only an admin closing it later
+    // (once verified in Form 26AS) flips it.
+    for (const tds of justification.draftTdsEntries) {
+      await tdsStore.create(tds);
     }
 
     // Commit staged BOH additions — reusing the staging id so a queued

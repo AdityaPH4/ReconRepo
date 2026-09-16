@@ -22,6 +22,7 @@ import {
   NO_RRN_REMARKS,
   REMARKS_EXCESS,
   REMARKS_SHORTAGE,
+  REMARKS_SHORTAGE_WITH_TDS,
   fmt,
 } from '@toit/recon-core/display';
 import { ApiError, addJustificationEntry, removeJustificationEntry } from '@/lib/api';
@@ -34,7 +35,11 @@ type Source = 'cash' | 'upi' | 'bank';
 const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: readonly string[] }> = {
   cash: { excess: CASH_REMARKS_EXCESS, shortage: CASH_REMARKS_SHORTAGE },
   upi: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
-  bank: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
+  // Bank gets the traceable-payment shortage list — "TDS Deducted" is a
+  // formal, traceable-payment phenomenon (also offered on Pinelabs/HDFC-UPI
+  // row-level remarks — see RemarkCell.tsx); it doesn't happen on Cash or
+  // consumer UPI, so it must not leak onto the UPI tab by sharing its array.
+  bank: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE_WITH_TDS },
 };
 
 /** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`. */

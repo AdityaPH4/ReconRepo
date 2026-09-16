@@ -20,7 +20,7 @@ import {
   AMOUNT_EPSILON,
   REMARKS_ALL,
   REMARKS_EXCESS,
-  REMARKS_SHORTAGE,
+  REMARKS_SHORTAGE_WITH_TDS,
   fmt,
   isEligibleSquareOffPartner,
   squareOffNet,
@@ -51,11 +51,17 @@ export function RemarkCell({ source, item, allItems }: Props) {
   // A dupRRN item (diff === 0) offers both lists — deduped, since 'Other'
   // appears in both and a raw REMARKS_ALL would render it as two <option>s
   // with the same key.
+  //
+  // Every row here is Pinelabs or HDFC-UPI (this component's `source` prop
+  // is typed to exactly those two) — both traceable, transaction-level
+  // sources a corporate client could pay through and have TDS deducted from,
+  // same reasoning as the Bank tab — so a shortage-signed row always offers
+  // "TDS Deducted" too.
   const remarkOptions =
     item.diff > AMOUNT_EPSILON
       ? REMARKS_EXCESS
       : item.diff < -AMOUNT_EPSILON
-        ? REMARKS_SHORTAGE
+        ? REMARKS_SHORTAGE_WITH_TDS
         : [...new Set(REMARKS_ALL)];
 
   // A zero-diff item (dupRRN — genuinely ambiguous, no reliable amount) can

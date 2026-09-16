@@ -1,6 +1,6 @@
 import type { DirectionDTO, JustificationSourceDTO, SessionDTO } from '@toit/contracts';
 
-/** The six remarks that pop a modal to capture supplementary details, everywhere they appear. */
+/** The remarks that pop a modal to capture supplementary details, everywhere they appear. */
 export type ModalKind =
   | 'advance-received'
   | 'advance-applied'
@@ -8,7 +8,8 @@ export type ModalKind =
   | 'boh-add'
   | 'epr'
   | 'other'
-  | 'short-collection';
+  | 'short-collection'
+  | 'tds-deducted';
 
 /**
  * What a modal needs to know regardless of where it was opened from — a
@@ -60,6 +61,8 @@ export function modalKindForRemark(remark: string): ModalKind | null {
       return 'short-collection';
     case 'Other':
       return 'other';
+    case 'TDS Deducted':
+      return 'tds-deducted';
     default:
       return null;
   }

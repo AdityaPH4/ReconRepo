@@ -17,6 +17,7 @@ import { BohClearModal } from './modals/BohClearModal';
 import { EprModal } from './modals/EprModal';
 import { OtherModal } from './modals/OtherModal';
 import { ShortCollectionModal } from './modals/ShortCollectionModal';
+import { TdsDeductedModal } from './modals/TdsDeductedModal';
 import type { ModalRequest } from './types';
 
 interface JustificationCtxValue {
@@ -83,6 +84,9 @@ export function JustificationProvider({
       {modal?.kind === 'other' && <OtherModal session={session} request={modal} onClose={close} onSaved={saved} />}
       {modal?.kind === 'short-collection' && (
         <ShortCollectionModal session={session} request={modal} onClose={close} onSaved={saved} />
+      )}
+      {modal?.kind === 'tds-deducted' && (
+        <TdsDeductedModal session={session} request={modal} onClose={close} onSaved={saved} />
       )}
     </JustificationCtx.Provider>
   );

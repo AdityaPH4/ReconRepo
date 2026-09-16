@@ -70,6 +70,8 @@ export interface JustificationEntry {
   appliedApplicationId: string | null;
   /** Set when this entry's remark is "Bill on Hold Cleared" — the clearance it created. */
   bohClearanceId: string | null;
+  /** Set when this entry's remark is "TDS Deducted" — the repository entry it created. */
+  createdTdsEntryId: string | null;
   createdAt: string;
 }
 
@@ -187,18 +189,46 @@ export interface BohStagingEntry {
   notes: string | null;
 }
 
+// ── Unreconciled TDS repository — outlet-scoped, months-long-lived ─────────
+//
+// A corporate client can deduct TDS before remitting, so the amount the
+// restaurant receives is legitimately less than what was billed — a real,
+// expected shortage, not a reconciliation error. It can only be verified
+// once the deducted amount shows up in Form 26AS, sometimes 3-4 months
+// later, and only the Accounts team (the existing `admin` role — see
+// README/plan: no new role) can confirm that. Shaped like `BohEntry`, not
+// `Advance`: closure is a binary status flip verified by a third party in a
+// much later session, not a balance drawn down by justification entries.
+export interface TdsEntry {
+  id: string;
+  outlet: OutletCode;
+  clientName: string;
+  amount: number;
+  /** Invoice/order reference or any other free note. */
+  notes: string | null;
+  /** ISO `yyyy-mm-dd`. */
+  recordedDate: string;
+  recordedBySessionId: string;
+  status: 'open' | 'closed';
+  closedAt: string | null;
+  /** Admin's email — who verified it against Form 26AS. */
+  closedBy: string | null;
+  closedNote: string | null;
+}
+
 // ── The draft session state ─────────────────────────────────────────────────
 
 /**
  * Everything a human adds on top of a `ReconResult`, held on the draft
  * session until submit.
  *
- * Advances/BOH mutations recorded during a draft session live only here —
- * `draftAdvances`/`draftApplications`/`bohStaging`/`draftBohClearances` — and
- * are never written to the cross-session repositories until submit succeeds.
- * An abandoned draft simply never wrote anything, so there is nothing to roll
- * back (see README/plan: this replaces legacy's clone-based baseline/rollback
- * with plain non-persistence).
+ * Advances/BOH/TDS mutations recorded during a draft session live only
+ * here — `draftAdvances`/`draftApplications`/`bohStaging`/
+ * `draftBohClearances`/`draftTdsEntries` — and are never written to the
+ * cross-session repositories until submit succeeds. An abandoned draft
+ * simply never wrote anything, so there is nothing to roll back (see
+ * README/plan: this replaces legacy's clone-based baseline/rollback with
+ * plain non-persistence).
  */
 export interface JustificationState {
   entries: JustificationEntry[];
@@ -207,6 +237,7 @@ export interface JustificationState {
   draftApplications: AdvanceApplication[];
   bohStaging: BohStagingEntry[];
   draftBohClearances: BohClearance[];
+  draftTdsEntries: TdsEntry[];
 }
 
 export function emptyJustificationState(): JustificationState {
@@ -217,6 +248,7 @@ export function emptyJustificationState(): JustificationState {
     draftApplications: [],
     bohStaging: [],
     draftBohClearances: [],
+    draftTdsEntries: [],
   };
 }
 
