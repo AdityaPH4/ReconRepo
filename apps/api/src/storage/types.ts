@@ -80,9 +80,12 @@ export interface SessionStore {
 export interface AdvanceStore {
   readonly driver: 'memory' | 'postgres';
   create(advance: Advance): Promise<Advance>;
+  get(id: string): Promise<Advance | null>;
   list(outlet: OutletCode): Promise<Advance[]>;
   recordApplication(application: AdvanceApplication): Promise<AdvanceApplication>;
   listApplications(outlet: OutletCode): Promise<AdvanceApplication[]>;
+  /** Durable closure outside any recon session — see `Advance.status`. */
+  close(id: string, closedAt: string, closedBy: string, closedReason: string): Promise<Advance>;
 }
 
 // ── Bills-on-hold repository — outlet-scoped cross-session store ─────────

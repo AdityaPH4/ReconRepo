@@ -290,6 +290,12 @@ export interface EligibleAdvanceDTO {
   ineligibleReason: string | null;
 }
 
+/** `GET /api/advances` — every committed advance for the caller's outlet (open + closed), with its derived balance. Backs the standalone Advance Closure module — no `exactAmount`-matching context applies outside a specific justification modal, unlike `EligibleAdvanceDTO`. */
+export interface AdvanceWithBalanceDTO {
+  advance: AdvanceDTO;
+  balance: number;
+}
+
 export interface EligibleBohEntryDTO {
   entry: BohEntryDTO;
   eligible: boolean;
@@ -376,6 +382,11 @@ export interface ClearBohRequest {
   clearSource: string;
   /** Required (12-digit) when `clearSource === 'HDFC Static UPI'`; ignored otherwise. */
   rrn?: string | null;
+}
+
+/** Backs the "Close advance" action on the standalone Advance Closure module — outside of any recon session. Reason is required, unlike `CloseTdsRequest.closedNote`: this closure exists for a specific business reason (e.g. "returned to POC — full payment via company card") worth recording every time. */
+export interface CloseAdvanceRequest {
+  closedReason: string;
 }
 
 // ── MPR reconciliation (Layer 2) ──────────────────────────────────────────

@@ -15,11 +15,16 @@ export function createPostgresAdvanceStore(pool: Pool): AdvanceStore {
 
     async create(advance) {
       await pool.query(
-        `INSERT INTO recon.advances (id, outlet, data) VALUES ($1, $2, $3)
-         ON CONFLICT (id) DO UPDATE SET outlet = $2, data = $3`,
-        [advance.id, advance.outlet, advance],
+        `INSERT INTO recon.advances (id, outlet, status, data) VALUES ($1, $2, $3, $4)
+         ON CONFLICT (id) DO UPDATE SET outlet = $2, status = $3, data = $4`,
+        [advance.id, advance.outlet, advance.status, advance],
       );
       return advance;
+    },
+
+    async get(id) {
+      const { rows } = await pool.query<{ data: Advance }>('SELECT data FROM recon.advances WHERE id = $1', [id]);
+      return rows[0]?.data ?? null;
     },
 
     async list(outlet) {
@@ -47,6 +52,15 @@ export function createPostgresAdvanceStore(pool: Pool): AdvanceStore {
         [outlet],
       );
       return rows.map((r) => r.data);
+    },
+
+    async close(id, closedAt, closedBy, closedReason) {
+      const { rows } = await pool.query<{ data: Advance }>('SELECT data FROM recon.advances WHERE id = $1', [id]);
+      const advance = rows[0]?.data;
+      if (!advance) throw new Error(`Advance not found: ${id}`);
+      const closed: Advance = { ...advance, status: 'closed', closedAt, closedBy, closedReason };
+      await pool.query(`UPDATE recon.advances SET status = 'closed', data = $2 WHERE id = $1`, [id, closed]);
+      return closed;
     },
   };
 }

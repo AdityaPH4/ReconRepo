@@ -93,6 +93,19 @@ export interface Advance {
   /** ISO `yyyy-mm-dd`. */
   recordedDate: string;
   recordedBySessionId: string;
+  /**
+   * Durable closure, independent of balance exhaustion — a corporate-booking
+   * advance can be returned directly to the POC (e.g. full payment settled
+   * on the company card instead), so it's never drawn down via
+   * `AdvanceApplication` at all and would otherwise stay "outstanding"
+   * forever. Closed outside any recon session, by the GM who owns it — see
+   * `AdvanceStore.close()`.
+   */
+  status: 'open' | 'closed';
+  closedAt: string | null;
+  /** Whoever closed it (the acting GM's email) — closure happens outside any session, so there is no `sessionId` the way an `AdvanceApplication` has one. */
+  closedBy: string | null;
+  closedReason: string | null;
 }
 
 export interface AdvanceApplication {

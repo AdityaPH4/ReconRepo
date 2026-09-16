@@ -45,6 +45,11 @@ export interface EligibleAdvance {
  * known yet at modal-open time — every advance with remaining balance is then
  * eligible, and applying it always consumes the full balance.
  */
+/** A durable closure independent of balance — see `Advance.status`. */
+export function isAdvanceClosed(advance: Advance): boolean {
+  return advance.status === 'closed';
+}
+
 export function eligibleAdvances(
   advances: readonly Advance[],
   applications: readonly AdvanceApplication[],
@@ -52,7 +57,10 @@ export function eligibleAdvances(
 ): EligibleAdvance[] {
   const requiresExact = exactAmount !== undefined && exactAmount > AMOUNT_EPSILON;
   return advances
-    .filter((a) => !isAdvanceExhausted(a, applications))
+    // Written as `status !== 'closed'`, not `=== 'open'` — defensive
+    // against a pre-existing row whose stored JSON predates this field and
+    // so deserializes with `status: undefined`.
+    .filter((a) => a.status !== 'closed' && !isAdvanceExhausted(a, applications))
     .map((a) => {
       const balance = advanceBalance(a, applications);
       const eligible = !requiresExact || Math.abs(balance - exactAmount!) < AMOUNT_EPSILON;

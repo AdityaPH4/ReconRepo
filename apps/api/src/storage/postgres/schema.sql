@@ -24,10 +24,35 @@ CREATE INDEX IF NOT EXISTS sessions_created_at_idx ON recon.sessions (created_at
 CREATE TABLE IF NOT EXISTS recon.advances (
   id TEXT PRIMARY KEY,
   outlet TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open',
   data JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS advances_outlet_idx ON recon.advances (outlet);
+
+-- Advance closure: a corporate-booking advance returned directly to the POC
+-- (outside recon) is never drawn down via `advance_applications`, so it
+-- needs a durable open/closed status of its own. `CREATE TABLE` above
+-- already declares `status` for a fresh install; the two statements below
+-- are what actually apply to the already-deployed production table, which
+-- predates this column entirely.
+--
+-- `ADD COLUMN ... DEFAULT 'open'` with a constant default is a fast,
+-- metadata-only change on Postgres 11+ (existing rows are not rewritten).
+-- `lock_timeout` makes it fail fast/retryable instead of queueing
+-- indefinitely behind a long-running transaction on this table.
+SET lock_timeout = '5s';
+ALTER TABLE recon.advances ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
+CREATE INDEX IF NOT EXISTS advances_outlet_status_idx ON recon.advances (outlet, status);
+
+-- The ADD COLUMN above only patches the promoted SQL column — every
+-- pre-existing row's `data` JSON has no "status"/"closedAt"/"closedBy"/
+-- "closedReason" keys at all (they didn't exist yet when those rows were
+-- written), so a naive reader deserializes `status: undefined` for every
+-- legacy advance without this backfill. Idempotent — a no-op once run.
+UPDATE recon.advances
+SET data = data || jsonb_build_object('status', 'open', 'closedAt', null, 'closedBy', null, 'closedReason', null)
+WHERE NOT (data ? 'status');
 
 CREATE TABLE IF NOT EXISTS recon.advance_applications (
   id TEXT PRIMARY KEY,

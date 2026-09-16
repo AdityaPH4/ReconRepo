@@ -26,6 +26,7 @@ import {
   NO_RRN_REMARKS,
   advanceBalance,
   canSubmit,
+  isAdvanceClosed,
   isAdvanceExhausted,
   toggleSquareOff as coreToggleSquareOff,
   type Advance,
@@ -197,6 +198,10 @@ export function recordAdvance(
     originalAmount: req.amount,
     recordedDate: new Date().toISOString().slice(0, 10),
     recordedBySessionId: ctx.sessionId,
+    status: 'open',
+    closedAt: null,
+    closedBy: null,
+    closedReason: null,
   };
 
   const entry = newEntry({
@@ -230,6 +235,9 @@ export function applyAdvance(
 ): JustificationState {
   const advance = ctx.advances.find((a) => a.id === req.advanceId);
   if (!advance) throw new JustificationError('Advance not found.');
+  if (isAdvanceClosed(advance)) {
+    throw new JustificationError('This advance has been closed and can no longer be applied.');
+  }
   const balance = advanceBalance(advance, ctx.applications);
   if (isAdvanceExhausted(advance, ctx.applications)) {
     throw new JustificationError('This advance has no remaining balance.');

@@ -9,8 +9,15 @@
  * `[...S.bohRepo, ...S.bohRepoStaging]` read).
  */
 
-import type { EligibleAdvanceDTO, EligibleBohEntryDTO } from '@toit/contracts';
-import { eligibleAdvances, eligibleBohEntries, type BohEntry } from '@toit/recon-core';
+import type { AdvanceWithBalanceDTO, CloseAdvanceRequest, EligibleAdvanceDTO, EligibleBohEntryDTO } from '@toit/contracts';
+import {
+  OUTLET_CODES,
+  advanceBalance,
+  eligibleAdvances,
+  eligibleBohEntries,
+  type BohEntry,
+  type OutletCode,
+} from '@toit/recon-core';
 import { Router } from 'express';
 import { outletScope } from '../middleware/auth.js';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
@@ -50,6 +57,68 @@ advancesRouter.get('/eligible', async (req, res, next) => {
     const amount = req.query.amount ? Number(req.query.amount) : undefined;
     const eligible = eligibleAdvances(advances, applications, amount);
     res.json(eligible satisfies EligibleAdvanceDTO[]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/advances — every committed advance for the caller's outlet (open
+// + closed), with its derived balance. Unlike `/eligible`, this has no
+// sessionId and merges no draft state — it only ever deals with committed,
+// closeable rows, for the standalone Advance Closure module.
+advancesRouter.get('/', async (req, res, next) => {
+  try {
+    let outlet: OutletCode | null = req.user.outlet;
+    if (req.user.role === 'admin') {
+      const requested = typeof req.query.outlet === 'string' ? (req.query.outlet as OutletCode) : undefined;
+      outlet = requested && (OUTLET_CODES as string[]).includes(requested) ? requested : OUTLET_CODES[0]!;
+    }
+    if (!outlet) {
+      res.status(400).json({ error: 'No outlet to show advances for.' });
+      return;
+    }
+    const [advances, applications] = await Promise.all([
+      getAdvanceStore().list(outlet),
+      getAdvanceStore().listApplications(outlet),
+    ]);
+    const withBalance = advances.map((advance) => ({ advance, balance: advanceBalance(advance, applications) }));
+    res.json(withBalance satisfies AdvanceWithBalanceDTO[]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/advances/:id/close — outlet-scoped: a GM closes their own
+// outlet's advance (an admin, like every other outletScope()-gated route,
+// incidentally retains blanket cross-outlet access via the same primitive).
+// Lives directly in the route handler, not `justificationService.ts` —
+// this is store-mutating and session-independent, the same reasoning
+// `recordTds`'s doc comment gives for why `closeTds` isn't a pure
+// JustificationState transform either.
+advancesRouter.post('/:id/close', async (req, res, next) => {
+  try {
+    const store = getAdvanceStore();
+    const advance = await store.get(req.params.id!);
+    if (!advance) {
+      res.status(404).json({ error: 'Advance not found' });
+      return;
+    }
+    const scope = outletScope(req);
+    if (scope && advance.outlet !== scope) {
+      res.status(404).json({ error: 'Advance not found' });
+      return;
+    }
+    if (advance.status === 'closed') {
+      res.status(409).json({ error: 'This advance is already closed.' });
+      return;
+    }
+    const body = req.body as CloseAdvanceRequest;
+    if (!body?.closedReason?.trim()) {
+      res.status(400).json({ error: 'A reason is required to close an advance.' });
+      return;
+    }
+    const closed = await store.close(advance.id, new Date().toISOString(), req.user.email, body.closedReason.trim());
+    res.json(closed);
   } catch (err) {
     next(err);
   }

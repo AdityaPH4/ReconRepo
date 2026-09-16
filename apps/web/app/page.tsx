@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { AdminLink } from '@/components/admin/AdminLink';
 
 /**
- * Landing hub — picks which of the two modules to open.
+ * Landing hub — picks which module to open.
  *
  * Payment Reconciliation (Layer 1, ported from `reconciliation (68).html`)
  * lives at `/recon`; MPR Reconciliation (Layer 2, ported from
@@ -23,7 +23,7 @@ export default function HomePage() {
         <AdminLink />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
         <ModuleCard
           href="/recon"
           icon="🧾"
@@ -35,6 +35,12 @@ export default function HomePage() {
           icon="🏦"
           title="MPR Reconciliation"
           description="Layer-2 check: confirms a submitted session's settlement ledger against the actual bank settlement files (Kotak, Pinelabs, AMEX, HDFC UPI)."
+        />
+        <ModuleCard
+          href="/advances"
+          icon="💰"
+          title="Advance Closure"
+          description="Close out advances that were returned to the POC outside of recon — e.g. full payment settled on the company card — so they stop showing as outstanding."
         />
       </div>
     </main>

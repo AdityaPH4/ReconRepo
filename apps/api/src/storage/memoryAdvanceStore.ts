@@ -21,6 +21,10 @@ export function createMemoryAdvanceStore(): AdvanceStore {
       return advance;
     },
 
+    async get(id) {
+      return advances.get(id) ?? null;
+    },
+
     async list(outlet) {
       return [...advances.values()].filter((a) => a.outlet === outlet);
     },
@@ -33,6 +37,14 @@ export function createMemoryAdvanceStore(): AdvanceStore {
     async listApplications(outlet) {
       const outletAdvanceIds = new Set([...advances.values()].filter((a) => a.outlet === outlet).map((a) => a.id));
       return [...applications.values()].filter((a) => outletAdvanceIds.has(a.advanceId));
+    },
+
+    async close(id, closedAt, closedBy, closedReason) {
+      const advance = advances.get(id);
+      if (!advance) throw new Error(`Advance not found: ${id}`);
+      const closed: Advance = { ...advance, status: 'closed', closedAt, closedBy, closedReason };
+      advances.set(id, closed);
+      return closed;
     },
   };
 }

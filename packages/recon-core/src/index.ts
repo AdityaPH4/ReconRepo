@@ -173,7 +173,7 @@ export type { ExplainedItem } from './justification/residual.js';
 export { canSubmit } from './justification/submitGate.js';
 export type { CanSubmitInput, SubmitGateResult, SubmitStatus } from './justification/submitGate.js';
 
-export { advanceBalance, eligibleAdvances, isAdvanceExhausted } from './justification/advances.js';
+export { advanceBalance, eligibleAdvances, isAdvanceClosed, isAdvanceExhausted } from './justification/advances.js';
 export type { EligibleAdvance } from './justification/advances.js';
 
 export { autoStageBohRows, eligibleBohEntries } from './justification/boh.js';

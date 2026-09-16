@@ -8,10 +8,13 @@
 import type {
   AddBohStagingRequest,
   AddJustificationEntryRequest,
+  AdvanceDTO,
+  AdvanceWithBalanceDTO,
   ApiErrorDTO,
   ApplyAdvanceRequest,
   ApprovalRequestDTO,
   ClearBohRequest,
+  CloseAdvanceRequest,
   CurrentUserDTO,
   DashboardDTO,
   EligibleAdvanceDTO,
@@ -167,6 +170,18 @@ export async function listEligibleAdvances(
   if (amount !== undefined) params.set('amount', String(amount));
   const res = await fetch(`${API_BASE}/api/advances/eligible?${params}`, { cache: 'no-store', headers: authHeaders() });
   return unwrap(res);
+}
+
+// ── Advance Closure module — outside of any recon session ────────────────
+
+export async function listAdvances(outlet?: OutletCode): Promise<AdvanceWithBalanceDTO[]> {
+  const params = outlet ? `?outlet=${outlet}` : '';
+  const res = await fetch(`${API_BASE}/api/advances${params}`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap(res);
+}
+
+export function closeAdvance(id: string, closedReason: string): Promise<AdvanceDTO> {
+  return postJson(`${API_BASE}/api/advances/${id}/close`, { closedReason } satisfies CloseAdvanceRequest);
 }
 
 export async function listEligibleBoh(

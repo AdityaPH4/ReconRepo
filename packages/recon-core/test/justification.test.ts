@@ -27,6 +27,7 @@ import {
   entryNet,
   explainedTotals,
   hdfcUpiCompleteness,
+  isAdvanceClosed,
   isAdvanceExhausted,
   isEligibleSquareOffPartner,
   pinelabsCompleteness,
@@ -513,6 +514,10 @@ describe('advances', () => {
     originalAmount: 1000,
     recordedDate: '2026-08-01',
     recordedBySessionId: 's-1',
+    status: 'open',
+    closedAt: null,
+    closedBy: null,
+    closedReason: null,
   };
 
   it('balance is original minus applications', () => {
@@ -541,6 +546,21 @@ describe('advances', () => {
       { id: 'ap-1', advanceId: 'adv-1', sessionId: 's-2', targetKey: null, amount: 1000, appliedDate: '2026-08-02' },
     ];
     assert.equal(eligibleAdvances([advance], applications).length, 0);
+  });
+
+  it('a closed advance is excluded regardless of remaining balance — closed outside recon, never applied', () => {
+    const closed: Advance = {
+      ...advance,
+      status: 'closed',
+      closedAt: '2026-08-05T10:00:00.000Z',
+      closedBy: 'gm@toit.example',
+      closedReason: 'Returned to POC — full payment settled on company card.',
+    };
+    // No applications at all — a fresh, fully-unexhausted balance — yet a
+    // closed advance must never resurface as eligible to apply.
+    assert.equal(eligibleAdvances([closed], []).length, 0);
+    assert.equal(isAdvanceClosed(closed), true);
+    assert.equal(isAdvanceClosed(advance), false);
   });
 });
 
