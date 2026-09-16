@@ -36,13 +36,15 @@ export const CASH_REMARKS_EXCESS = ['Paid In', ...REMARKS_EXCESS] as const;
 export const CASH_REMARKS_SHORTAGE = ['Paid Out', ...REMARKS_SHORTAGE] as const;
 
 /**
- * Bank-tab-only shortage remarks — same list as `REMARKS_SHORTAGE`, plus "TDS
- * Deducted". TDS withholding is a formal, traceable-payment phenomenon
- * (NEFT/RTGS from a corporate client) that doesn't happen on Cash or
- * consumer UPI payments, so this stays off `REMARKS_SHORTAGE` itself rather
- * than leaking onto every tab that shares it.
+ * Shortage remarks for traceable, corporate-payment sources — same list as
+ * `REMARKS_SHORTAGE`, plus "TDS Deducted". TDS withholding happens on the
+ * Bank tab (NEFT/RTGS from a corporate client) and on individual Pinelabs/
+ * HDFC-UPI transaction-level rows (a corporate card/UPI payment can be
+ * TDS-deducted the same way) — but never on Cash or the aggregate/consumer
+ * UPI tab, so this stays off `REMARKS_SHORTAGE` itself rather than leaking
+ * onto every tab that shares it.
  */
-export const BANK_REMARKS_SHORTAGE = [...REMARKS_SHORTAGE, 'TDS Deducted'] as const;
+export const REMARKS_SHORTAGE_WITH_TDS = [...REMARKS_SHORTAGE, 'TDS Deducted'] as const;
 
 /** Remarks that require the Bill Number / Reason fields (Cash tab only). */
 export const CASH_BILL_REMARKS = ['Paid In', 'Paid Out'] as const;
