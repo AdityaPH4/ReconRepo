@@ -574,12 +574,12 @@
            overflow-hidden border border-line shadow-panel;
 
     & th {
-      @apply bg-sunken px-4 py-[0.65rem] text-left font-semibold text-ink-2
+      @apply bg-sunken px-2 py-[0.65rem] text-left font-semibold text-ink-2
              border-b border-line text-tiny whitespace-nowrap;
     }
 
     & td {
-      @apply px-4 py-[0.6rem] border-b border-line align-middle whitespace-nowrap;
+      @apply px-2 py-[0.6rem] border-b border-line align-middle whitespace-nowrap;
     }
 
     & tr:last-child td {
