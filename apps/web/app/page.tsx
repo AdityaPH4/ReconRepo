@@ -1,8 +1,8 @@
-import Link from 'next/link';
-import { AdminLink } from '@/components/admin/AdminLink';
+import { ApprovalsModuleCard } from '@/components/admin/ApprovalsModuleCard';
+import { ModuleCard } from '@/components/ModuleCard';
 
 /**
- * Landing hub — picks which of the two modules to open.
+ * Landing hub — picks which module to open.
  *
  * Payment Reconciliation (Layer 1, ported from `reconciliation (68).html`)
  * lives at `/recon`; MPR Reconciliation (Layer 2, ported from
@@ -20,10 +20,9 @@ export default function HomePage() {
             <span className="pill">Pick a module to continue</span>
           </div>
         </div>
-        <AdminLink />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-6">
         <ModuleCard
           href="/recon"
           icon="🧾"
@@ -36,30 +35,8 @@ export default function HomePage() {
           title="MPR Reconciliation"
           description="Layer-2 check: confirms a submitted session's settlement ledger against the actual bank settlement files (Kotak, Pinelabs, AMEX, HDFC UPI)."
         />
+        <ApprovalsModuleCard />
       </div>
     </main>
-  );
-}
-
-function ModuleCard({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link href={href} className="card block hover:border-accent transition-colors">
-      <div className="card-body">
-        <div className="text-[32px] mb-3">{icon}</div>
-        <h2 className="text-lede font-semibold mb-2">{title}</h2>
-        <p className="text-body text-ink-3 leading-relaxed">{description}</p>
-        <p className="text-body font-semibold text-accent mt-4">Open →</p>
-      </div>
-    </Link>
   );
 }
