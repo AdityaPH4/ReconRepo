@@ -13,6 +13,7 @@ import type { SessionDTO } from '@toit/contracts';
 import { useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
 import { Header } from '@/components/Header';
+import { PastSessionsList } from '@/components/PastSessionsList';
 import { SessionWorkspace } from '@/components/SessionWorkspace';
 import { UploadPanel, type SelectedFiles } from '@/components/UploadPanel';
 import { ApiError, createSession, requestApproval } from '@/lib/api';
@@ -105,6 +106,7 @@ export function ReconciliationApp() {
             approvalBlock={approvalBlock}
             onRequestApproval={askForApproval}
           />
+          <PastSessionsList />
         </main>
       )}
     </>

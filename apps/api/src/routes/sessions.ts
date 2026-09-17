@@ -177,7 +177,9 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
 
 sessionsRouter.get('/', async (req, res, next) => {
   try {
-    const items = await getSessionStore().list({ outlet: outletScope(req) });
+    const rawLimit = req.query.limit ? Number(req.query.limit) : undefined;
+    const limit = rawLimit && Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 200;
+    const items = await getSessionStore().list({ outlet: outletScope(req), limit });
     res.json(items);
   } catch (err) {
     next(err);
