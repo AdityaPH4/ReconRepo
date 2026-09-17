@@ -1,5 +1,6 @@
 import { ApprovalsModuleCard } from '@/components/admin/ApprovalsModuleCard';
 import { ModuleCard } from '@/components/ModuleCard';
+import { MprOpenItemsModuleCard } from '@/components/mpr/MprOpenItemsModuleCard';
 
 /**
  * Landing hub — picks which module to open.
@@ -48,6 +49,7 @@ export default function HomePage() {
           description="Every TDS deduction a corporate client has made, logged from the Bank tab and Pinelabs/HDFC-UPI rows — stays open until Accounts verifies it in Form 26AS, sometimes months later."
         />
         <ApprovalsModuleCard />
+        <MprOpenItemsModuleCard />
       </div>
     </main>
   );

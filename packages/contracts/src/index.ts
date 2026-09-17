@@ -416,13 +416,58 @@ export interface CloseTdsRequest {
 // same reasoning as the justification-layer DTOs above.
 
 export type MprAdapterKey = AdapterKey;
-export type MprMatchResultDTO = MatchResult;
-export type MprSettledRowDTO = SettledRow;
-export type MprPendingRowDTO = PendingRow;
-export type MprAmbiguousRowDTO = AmbiguousMprRow;
-export type MprUnexpectedRowDTO = UnexpectedMprRow;
-export type MprAmexResultDTO = AmexResult;
-export type MprUpiResultDTO = UpiResult;
+
+/**
+ * Row identity/closure state assigned once, at session-creation time — a
+ * pure mpr-core `MatchResult` has no identity of its own (rows aren't even
+ * unique by `rrn` — that's exactly what the Ambiguous bucket exists for).
+ * See `enrichMprMatchResult()` in `apps/api/src/services/mprService.ts`.
+ */
+export interface MprRowClosureDTO {
+  id: string;
+  status: 'open' | 'closed';
+  closedAt: string | null;
+  /** Admin's email — who resolved it. */
+  closedBy: string | null;
+  closedNote: string | null;
+}
+
+export type MprSettledRowDTO = SettledRow & MprRowClosureDTO;
+export type MprPendingRowDTO = PendingRow & MprRowClosureDTO;
+export type MprAmbiguousRowDTO = AmbiguousMprRow & MprRowClosureDTO;
+export type MprUnexpectedRowDTO = UnexpectedMprRow & MprRowClosureDTO;
+export type MprAmexResultDTO = AmexResult & MprRowClosureDTO;
+export type MprUpiResultDTO = UpiResult & MprRowClosureDTO;
+
+/**
+ * No longer a bare alias of `MatchResult` — every bucket now holds the
+ * closure-augmented DTO row types above, not `mpr-core`'s own pure types.
+ */
+export interface MprMatchResultDTO {
+  settled: MprSettledRowDTO[];
+  amountMismatch: MprSettledRowDTO[];
+  pending: MprPendingRowDTO[];
+  ambiguous: MprAmbiguousRowDTO[];
+  unexpected: MprUnexpectedRowDTO[];
+  amexResults: MprAmexResultDTO[];
+  upiResults: MprUpiResultDTO[];
+}
+
+/** Backs the admin-only "Resolve" action on any open MPR row. */
+export interface CloseMprRowRequest {
+  note: string;
+}
+
+/** One MPR bucket name that can hold an open item — excludes `settled`, which is never open. */
+export type MprOpenBucket = 'amountMismatch' | 'pending' | 'ambiguous' | 'unexpected' | 'amexResults' | 'upiResults';
+
+/** One flattened entry in the cross-session admin queue (`GET /api/mpr-sessions/open-rows`). */
+export interface MprOpenRowDTO {
+  sessionId: string;
+  sessionCreatedAt: string;
+  bucket: MprOpenBucket;
+  row: MprSettledRowDTO | MprPendingRowDTO | MprAmbiguousRowDTO | MprUnexpectedRowDTO | MprAmexResultDTO | MprUpiResultDTO;
+}
 
 export interface ParsedMprFileMetaDTO {
   filename: string;

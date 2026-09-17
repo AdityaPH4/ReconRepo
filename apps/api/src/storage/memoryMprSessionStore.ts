@@ -45,5 +45,11 @@ export function createMemoryMprSessionStore(): MprSessionStore {
         .slice(0, limit)
         .map(toListItem);
     },
+
+    async update(id, session) {
+      if (!sessions.has(id)) throw new Error(`MPR session not found: ${id}`);
+      sessions.set(id, session);
+      return session;
+    },
   };
 }

@@ -10,10 +10,11 @@
  * shows and what the CSV export contains.
  */
 
-import type { MprSessionDTO } from '@toit/contracts';
+import type { MprRowClosureDTO, MprSessionDTO } from '@toit/contracts';
 import { normDate } from '@toit/mpr-core';
 import { useState } from 'react';
-import { mprExportCsvUrl } from '@/lib/mprApi';
+import { useCurrentUser } from '@/components/auth/AuthProvider';
+import { closeMprRow, mprExportCsvUrl } from '@/lib/mprApi';
 import { EmptyRow, PanelSection, diffClass } from '@/components/ui/table';
 
 type TabId = 'settled' | 'mismatch' | 'pending' | 'ambiguous' | 'unexpected' | 'amex' | 'upi';
@@ -51,7 +52,8 @@ function dateRangeLabel(dates: string[]): string {
   return sorted.length === 1 ? sorted[0]! : `${sorted[0]} – ${sorted[sorted.length - 1]}`;
 }
 
-export function MprWorkspace({ session }: { session: MprSessionDTO }) {
+export function MprWorkspace({ session: initialSession }: { session: MprSessionDTO }) {
+  const [session, setSession] = useState(initialSession);
   const [tab, setTab] = useState<TabId>('settled');
   const { result } = session;
 
@@ -167,13 +169,65 @@ export function MprWorkspace({ session }: { session: MprSessionDTO }) {
       </div>
 
       {tab === 'settled' && <SettledTab rows={result.settled} />}
-      {tab === 'mismatch' && <MismatchTab rows={result.amountMismatch} />}
-      {tab === 'pending' && <PendingTab rows={result.pending} />}
-      {tab === 'ambiguous' && <AmbiguousTab rows={result.ambiguous} />}
-      {tab === 'unexpected' && <UnexpectedTab rows={result.unexpected} />}
-      {tab === 'amex' && <AmexTab rows={result.amexResults} />}
-      {tab === 'upi' && <UpiTab rows={result.upiResults} />}
+      {tab === 'mismatch' && (
+        <MismatchTab rows={result.amountMismatch} sessionId={session.meta.id} onResolved={setSession} />
+      )}
+      {tab === 'pending' && <PendingTab rows={result.pending} sessionId={session.meta.id} onResolved={setSession} />}
+      {tab === 'ambiguous' && (
+        <AmbiguousTab rows={result.ambiguous} sessionId={session.meta.id} onResolved={setSession} />
+      )}
+      {tab === 'unexpected' && (
+        <UnexpectedTab rows={result.unexpected} sessionId={session.meta.id} onResolved={setSession} />
+      )}
+      {tab === 'amex' && <AmexTab rows={result.amexResults} sessionId={session.meta.id} onResolved={setSession} />}
+      {tab === 'upi' && <UpiTab rows={result.upiResults} sessionId={session.meta.id} onResolved={setSession} />}
     </>
+  );
+}
+
+// ── Resolve — the one admin-only "close with a note" affordance shared by
+//    every open-item tab. Settled rows are auto-closed at persistence time
+//    with `closedBy: null` (no admin acted on them) — shown as a bare
+//    "✓ Resolved" tag rather than "by null". ─────────────────────────────
+
+export function ResolveRow({
+  sessionId,
+  row,
+  onResolved,
+}: {
+  sessionId: string;
+  row: MprRowClosureDTO;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
+  const user = useCurrentUser();
+  const [busy, setBusy] = useState(false);
+
+  if (row.status === 'closed') {
+    return (
+      <span className="tag tag-ok" title={row.closedNote ?? undefined}>
+        ✓ Resolved{row.closedBy ? ` by ${row.closedBy}` : ''}
+      </span>
+    );
+  }
+  if (user.role !== 'admin') return null;
+
+  async function resolve() {
+    const note = window.prompt('Resolve this item — note (required):');
+    if (!note?.trim()) return;
+    setBusy(true);
+    try {
+      onResolved(await closeMprRow(sessionId, row.id, note.trim()));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to resolve this item.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button type="button" className="btn btn-sm" disabled={busy} onClick={resolve}>
+      Resolve
+    </button>
   );
 }
 
@@ -241,7 +295,15 @@ function SettledTab({ rows }: { rows: MprSessionDTO['result']['settled'] }) {
 
 // ── Amount mismatch — flat ───────────────────────────────────────────────
 
-function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch'] }) {
+function MismatchTab({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: MprSessionDTO['result']['amountMismatch'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   return (
     <div className="panel">
       <PanelSection title={`Amount mismatch (${rows.length})`}>
@@ -256,11 +318,12 @@ function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch']
               <th className="num">MPR Amount</th>
               <th className="num">Diff</th>
               <th>L1 Status</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow cols={8} message="No amount mismatches." />
+              <EmptyRow cols={9} message="No amount mismatches." />
             ) : (
               rows.map((r, i) => (
                 <tr key={`${r.rrn}-${i}`}>
@@ -272,6 +335,9 @@ function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch']
                   <td className="num">{fmt(r.mpr.grossAmount)}</td>
                   <td className={`num ${diffClass(r._diff)}`}>{signedFmt(r._diff)}</td>
                   <td>{r.l1Status || '—'}</td>
+                  <td>
+                    <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                  </td>
                 </tr>
               ))
             )}
@@ -284,6 +350,7 @@ function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch']
                   {signedFmt(rows.reduce((s, r) => s + r._diff, 0))}
                 </td>
                 <td />
+                <td />
               </tr>
             )}
           </tbody>
@@ -295,7 +362,15 @@ function MismatchTab({ rows }: { rows: MprSessionDTO['result']['amountMismatch']
 
 // ── Pending — grouped by acquirer ───────────────────────────────────────
 
-function PendingTab({ rows }: { rows: MprSessionDTO['result']['pending'] }) {
+function PendingTab({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: MprSessionDTO['result']['pending'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
     const key = r.acquirer || 'UNKNOWN';
@@ -321,6 +396,7 @@ function PendingTab({ rows }: { rows: MprSessionDTO['result']['pending'] }) {
                   <th>L1 Status</th>
                   <th>L1 Remark</th>
                   <th>Reason</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -337,11 +413,15 @@ function PendingTab({ rows }: { rows: MprSessionDTO['result']['pending'] }) {
                     <td>
                       <span className={`tag ${r._reason === 'No RRN' ? 'tag-warn' : 'tag-neutral'}`}>{r._reason}</span>
                     </td>
+                    <td>
+                      <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                    </td>
                   </tr>
                 ))}
                 <tr className="total-row">
                   <td colSpan={5}>Total</td>
                   <td className="num">{fmt(group.reduce((s, r) => s + r.plAmount, 0))}</td>
+                  <td />
                   <td />
                   <td />
                   <td />
@@ -357,7 +437,15 @@ function PendingTab({ rows }: { rows: MprSessionDTO['result']['pending'] }) {
 
 // ── Ambiguous — the port's own fix, no legacy equivalent screen ─────────
 
-function AmbiguousTab({ rows }: { rows: MprSessionDTO['result']['ambiguous'] }) {
+function AmbiguousTab({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: MprSessionDTO['result']['ambiguous'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   return (
     <div className="panel">
       <div className="alert alert-warn m-5">
@@ -375,11 +463,12 @@ function AmbiguousTab({ rows }: { rows: MprSessionDTO['result']['ambiguous'] }) 
             <th>Candidates</th>
             <th className="num">Amounts</th>
             <th>Files</th>
+            <th />
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <EmptyRow cols={4} message="No ambiguous RRNs." />
+            <EmptyRow cols={5} message="No ambiguous RRNs." />
           ) : (
             rows.map((r) => (
               <tr key={r.rrn}>
@@ -387,6 +476,9 @@ function AmbiguousTab({ rows }: { rows: MprSessionDTO['result']['ambiguous'] }) 
                 <td>{r.candidates.length}</td>
                 <td className="num">{r.candidates.map((c) => fmt(c.grossAmount)).join(', ')}</td>
                 <td className="text-tiny text-ink-3">{r.candidates.map((c) => c._file).join(', ')}</td>
+                <td>
+                  <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                </td>
               </tr>
             ))
           )}
@@ -398,7 +490,15 @@ function AmbiguousTab({ rows }: { rows: MprSessionDTO['result']['ambiguous'] }) 
 
 // ── Unexpected — grouped by MPR source ──────────────────────────────────
 
-function UnexpectedTab({ rows }: { rows: MprSessionDTO['result']['unexpected'] }) {
+function UnexpectedTab({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: MprSessionDTO['result']['unexpected'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   const groups = new Map<string, typeof rows>();
   for (const r of rows) groups.set(r._source, [...(groups.get(r._source) ?? []), r]);
 
@@ -421,6 +521,7 @@ function UnexpectedTab({ rows }: { rows: MprSessionDTO['result']['unexpected'] }
                   <th>Settlement Date</th>
                   <th className="num">MPR Amount</th>
                   <th>File</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -431,11 +532,15 @@ function UnexpectedTab({ rows }: { rows: MprSessionDTO['result']['unexpected'] }
                     <td className="text-tiny text-ink-3">{r.mprDate ?? '—'}</td>
                     <td className="num">{fmt(r.mprAmount)}</td>
                     <td className="text-tiny text-ink-3">{r._file}</td>
+                    <td>
+                      <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                    </td>
                   </tr>
                 ))}
                 <tr className="total-row">
                   <td colSpan={3}>Total</td>
                   <td className="num">{fmt(group.reduce((s, r) => s + r.mprAmount, 0))}</td>
+                  <td />
                   <td />
                 </tr>
               </tbody>
@@ -459,7 +564,15 @@ const AMEX_STATUS: Record<
   pending: { tag: 'tag-accent', label: '⏳ Pending' },
 };
 
-function AmexTab({ rows }: { rows: MprSessionDTO['result']['amexResults'] }) {
+function AmexTab({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: MprSessionDTO['result']['amexResults'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   const reconciled = rows.filter((r) => r._match === 'settled');
   const mismatch = rows.filter((r) => r._match === 'mismatch');
   const pending = rows.filter((r) => r._match === 'pending');
@@ -482,11 +595,12 @@ function AmexTab({ rows }: { rows: MprSessionDTO['result']['amexResults'] }) {
           <th>SOC No.</th>
           <th>SOC Expected</th>
           <th>Status</th>
+          <th />
         </tr>
       </thead>
       <tbody>
         {group.length === 0 ? (
-          <EmptyRow cols={12} message="None." />
+          <EmptyRow cols={13} message="None." />
         ) : (
           group.map((r, i) => {
             const diff = r.mprRow ? (r.l1Total ?? 0) - r.mprRow.submissionAmount : null;
@@ -521,6 +635,9 @@ function AmexTab({ rows }: { rows: MprSessionDTO['result']['amexResults'] }) {
                 <td>
                   <span className={`tag ${status.tag}`}>{status.label}</span>
                 </td>
+                <td>
+                  <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                </td>
               </tr>
             );
           })
@@ -535,7 +652,7 @@ function AmexTab({ rows }: { rows: MprSessionDTO['result']['amexResults'] }) {
               <td className="num">{fmt(l1Sum)}</td>
               <td className="num">{fmt(mprSum)}</td>
               <td className={`num ${diffClass(totalDiff)}`}>{signedFmt(totalDiff)}</td>
-              <td colSpan={3} />
+              <td colSpan={4} />
             </tr>
           );
         })()}
@@ -607,7 +724,15 @@ function TimeDiffPill({ seconds }: { seconds: number }) {
   );
 }
 
-function SettledLikeTable({ rows }: { rows: UpiRow[] }) {
+function SettledLikeTable({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: UpiRow[];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   return (
     <table className="data-table">
       <thead>
@@ -623,6 +748,7 @@ function SettledLikeTable({ rows }: { rows: UpiRow[] }) {
           <th>Time diff</th>
           <th>Match by</th>
           <th>GM Note</th>
+          <th />
         </tr>
       </thead>
       <tbody>
@@ -641,6 +767,9 @@ function SettledLikeTable({ rows }: { rows: UpiRow[] }) {
               <span className="tag tag-ok">{r._matchBy || '—'}</span>
             </td>
             <td className="text-tiny text-ink-3">{r._gmNote || ''}</td>
+            <td>
+              <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+            </td>
           </tr>
         ))}
         <tr className="total-row">
@@ -648,14 +777,22 @@ function SettledLikeTable({ rows }: { rows: UpiRow[] }) {
           <td className="num">{fmt(rows.reduce((s, r) => s + prTotal(r), 0))}</td>
           <td />
           <td className="num">{fmt(rows.reduce((s, r) => s + (r.mpr?.grossAmount || 0), 0))}</td>
-          <td colSpan={3} />
+          <td colSpan={4} />
         </tr>
       </tbody>
     </table>
   );
 }
 
-function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
+function UpiTab({
+  rows,
+  sessionId,
+  onResolved,
+}: {
+  rows: MprSessionDTO['result']['upiResults'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
   const settled = rows.filter((r) => r._match === 'settled');
   const partial = rows.filter((r) => r._match === 'partial');
   const mismatch = rows.filter((r) => r._match === 'mismatch');
@@ -673,7 +810,7 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
     <div className="panel">
       {settled.length > 0 && (
         <PanelSection title={`✓ Settled — ${settled.length} transaction${settled.length > 1 ? 's' : ''}`}>
-          <SettledLikeTable rows={settled} />
+          <SettledLikeTable rows={settled} sessionId={sessionId} onResolved={onResolved} />
         </PanelSection>
       )}
 
@@ -686,7 +823,7 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
               but the invalid RRN(s) must be verified with HDFC.
             </span>
           </div>
-          <SettledLikeTable rows={partial} />
+          <SettledLikeTable rows={partial} sessionId={sessionId} onResolved={onResolved} />
         </PanelSection>
       )}
 
@@ -702,6 +839,7 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
                 <th className="num">PR Amount</th>
                 <th className="num">MPR Amount</th>
                 <th className="num">Diff (PR−MPR)</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -716,6 +854,9 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
                     <td className="num">{fmt(prTotal(r))}</td>
                     <td className="num">{r.mpr ? fmt(r.mpr.grossAmount) : '—'}</td>
                     <td className={`num ${diffClass(r._diff)}`}>{d.text}</td>
+                    <td>
+                      <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                    </td>
                   </tr>
                 );
               })}
@@ -736,6 +877,7 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
                 <th>PR Date (raw)</th>
                 <th>GM Note</th>
                 <th className="num">Amount</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -748,11 +890,15 @@ function UpiTab({ rows }: { rows: MprSessionDTO['result']['upiResults'] }) {
                   <td className="text-tiny text-ink-3">{prDate(r)}</td>
                   <td className="text-tiny text-ink-3 italic">{r._gmNote || ''}</td>
                   <td className="num">{fmt(prTotal(r))}</td>
+                  <td>
+                    <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                  </td>
                 </tr>
               ))}
               <tr className="total-row">
                 <td colSpan={6}>Total</td>
                 <td className="num">{fmt(pending.reduce((s, r) => s + prTotal(r), 0))}</td>
+                <td />
               </tr>
             </tbody>
           </table>

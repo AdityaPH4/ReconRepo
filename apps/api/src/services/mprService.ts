@@ -8,6 +8,7 @@
  * "does it have a `settlementLedger` key at all" — preserved as-is.
  */
 
+import { randomUUID } from 'node:crypto';
 import { detectAdapter, parseMprFile, runMatch } from '@toit/mpr-core';
 import type {
   MatchInput,
@@ -16,7 +17,7 @@ import type {
   TaggedUpiJustification,
   TaggedUpiTransaction,
 } from '@toit/mpr-core';
-import type { JsonSnapshotFileMetaDTO, ParsedMprFileMetaDTO } from '@toit/contracts';
+import type { JsonSnapshotFileMetaDTO, MprMatchResultDTO, MprRowClosureDTO, ParsedMprFileMetaDTO } from '@toit/contracts';
 
 export class BadMprRequestError extends Error {
   readonly status = 400;
@@ -116,5 +117,41 @@ export function runMprReconciliation(jsonFiles: MprInputFile[], mprFiles: MprInp
     mprFiles: mprFileMeta,
     businessDates: [...businessDates].sort(),
     outlets: [...outlets].sort(),
+  };
+}
+
+/**
+ * Assigns every row its (session-scoped) identity and initial open/closed
+ * status — a pure `MatchResult` has neither; identity is a storage-time
+ * concept, assigned once here, right before persisting. `settled` rows are
+ * already correctly reconciled, so they start closed with nothing to do;
+ * `amountMismatch`/`pending`/`ambiguous`/`unexpected` always start open.
+ * AMEX/UPI rows carry their own `_match` status (`'settled' | 'mismatch' |
+ * 'pending' | 'unexpected' | 'partial'`) — only `'settled'` starts closed.
+ */
+export function enrichMprMatchResult(result: MatchResult): MprMatchResultDTO {
+  const closed = (): MprRowClosureDTO => ({
+    id: randomUUID(),
+    status: 'closed',
+    closedAt: null,
+    closedBy: null,
+    closedNote: null,
+  });
+  const open = (): MprRowClosureDTO => ({
+    id: randomUUID(),
+    status: 'open',
+    closedAt: null,
+    closedBy: null,
+    closedNote: null,
+  });
+
+  return {
+    settled: result.settled.map((r) => ({ ...r, ...closed() })),
+    amountMismatch: result.amountMismatch.map((r) => ({ ...r, ...open() })),
+    pending: result.pending.map((r) => ({ ...r, ...open() })),
+    ambiguous: result.ambiguous.map((r) => ({ ...r, ...open() })),
+    unexpected: result.unexpected.map((r) => ({ ...r, ...open() })),
+    amexResults: result.amexResults.map((r) => ({ ...r, ...(r._match === 'settled' ? closed() : open()) })),
+    upiResults: result.upiResults.map((r) => ({ ...r, ...(r._match === 'settled' ? closed() : open()) })),
   };
 }
