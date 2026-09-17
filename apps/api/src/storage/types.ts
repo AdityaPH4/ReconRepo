@@ -112,6 +112,8 @@ export interface MprSessionStore {
   create(session: MprSessionDTO): Promise<MprSessionDTO>;
   get(id: string): Promise<MprSessionDTO | null>;
   list(query: MprSessionQuery): Promise<MprSessionListItemDTO[]>;
+  /** Whole-object replace — used to persist a row's close-with-note mutation. */
+  update(id: string, session: MprSessionDTO): Promise<MprSessionDTO>;
 }
 
 // ── Approval requests — a GM re-reconciling the same outlet+date needs an ──

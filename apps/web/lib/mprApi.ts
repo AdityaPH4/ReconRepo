@@ -4,7 +4,7 @@
  * separate tool from Payment Reconciliation, sharing only the API origin.
  */
 
-import type { MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
+import type { CloseMprRowRequest, MprOpenRowDTO, MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
 import { authHeaders, getToken } from './auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -60,4 +60,21 @@ export async function listMprSessions(): Promise<MprSessionListItemDTO[]> {
 export function mprExportCsvUrl(id: string): string {
   const token = getToken();
   return `${API_BASE}/api/mpr-sessions/${id}/export.csv${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+
+/** Every still-open row across all runs — admin-only, backs the open-items queue and its home-page badge count. */
+export async function listOpenMprRows(): Promise<MprOpenRowDTO[]> {
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/open-rows`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap<MprOpenRowDTO[]>(res);
+}
+
+/** Resolves one open row with a required note. Admin-only. */
+export async function closeMprRow(sessionId: string, rowId: string, note: string): Promise<MprSessionDTO> {
+  const body: CloseMprRowRequest = { note };
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/${sessionId}/rows/${rowId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  return unwrap<MprSessionDTO>(res);
 }

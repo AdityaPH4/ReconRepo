@@ -57,5 +57,11 @@ export function createPostgresMprSessionStore(pool: Pool): MprSessionStore {
       );
       return rows.map((r) => toListItem(r.data));
     },
+
+    async update(id, session) {
+      const { rowCount } = await pool.query(`UPDATE recon.mpr_sessions SET data = $2 WHERE id = $1`, [id, session]);
+      if (!rowCount) throw new Error(`MPR session not found: ${id}`);
+      return session;
+    },
   };
 }

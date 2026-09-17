@@ -1,5 +1,6 @@
-import Link from 'next/link';
 import { AdminLink } from '@/components/admin/AdminLink';
+import { ModuleCard } from '@/components/ModuleCard';
+import { MprOpenItemsModuleCard } from '@/components/mpr/MprOpenItemsModuleCard';
 
 /**
  * Landing hub — picks which of the two modules to open.
@@ -36,30 +37,8 @@ export default function HomePage() {
           title="MPR Reconciliation"
           description="Layer-2 check: confirms a submitted session's settlement ledger against the actual bank settlement files (Kotak, Pinelabs, AMEX, HDFC UPI)."
         />
+        <MprOpenItemsModuleCard />
       </div>
     </main>
-  );
-}
-
-function ModuleCard({
-  href,
-  icon,
-  title,
-  description,
-}: {
-  href: string;
-  icon: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link href={href} className="card block hover:border-accent transition-colors">
-      <div className="card-body">
-        <div className="text-[32px] mb-3">{icon}</div>
-        <h2 className="text-lede font-semibold mb-2">{title}</h2>
-        <p className="text-body text-ink-3 leading-relaxed">{description}</p>
-        <p className="text-body font-semibold text-accent mt-4">Open →</p>
-      </div>
-    </Link>
   );
 }
