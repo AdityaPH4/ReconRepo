@@ -49,3 +49,22 @@ tdsRouter.post('/:id/close', requireAdmin, async (req, res, next) => {
     next(err);
   }
 });
+
+tdsRouter.post('/:id/reopen', requireAdmin, async (req, res, next) => {
+  try {
+    const store = getTdsStore();
+    const entry = await store.get(req.params.id!);
+    if (!entry) {
+      res.status(404).json({ error: 'TDS entry not found' });
+      return;
+    }
+    if (entry.status === 'open') {
+      res.status(409).json({ error: 'This TDS entry is already open.' });
+      return;
+    }
+    const reopened = await store.reopen(entry.id);
+    res.json(reopened);
+  } catch (err) {
+    next(err);
+  }
+});

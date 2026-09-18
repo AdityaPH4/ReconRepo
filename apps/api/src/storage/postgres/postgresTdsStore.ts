@@ -56,5 +56,16 @@ export function createPostgresTdsStore(pool: Pool): TdsStore {
       await pool.query(`UPDATE recon.tds_entries SET status = 'closed', data = $2 WHERE id = $1`, [id, closed]);
       return closed;
     },
+
+    async reopen(id) {
+      const { rows } = await pool.query<{ data: TdsEntry }>('SELECT data FROM recon.tds_entries WHERE id = $1', [
+        id,
+      ]);
+      const entry = rows[0]?.data;
+      if (!entry) throw new Error(`TDS entry not found: ${id}`);
+      const reopened: TdsEntry = { ...entry, status: 'open', closedAt: null, closedBy: null, closedNote: null };
+      await pool.query(`UPDATE recon.tds_entries SET status = 'open', data = $2 WHERE id = $1`, [id, reopened]);
+      return reopened;
+    },
   };
 }

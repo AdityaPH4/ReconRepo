@@ -37,5 +37,13 @@ export function createMemoryTdsStore(): TdsStore {
       entries.set(id, closed);
       return closed;
     },
+
+    async reopen(id) {
+      const entry = entries.get(id);
+      if (!entry) throw new Error(`TDS entry not found: ${id}`);
+      const reopened: TdsEntry = { ...entry, status: 'open', closedAt: null, closedBy: null, closedNote: null };
+      entries.set(id, reopened);
+      return reopened;
+    },
   };
 }

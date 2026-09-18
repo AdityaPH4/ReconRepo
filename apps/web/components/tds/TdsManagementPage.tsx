@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import type { TdsEntryDTO } from '@toit/contracts';
 import { fmt } from '@toit/recon-core/display';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
-import { ApiError, closeTds, listTds } from '@/lib/api';
+import { ApiError, closeTds, listTds, reopenTds } from '@/lib/api';
 
 function ageDays(recordedDate: string): number {
   const then = new Date(`${recordedDate}T00:00:00Z`).getTime();
@@ -51,6 +51,21 @@ export function TdsManagementPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to close TDS entry.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function reopen(entry: TdsEntryDTO) {
+    if (!window.confirm(`Reopen the ${fmt(entry.amount)} TDS deduction from "${entry.clientName}"? It will show as unreconciled again.`)) {
+      return;
+    }
+    setBusyId(entry.id);
+    try {
+      await reopenTds(entry.id);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to reopen TDS entry.');
     } finally {
       setBusyId(null);
     }
@@ -163,6 +178,7 @@ export function TdsManagementPage() {
                   <th>Closed by</th>
                   <th>Closed at</th>
                   <th>Note</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -176,6 +192,11 @@ export function TdsManagementPage() {
                       {e.closedAt ? new Date(e.closedAt).toLocaleString('en-IN') : '—'}
                     </td>
                     <td className="text-tiny text-ink-3">{e.closedNote || '—'}</td>
+                    <td>
+                      <button type="button" className="btn btn-sm" disabled={busyId === e.id} onClick={() => reopen(e)}>
+                        Reopen
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -108,6 +108,8 @@ export interface TdsStore {
   /** `outlet: null` lists across every outlet — for the admin/Accounts view. */
   list(outlet: OutletCode | null, status?: 'open' | 'closed'): Promise<TdsEntry[]>;
   close(id: string, closedAt: string, closedBy: string, closedNote: string | null): Promise<TdsEntry>;
+  /** Undoes a mistaken closure — back to `open`, clearing `closedAt`/`closedBy`/`closedNote`. */
+  reopen(id: string): Promise<TdsEntry>;
 }
 
 // ── MPR (Layer 2) session storage ─────────────────────────────────────────

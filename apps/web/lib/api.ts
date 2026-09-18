@@ -262,6 +262,10 @@ export function closeTds(id: string, closedNote?: string | null): Promise<TdsEnt
   return postJson(`${API_BASE}/api/tds/${id}/close`, { closedNote } satisfies CloseTdsRequest);
 }
 
+export function reopenTds(id: string): Promise<TdsEntryDTO> {
+  return postJson(`${API_BASE}/api/tds/${id}/reopen`, undefined);
+}
+
 export async function getDashboard(outlet?: OutletCode): Promise<DashboardDTO> {
   const params = outlet ? `?outlet=${outlet}` : '';
   const res = await fetch(`${API_BASE}/api/dashboard${params}`, { cache: 'no-store', headers: authHeaders() });
