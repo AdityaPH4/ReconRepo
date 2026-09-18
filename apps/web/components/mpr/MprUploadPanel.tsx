@@ -120,7 +120,7 @@ export function MprUploadPanel({ files, onFilesChange, onRun, running, error }: 
             >
               <div className="dropzone-icon">🏦</div>
               <div className="dropzone-title">Drop all MPR files here</div>
-              <div className="dropzone-sub mt-2">Kotak, Pinelabs, AMEX, HDFC UPI — any count</div>
+              <div className="dropzone-sub mt-2">Kotak, Pinelabs, AMEX, HDFC UPI, HDFC Link — any count</div>
             </div>
             <FileChips files={files.mpr} onRemove={(name) => removeFile('mpr', name)} icon="🏦" />
           </div>

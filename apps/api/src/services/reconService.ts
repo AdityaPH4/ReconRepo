@@ -93,6 +93,25 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
       'No transaction rows found in the Payment Report. Check the file is the POS Payment Report export.',
     );
   }
+  // An unrecognized payment name used to fall silently into `tab: 'other'`,
+  // which nothing downstream reads — the money neither reconciled nor was
+  // flagged. Reject the whole upload instead, naming the offender, same
+  // severity as the "no PR rows" check above. A `tab: 'other'` row isn't
+  // automatically unrecognized, though — Gift From Toit/Vouchers have no
+  // dedicated `Tab` at all and route here by design; `FRS_METHODS[*].prKeys`
+  // is the other, equally-valid way a payment name is recognized (exact,
+  // trimmed match — the same lookup `buildPRMap`/`frsMethodTotals` use).
+  const knownFrsNames = new Set(FRS_METHODS.flatMap((m) => m.prKeys));
+  const unrecognizedNames = [
+    ...new Set(
+      prData.filter((r) => r.tab === 'other' && !knownFrsNames.has(r.paymentName.trim())).map((r) => r.paymentName),
+    ),
+  ];
+  if (unrecognizedNames.length) {
+    throw new BadRequestError(
+      `Unrecognized payment method(s) in the Payment Report: ${unrecognizedNames.join(', ')}. Add support for them or check for a typo before re-uploading.`,
+    );
+  }
   if (!bizDate) {
     warnings.push(
       'No business date could be read from the Payment Report, so no time window was applied — every terminal row was included.',

@@ -76,6 +76,7 @@ export const CASH_NAMES = ['cash'];
 export const UPI_NAMES = ['hdfc static upi', 'kotak static upi'];
 export const BILLS_NAMES = ['bills on hold', 'others'];
 export const BANK_NAMES = ['bank transfer'];
+export const HDFC_LINK_NAMES = ['hdfc link'];
 
 /**
  * Routes a Payment Report `paymentName` to its panel.
@@ -93,6 +94,7 @@ export function routePayName(pn: string | null | undefined): Tab {
   if (UPI_NAMES.includes(n)) return 'upi';
   if (BILLS_NAMES.some((x) => n.includes(x))) return 'bills';
   if (BANK_NAMES.some((x) => n.includes(x))) return 'bank';
+  if (HDFC_LINK_NAMES.includes(n)) return 'hdfc_link';
   return 'other';
 }
 
@@ -205,6 +207,12 @@ export const FRS_METHODS: FrsMethod[] = [
     sourceType: 'drawer',
     prKeys: ['Bank transfer'],
     sumKeys: ['Bank transfer'],
+  },
+  {
+    label: 'HDFC Link',
+    sourceType: 'drawer',
+    prKeys: ['HDFC Link'],
+    sumKeys: ['HDFC Link'],
   },
   {
     label: 'Gift From Toit',

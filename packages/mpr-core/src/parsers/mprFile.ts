@@ -162,9 +162,29 @@ function applyFooterFilter(rows: Row[], headers: string[], adp: AdapterDef): Row
 /** Parses one uploaded MPR bank file. `detected` is the filename-based guess, if any. */
 export function parseMprFile(filename: string, buffer: Buffer, detected: AdapterKey | null): ParsedMprFile {
   const looksLikeAmex = detected === 'AMEX' || /amex|settlements\d{8}/i.test(filename);
+  const isCsv = filename.toLowerCase().endsWith('.csv');
 
-  // AMEX CSV is assumed for every `.csv` upload — there is no CSV path for the other three banks.
-  if (filename.toLowerCase().endsWith('.csv')) {
+  // A `.csv` upload defaults to AMEX (the only bank whose real export is a
+  // CSV a flat header-scan can't parse), but a flat-table CSV format (e.g.
+  // HDFC_LINK) gets a chance to content-fingerprint-match first — AMEX's
+  // own multi-section batch structure can't accidentally match one of these
+  // fingerprints, so this is safe for genuine AMEX files.
+  if (isCsv && !looksLikeAmex && detected == null) {
+    try {
+      const { rows: csvRows } = readSheet(buffer);
+      for (const [key, adp] of Object.entries(ADAPTERS) as [AdapterKey, AdapterDef][]) {
+        if (adp.matchStrategy === 'batch') continue;
+        if (findHeaderRowInRows(csvRows, adp.headerFingerprint) >= 0) {
+          detected = key;
+          break;
+        }
+      }
+    } catch {
+      // Unreadable as a flat table — leave `detected` unset, falls through to the AMEX path below.
+    }
+  }
+
+  if (isCsv && detected == null) {
     return amexResultFromText(buffer.toString('utf8'), filename);
   }
 

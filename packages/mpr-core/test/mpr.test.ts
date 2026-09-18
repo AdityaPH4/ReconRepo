@@ -40,6 +40,7 @@ describe('detectAdapter()', () => {
     assert.equal(detectAdapter('daily_settlement_report.csv'), 'AMEX');
     assert.equal(detectAdapter('Merchant_Payout_Report_STID.xlsx'), 'HDFC_UPI');
     assert.equal(detectAdapter('925792_report.xlsx'), 'HDFC_UPI');
+    assert.equal(detectAdapter('HDFC_Link_Settlement.csv'), 'HDFC_LINK');
     assert.equal(detectAdapter('unknown_bank_file.xlsx'), null);
   });
 });
@@ -193,6 +194,37 @@ describe('parseMprFile() — Pinelabs hardcoded header row', () => {
   });
 });
 
+describe('parseMprFile() — HDFC Link', () => {
+  const csv = [
+    'SG MID,Merchant Order ID,SG Txn ID,SG Refund ID,Txn Date,Settlement Date,Txn Amount,Net Amount,Txn Fee',
+    '77734,00003,77734-00003-1,,2026-09-17 12:41:33,2026-09-18 00:00:00,40000,38702,1100',
+  ].join('\n');
+
+  it('content-fingerprint-detects a .csv with no filename hint as HDFC_LINK, not AMEX (the fix over the old unconditional CSV-is-AMEX shortcut)', () => {
+    const parsed = parseMprFile('reconciliation_report_2026-09-17_to_2026-09-19.csv', Buffer.from(csv, 'utf8'), null);
+    assert.equal(parsed.source, 'HDFC_LINK');
+    assert.equal(parsed.error, undefined);
+    assert.equal(parsed.rows.length, 1);
+    // The Merchant Order ID is aliased into `rrn` — it's the join key against
+    // Layer 1, not a bank RRN, and gets the same 12-digit left-pad `normRRN`
+    // applies to every adapter's rrn column (`snapshot.ts`'s
+    // `hdfcLinkSettlementLedger()` pads Layer 1's own `orderNo` the same way).
+    assert.equal((parsed.rows[0] as { rrn: string }).rrn, '000000000003');
+    assert.equal((parsed.rows[0] as { grossAmount: number }).grossAmount, 40000);
+  });
+
+  it('still resolves a genuine AMEX .csv to AMEX when no filename hint is given either', () => {
+    const amexCsv = [
+      'Submissions',
+      'Settlement date,Submitting Merchant ID,Submission date,Submission amount,Transaction count,SOC invoice number,Submitting Business Name',
+      '02-08-26,1234567,01-08-26,"1,000.00",2,101,Toit Bengaluru',
+    ].join('\n');
+    const parsed = parseMprFile('daily_export.csv', Buffer.from(amexCsv, 'utf8'), null);
+    assert.equal(parsed.source, 'AMEX');
+    assert.equal(parsed.matchStrategy, 'batch');
+  });
+});
+
 // ── runMatch() ────────────────────────────────────────────────────────────
 
 function ledgerRow(overrides: Partial<TaggedLedgerRow> = {}): TaggedLedgerRow {
@@ -249,6 +281,24 @@ describe('runMatch() — primary RRN match', () => {
     );
     assert.equal(result.amountMismatch.length, 1);
     assert.equal(result.amountMismatch[0]!._diff, 50);
+  });
+
+  it('settles an HDFC Link row keyed by order number instead of a bank RRN — Layer 1 puts orderNo in `rrn`, the adapter aliases Merchant Order ID into `rrn` too', () => {
+    const result = runMatch(
+      emptyInput({
+        sessions: [ledgerRow({ rrn: '00003', acquirer: 'HDFC_LINK', plAmount: 40000 })],
+        mprParsed: [
+          {
+            source: 'HDFC_LINK',
+            matchStrategy: 'rrn',
+            rows: [mprRow({ rrn: '00003', grossAmount: 40000, _source: 'HDFC_LINK', _file: 'hdfc_link.csv' })],
+            filename: 'hdfc_link.csv',
+          },
+        ],
+      }),
+    );
+    assert.equal(result.settled.length, 1);
+    assert.equal(result.amountMismatch.length, 0);
   });
 
   it('treats a row with the all-zero RRN sentinel as "No RRN" pending', () => {

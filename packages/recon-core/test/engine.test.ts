@@ -181,6 +181,8 @@ describe('routePayName()', () => {
     assert.equal(routePayName('Kotak Static UPI'), 'upi');
     assert.equal(routePayName('Bills on Hold'), 'bills');
     assert.equal(routePayName('Bank transfer'), 'bank');
+    assert.equal(routePayName('HDFC Link'), 'hdfc_link');
+    assert.equal(routePayName('hdfc link'), 'hdfc_link');
     assert.equal(routePayName('Gift From Toit'), 'other');
   });
 

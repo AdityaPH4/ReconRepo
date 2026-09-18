@@ -82,6 +82,25 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
     // Footer rows have a null RRN column — drop them.
     nullRRNStrategy: 'skip_null',
   },
+  HDFC_LINK: {
+    label: 'HDFC Link',
+    color: '#1d4ed8',
+    // Distinctive to this aggregator's export — won't collide with Kotak/
+    // Pinelabs/HDFC_UPI's own fingerprints.
+    headerFingerprint: ['SG MID', 'Merchant Order ID', 'SG Txn ID', 'SG Refund ID'],
+    fields: {
+      // No RRN column exists on this file — UPI rows carry a UTR, card rows
+      // an ARN instead, neither populated on every row. Merchant Order ID
+      // is, so it's aliased as the join key here (see `snapshot.ts`'s
+      // `hdfcLinkSettlementLedger()` on the Layer-1 side, which does the same).
+      rrn: ['Merchant Order ID'],
+      grossAmount: ['Txn Amount'],
+      netAmount: ['Net Amount'],
+      txnDate: ['Txn Date'],
+      settlementDate: ['Settlement Date'],
+      fee: ['Txn Fee'],
+    },
+  },
 };
 
 /**
@@ -93,8 +112,11 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
 export function detectAdapter(filename: string): AdapterKey | null {
   if (/kotak.*mpr|mpr.*kotak|0790431/i.test(filename)) return 'KOTAK';
   if (/pinelabs|pos.*authmerchan|merchantmpr|^mpr__/i.test(filename)) return 'PINELABS';
+  if (/merchant_payout_report.*stid|925792/i.test(filename)) return 'HDFC_UPI';
+  // Checked before the broad "any .csv named *settlement*" AMEX rule below —
+  // otherwise a name like "HDFC_Link_Settlement.csv" would match that first.
+  if (/hdfc.*link/i.test(filename)) return 'HDFC_LINK';
   if (/amex|settlements\d{8}/i.test(filename)) return 'AMEX';
   if (/\.csv$/i.test(filename) && /settlement/i.test(filename)) return 'AMEX';
-  if (/merchant_payout_report.*stid|925792/i.test(filename)) return 'HDFC_UPI';
   return null;
 }

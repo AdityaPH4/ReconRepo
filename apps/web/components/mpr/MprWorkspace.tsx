@@ -22,6 +22,7 @@ const ACQUIRER_LABELS: Record<string, string> = {
   KOTAK: 'Kotak',
   PINELABS: 'Pinelabs',
   HDFC_UPI: 'HDFC Static UPI',
+  HDFC_LINK: 'HDFC Link',
   AMEX: 'AMEX',
   UNKNOWN: 'Unknown',
 };
