@@ -12,7 +12,7 @@
 import { isAmexAcq, isMaterial, money } from '../util/money.js';
 import { OUTLET_NAMES } from '../constants.js';
 import type { FrsRowDTOLike } from './reportTypes.js';
-import type { OutletCode, PinelabsResult, ReconResult, SummaryData, ZipRow } from '../types.js';
+import type { OutletCode, PinelabsResult, PRRow, ReconResult, SummaryData, ZipRow } from '../types.js';
 import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals, type ExplainedItem } from './residual.js';
 import { squareOffPairList } from './squareOff.js';
@@ -307,6 +307,39 @@ function pinelabsSettlementLedger(
   return rows;
 }
 
+/**
+ * HDFC Link rows join Layer 2 (MPR) by order number, not RRN — the
+ * settlement file has no reference column populated on every row (UPI rows
+ * carry a UTR, card rows an ARN instead), but every row carries the same
+ * Merchant Order ID this outlet's own POS assigned. Reusing `rrn` as that
+ * join key lets these rows flow through the existing RRN-keyed MPR matcher
+ * unchanged — see `packages/mpr-core`'s `HDFC_LINK` adapter. mpr-core's
+ * shared row normaliser left-pads every adapter's `rrn` column to 12
+ * digits (`normRRN()`), Merchant Order ID included — matching that padding
+ * here is what makes the two sides' join keys equal as strings.
+ */
+function hdfcLinkSettlementLedger(rows: readonly PRRow[], outlet: OutletCode): SettlementLedgerRow[] {
+  return rows.map((r) => ({
+    rrn: r.orderNo.padStart(12, '0'),
+    authCode: r.authCode || '',
+    acquirer: 'HDFC_LINK',
+    mid: null,
+    invoice: null,
+    plAmount: r.amount,
+    plDate: r.date,
+    plSettlementDate: '',
+    posAmount: r.amount,
+    posOrderNo: r.orderNo,
+    outlet,
+    store: '',
+    l1Status: 'matched',
+    l1Remark: null,
+    l1Diff: 0,
+    squaredOff: false,
+    matchBy: 'order_id',
+  }));
+}
+
 function toAggregateJustification(e: JustificationEntry): AggregateJustificationSnapshot {
   return {
     sign: e.direction,
@@ -366,7 +399,10 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       totalShortage: shortTotal,
       explanations,
     },
-    settlementLedger: pinelabsSettlementLedger(result.pinelabs, outlet, justification),
+    settlementLedger: [
+      ...pinelabsSettlementLedger(result.pinelabs, outlet, justification),
+      ...hdfcLinkSettlementLedger(result.hdfcLink, outlet),
+    ],
     pinelabs: {
       squareOffPairs: squareOffPairList(justification.squareOff),
     },

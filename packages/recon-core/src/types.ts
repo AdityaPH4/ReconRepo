@@ -17,6 +17,7 @@ export type Tab =
   | 'upi'
   | 'bills'
   | 'bank'
+  | 'hdfc_link'
   | 'other';
 
 /** The three uploaded file roles. Legacy: `ROLE`. */
@@ -249,6 +250,8 @@ export interface ReconResult {
   upi: PRRow[];
   bills: PRRow[];
   bank: PRRow[];
+  /** Advances collected via an HDFC payment link — matched by order number, not RRN, against its own settlement file. See `hdfcLinkSettlementLedger()`. */
+  hdfcLink: PRRow[];
   other: PRRow[];
   zipFiltered: ZipRow[];
 }
