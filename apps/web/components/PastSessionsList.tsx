@@ -13,7 +13,16 @@ import { useEffect, useState } from 'react';
 import type { SessionListItemDTO } from '@toit/contracts';
 import { fmt } from '@toit/recon-core/display';
 import { diffClass } from '@/components/ui/table';
-import { listSessions } from '@/lib/api';
+import { listSessions, reportUrl } from '@/lib/api';
+
+/** A submitted row opens its printable report directly — that's the whole point of "submission history". A still-draft row has no report to show yet (the endpoint 409s), so it opens the workspace to keep working on it instead. */
+function openSession(s: SessionListItemDTO): void {
+  if (s.status === 'submitted') {
+    window.open(reportUrl(s.id), '_blank');
+  } else {
+    window.location.href = `/recon/sessions/${s.id}`;
+  }
+}
 
 export function PastSessionsList() {
   const [sessions, setSessions] = useState<SessionListItemDTO[] | null>(null);
@@ -55,7 +64,7 @@ export function PastSessionsList() {
             </thead>
             <tbody>
               {sessions.map((s) => (
-                <tr key={s.id} className="cursor-pointer" onClick={() => (window.location.href = `/recon/sessions/${s.id}`)}>
+                <tr key={s.id} className="cursor-pointer" onClick={() => openSession(s)}>
                   <td className="text-left!">{s.outlet}</td>
                   <td className="text-left! mono">{s.businessDate ?? '—'}</td>
                   <td className="text-left!">

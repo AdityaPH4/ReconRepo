@@ -575,6 +575,8 @@ export interface DashboardBohAgingRowDTO {
   bucket: BohAgingBucket;
   count: number;
   amount: number;
+  /** Every open entry in this bucket — lets the dashboard show full details on click, not just the rolled-up count/amount. */
+  entries: BohEntryDTO[];
 }
 
 export interface DashboardTodayStatusDTO {
