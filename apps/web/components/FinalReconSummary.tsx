@@ -439,6 +439,9 @@ function SourceStatusSection({ session }: { session: SessionDTO }) {
   const bankDiff = totals.bank.diff ?? 0;
   const bankResidual = bankDiff - entryNet(justification.entries, 'bank');
 
+  const hdfcLinkDiff = totals.hdfcLink.diff ?? 0;
+  const hdfcLinkResidual = hdfcLinkDiff - entryNet(justification.entries, 'hdfc_link');
+
   const tags = [
     {
       ok: submitGate.perSource.pinelabs,
@@ -478,6 +481,18 @@ function SourceStatusSection({ session }: { session: SessionDTO }) {
             : Math.abs(bankResidual) < AMOUNT_EPSILON
               ? 'Fully justified'
               : `Unexplained: ${fmt(Math.abs(bankResidual))}`,
+    },
+    {
+      ok: submitGate.perSource.hdfcLink,
+      label: 'HDFC Link',
+      detail:
+        totals.hdfcLink.summaryTotal === null
+          ? 'No summary'
+          : Math.abs(hdfcLinkDiff) < AMOUNT_EPSILON
+            ? 'Balanced'
+            : Math.abs(hdfcLinkResidual) < AMOUNT_EPSILON
+              ? 'Fully justified'
+              : `Unexplained: ${fmt(Math.abs(hdfcLinkResidual))}`,
     },
   ];
 

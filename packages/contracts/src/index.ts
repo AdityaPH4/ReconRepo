@@ -185,6 +185,7 @@ export interface PanelSummariesDTO {
   hdfcUpi: PanelTotalsDTO;
   kotakUpi: PanelTotalsDTO;
   bank: PanelTotalsDTO;
+  hdfcLink: PanelTotalsDTO;
   bills: PanelTotalsDTO;
   /**
    * Swiggy/Zomato never block submission, but legacy still compared each
@@ -319,6 +320,7 @@ export interface SubmitGateDTO {
     cash: boolean;
     upi: boolean;
     bank: boolean;
+    hdfcLink: boolean;
   };
 }
 

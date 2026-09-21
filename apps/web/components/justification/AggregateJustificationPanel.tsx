@@ -30,7 +30,7 @@ import { diffClass } from '@/components/ui/table';
 import { modalKindForRemark } from './types';
 import { useJustification } from './JustificationProvider';
 
-type Source = 'cash' | 'upi' | 'bank';
+type Source = 'cash' | 'upi' | 'bank' | 'hdfc_link';
 
 const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: readonly string[] }> = {
   cash: { excess: CASH_REMARKS_EXCESS, shortage: CASH_REMARKS_SHORTAGE },
@@ -40,13 +40,18 @@ const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: r
   // row-level remarks — see RemarkCell.tsx); it doesn't happen on Cash or
   // consumer UPI, so it must not leak onto the UPI tab by sharing its array.
   bank: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE_WITH_TDS },
+  // No TDS remark here yet — unlike Bank, no client has been confirmed to
+  // deduct TDS on an HDFC Link collection. Easy to move onto the TDS-aware
+  // list later if that turns out to happen too.
+  hdfc_link: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
 };
 
-/** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`. */
+/** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`; `hdfc_link` has no legacy equivalent. */
 const BOH_LOCKED_SOURCE: Record<Source, string> = {
   cash: 'Cash',
   upi: 'Static UPI',
   bank: 'Bank Transfer',
+  hdfc_link: 'HDFC Link',
 };
 
 export function AggregateJustificationPanel({

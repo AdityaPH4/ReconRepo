@@ -14,11 +14,12 @@ import { AMOUNT_EPSILON } from '../constants.js';
 import type { Remark } from '../constants.js';
 import type { JustificationEntry, JustificationSource, ResolvableItem } from './types.js';
 
-/** Per-`JustificationSource` label for the aggregate (Cash/UPI/Bank) tabs — legacy's own `source:` literals in `collectExplainedForSubmit` (5060–5069). */
-const AGGREGATE_LABEL: Record<'cash' | 'upi' | 'bank', string> = {
+/** Per-`JustificationSource` label for the aggregate (Cash/UPI/Bank/HDFC Link) tabs — legacy's own `source:` literals in `collectExplainedForSubmit` (5060–5069); `hdfc_link` has no legacy equivalent. */
+const AGGREGATE_LABEL: Record<'cash' | 'upi' | 'bank' | 'hdfc_link', string> = {
   cash: 'Cash',
   upi: 'HDFC/Kotak UPI',
   bank: 'Bank Transfer',
+  hdfc_link: 'HDFC Link',
 };
 
 export interface ExplainedItem {
@@ -63,7 +64,7 @@ export function collectExplained(
       label = item.label;
       orderNo = item.orderNo;
       rrn = item.rrn;
-    } else if (e.source === 'cash' || e.source === 'upi' || e.source === 'bank') {
+    } else if (e.source === 'cash' || e.source === 'upi' || e.source === 'bank' || e.source === 'hdfc_link') {
       diff = e.direction === 'excess' ? e.amount : -e.amount;
       label = AGGREGATE_LABEL[e.source];
     } else {

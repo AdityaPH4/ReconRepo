@@ -188,6 +188,13 @@ function TransactionView({
         </>
       )}
 
+      {panel === 'hdfc_link' && (
+        <>
+          <AggregateJustificationPanel source="hdfc_link" title="HDFC Link" diff={totals.hdfcLink.diff} />
+          <AggregatePanel title="HDFC Link" totals={totals.hdfcLink} rows={result.hdfcLink} />
+        </>
+      )}
+
       {panel === 'bills' && <BillsOnHoldPanel rows={result.bills} totals={totals.bills} />}
 
       {panel === 'advances' && <AdvancesPanel />}

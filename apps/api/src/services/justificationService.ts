@@ -447,6 +447,7 @@ export function computeSubmitGate(session: SessionDTO): SubmitGateDTO {
     hasSummary: session.summaryData !== null,
     cashDiff: session.totals.cash.diff ?? 0,
     bankDiff: session.totals.bank.diff ?? 0,
+    hdfcLinkDiff: session.totals.hdfcLink.diff ?? 0,
     hdfcAggregateDiff: session.totals.hdfcUpi.diff ?? 0,
     kotakDiff: session.totals.kotakUpi.diff ?? 0,
     // A draft session's own "Advance Applied" entries always point at a
@@ -644,8 +645,13 @@ export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
       });
   }
 
-  const aggregateLabel: Record<string, string> = { cash: 'Cash', upi: 'HDFC/Kotak UPI', bank: 'Bank Transfer' };
-  for (const source of ['cash', 'upi', 'bank'] as const) {
+  const aggregateLabel: Record<string, string> = {
+    cash: 'Cash',
+    upi: 'HDFC/Kotak UPI',
+    bank: 'Bank Transfer',
+    hdfc_link: 'HDFC Link',
+  };
+  for (const source of ['cash', 'upi', 'bank', 'hdfc_link'] as const) {
     session.justification.entries
       .filter((e) => e.source === source && e.amount)
       .forEach((e) => {

@@ -97,6 +97,14 @@ export function bankOk(hasSummary: boolean, diff: number, entries: readonly Just
   return Math.abs(residual) < AMOUNT_EPSILON;
 }
 
+/** Same shape as `bankOk` — no leniency band, exact-to-ε once a Payment Summary exists. */
+export function hdfcLinkOk(hasSummary: boolean, diff: number, entries: readonly JustificationEntry[]): boolean {
+  if (!hasSummary) return true;
+  if (Math.abs(diff) < AMOUNT_EPSILON) return true;
+  const residual = diff - entryNet(entries, 'hdfc_link');
+  return Math.abs(residual) < AMOUNT_EPSILON;
+}
+
 export interface UpiOkParams {
   hasSummary: boolean;
   /** From `hdfcUpiCompleteness()` — `null` when no HDFC statement was uploaded. */

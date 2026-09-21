@@ -25,7 +25,7 @@ import type { OutletCode } from '../types.js';
  * `JustificationEntry` for it (so cascade-undo has one uniform shape), but
  * `collectExplained` explicitly excludes `'boh'` — see `residual.ts`.
  */
-export type JustificationSource = 'pinelabs' | 'upi_hdfc' | 'cash' | 'upi' | 'bank' | 'boh';
+export type JustificationSource = 'pinelabs' | 'upi_hdfc' | 'cash' | 'upi' | 'bank' | 'hdfc_link' | 'boh';
 
 export type Direction = 'excess' | 'shortage';
 

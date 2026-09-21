@@ -13,7 +13,7 @@
 
 import { AMOUNT_EPSILON, THRESHOLD } from '../constants.js';
 import type { HdfcStatementRow, MatchResult, PinelabsResult } from '../types.js';
-import { bankOk, cashOk, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from './completeness.js';
+import { bankOk, cashOk, hdfcLinkOk, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from './completeness.js';
 import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals } from './residual.js';
 import type { AdvanceApplication, JustificationState } from './types.js';
@@ -32,6 +32,7 @@ export interface SubmitGateResult {
     cash: boolean;
     upi: boolean;
     bank: boolean;
+    hdfcLink: boolean;
   };
 }
 
@@ -46,6 +47,8 @@ export interface CanSubmitInput {
   cashDiff: number;
   /** Drawer Bank total minus PR Bank total. */
   bankDiff: number;
+  /** Drawer HDFC Link total minus PR HDFC Link total. */
+  hdfcLinkDiff: number;
   /** Drawer HDFC total minus PR HDFC total — used only when no HDFC statement was uploaded. */
   hdfcAggregateDiff: number;
   /** Drawer Kotak total minus PR Kotak total. */
@@ -63,6 +66,7 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
     hasSummary,
     cashDiff,
     bankDiff,
+    hdfcLinkDiff,
     hdfcAggregateDiff,
     kotakDiff,
     applications,
@@ -89,6 +93,9 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
 
   const bankResolved = bankOk(hasSummary, bankDiff, entries);
   if (!bankResolved) blockers.push('Bank transfer difference is not fully justified.');
+
+  const hdfcLinkResolved = hdfcLinkOk(hasSummary, hdfcLinkDiff, entries);
+  if (!hdfcLinkResolved) blockers.push('HDFC Link difference is not fully justified.');
 
   const upiResolved = upiOk({ hasSummary, hdfcCompleteness, hdfcAggregateDiff, kotakDiff, entries });
   if (!upiResolved) blockers.push('Static UPI difference is not fully justified.');
@@ -132,6 +139,7 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
       cash: cashResolved,
       upi: upiResolved,
       bank: bankResolved,
+      hdfcLink: hdfcLinkResolved,
     },
   };
 }

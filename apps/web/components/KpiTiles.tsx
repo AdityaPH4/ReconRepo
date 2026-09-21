@@ -25,9 +25,9 @@
  */
 
 import type { SessionDTO } from '@toit/contracts';
-import { bankOk, cashOk, fmt, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from '@toit/recon-core/display';
+import { bankOk, cashOk, fmt, hdfcLinkOk, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from '@toit/recon-core/display';
 
-export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank' | 'advances';
+export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank' | 'hdfc_link' | 'advances';
 
 /** `ok` = neutral/no action needed, `err` = shortage (red), `excess` = excess (green, never alarming). */
 type Stat = 'ok' | 'err' | 'excess' | 'neutral';
@@ -118,6 +118,10 @@ function buildTiles(session: SessionDTO): Tile[] {
   const bankDiff = totals.bank.diff ?? 0;
   const bankResolved = bankOk(hasSummary, bankDiff, entries);
 
+  // ── HDFC Link ────────────────────────────────────────────────────────
+  const hdfcLinkDiff = totals.hdfcLink.diff ?? 0;
+  const hdfcLinkResolved = hdfcLinkOk(hasSummary, hdfcLinkDiff, entries);
+
   return [
     {
       id: 'pinelabs',
@@ -146,6 +150,13 @@ function buildTiles(session: SessionDTO): Tile[] {
       main: diffLabel(bankDiff, hasSummary),
       note: `${result.bank.length} PR rows`,
       stat: directionalStat(bankResolved, bankDiff),
+    },
+    {
+      id: 'hdfc_link',
+      label: 'HDFC Link',
+      main: diffLabel(hdfcLinkDiff, hasSummary),
+      note: `${result.hdfcLink.length} PR rows`,
+      stat: directionalStat(hdfcLinkResolved, hdfcLinkDiff),
     },
     {
       id: 'swiggy',

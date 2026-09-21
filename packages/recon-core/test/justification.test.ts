@@ -26,6 +26,7 @@ import {
   emptyJustificationState,
   entryNet,
   explainedTotals,
+  hdfcLinkOk,
   hdfcUpiCompleteness,
   isAdvanceClosed,
   isAdvanceExhausted,
@@ -348,6 +349,16 @@ describe('completeness', () => {
     assert.equal(bankOk(true, 500, exact), true);
   });
 
+  it('HDFC Link requires exactness too, same shape as Bank, netting only against its own source', () => {
+    const entries = [entry({ source: 'hdfc_link', direction: 'excess', remark: 'Tips', amount: 490 })];
+    assert.equal(hdfcLinkOk(true, 500, entries), false);
+    const exact = [entry({ source: 'hdfc_link', direction: 'excess', remark: 'Tips', amount: 500 })];
+    assert.equal(hdfcLinkOk(true, 500, exact), true);
+    // A Bank-sourced entry must not net against an HDFC Link diff.
+    const wrongSource = [entry({ source: 'bank', direction: 'excess', remark: 'Tips', amount: 500 })];
+    assert.equal(hdfcLinkOk(true, 500, wrongSource), false);
+  });
+
   it('upiOk requires HDFC fully resolved AND Kotak within tolerance when a statement exists', () => {
     const resolvedHdfc = { netDiff: 0, unresolvedCount: 0, allResolved: true };
     assert.equal(
@@ -437,6 +448,7 @@ describe('canSubmit', () => {
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
+      hdfcLinkDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -454,6 +466,7 @@ describe('canSubmit', () => {
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
+      hdfcLinkDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -474,12 +487,32 @@ describe('canSubmit', () => {
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
+      hdfcLinkDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
     });
     assert.equal(result.ok, false);
     assert.ok(result.blockers.some((b) => b.includes('backing advance')));
+  });
+
+  it('an unjustified HDFC Link difference blocks submission, same as Bank', () => {
+    const result = canSubmit({
+      pinelabs: pinelabsResult(),
+      upiHdfc: null,
+      justification: emptyJustificationState(),
+      grandDiff: 500,
+      hasSummary: true,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 500,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications: [],
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.perSource.hdfcLink, false);
+    assert.ok(result.blockers.some((b) => b.includes('HDFC Link')));
   });
 
   it('is ok, "balanced", when nothing is outstanding', () => {
@@ -491,6 +524,7 @@ describe('canSubmit', () => {
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
+      hdfcLinkDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],

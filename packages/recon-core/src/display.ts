@@ -116,6 +116,7 @@ export {
   bankOk,
   cashOk,
   entryNet,
+  hdfcLinkOk,
   hdfcUpiCompleteness,
   pinelabsCompleteness,
   upiOk,
