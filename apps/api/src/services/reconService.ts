@@ -354,7 +354,7 @@ function buildTotals(
     hdfcUpi: drawerTotals(sumAmounts(hdfcRows), drawer('HDFC Static UPI')),
     kotakUpi: drawerTotals(sumAmounts(kotakRows), drawer('Kotak Static UPI')),
     bank: drawerTotals(sumAmounts(result.bank), drawer('Bank transfer')),
-    hdfcLink: drawerTotals(sumAmounts(result.hdfcLink), drawer('HDFC Link')),
+    hdfcLink: drawerTotals(sumAmounts(result.hdfcLink), drawer('HDFC Payment Link')),
     bills: drawerTotals(sumAmounts(result.bills), drawer('Bills on Hold')),
     swiggy: {
       prTotal: sumAmounts(result.swiggy),

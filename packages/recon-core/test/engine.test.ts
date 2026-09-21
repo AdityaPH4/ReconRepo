@@ -182,8 +182,12 @@ describe('routePayName()', () => {
     assert.equal(routePayName('Kotak Static UPI'), 'upi');
     assert.equal(routePayName('Bills on Hold'), 'bills');
     assert.equal(routePayName('Bank transfer'), 'bank');
+    // Confirmed against a real Payment Report export: the actual payment
+    // name is "HDFC Payment Link" — "HDFC Link" alone is also accepted
+    // (substring match) in case a different export uses the shorter form.
+    assert.equal(routePayName('HDFC Payment Link'), 'hdfc_link');
     assert.equal(routePayName('HDFC Link'), 'hdfc_link');
-    assert.equal(routePayName('hdfc link'), 'hdfc_link');
+    assert.equal(routePayName('hdfc payment link'), 'hdfc_link');
     assert.equal(routePayName('Gift From Toit'), 'other');
   });
 

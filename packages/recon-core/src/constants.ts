@@ -88,7 +88,10 @@ export const CASH_NAMES = ['cash'];
 export const UPI_NAMES = ['hdfc static upi', 'kotak static upi'];
 export const BILLS_NAMES = ['bills on hold', 'others'];
 export const BANK_NAMES = ['bank transfer'];
-export const HDFC_LINK_NAMES = ['hdfc link'];
+// Confirmed against a real Payment Report export — the actual string is
+// "HDFC Payment Link", not the assumed "HDFC Link". Substring-matched (like
+// Bank/Pinelabs) rather than exact, so either wording is accepted.
+export const HDFC_LINK_NAMES = ['hdfc payment link', 'hdfc link'];
 
 /**
  * Routes a Payment Report `paymentName` to its panel.
@@ -106,7 +109,7 @@ export function routePayName(pn: string | null | undefined): Tab {
   if (UPI_NAMES.includes(n)) return 'upi';
   if (BILLS_NAMES.some((x) => n.includes(x))) return 'bills';
   if (BANK_NAMES.some((x) => n.includes(x))) return 'bank';
-  if (HDFC_LINK_NAMES.includes(n)) return 'hdfc_link';
+  if (HDFC_LINK_NAMES.some((x) => n.includes(x))) return 'hdfc_link';
   return 'other';
 }
 
@@ -223,8 +226,11 @@ export const FRS_METHODS: FrsMethod[] = [
   {
     label: 'HDFC Link',
     sourceType: 'drawer',
-    prKeys: ['HDFC Link'],
-    sumKeys: ['HDFC Link'],
+    // Confirmed against a real Payment Report: "HDFC Payment Link". Both
+    // variants kept — prMap/sumMap key on the exact raw string, so a drawer
+    // export using the shorter "HDFC Link" wording still resolves.
+    prKeys: ['HDFC Payment Link', 'HDFC Link'],
+    sumKeys: ['HDFC Payment Link', 'HDFC Link'],
   },
   {
     label: 'Gift From Toit',
