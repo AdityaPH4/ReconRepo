@@ -7,32 +7,35 @@
  * session's workspace), this is a genuine top-level module: a GM can close
  * an advance that will never be applied (e.g. a corporate-booking advance
  * returned directly to the POC once full payment settled on the company
- * card instead) without having to open any session first. Outlet-scoped —
- * gated on `outlet !== null`, i.e. GMs (admins see every outlet and aren't
- * the intended user here, matching the plan's GM-owned framing).
+ * card instead) without having to open any session first. GMs see only
+ * their own outlet (implicit — the server resolves it from their token);
+ * admins get the same page plus every outlet at once, with a selector to
+ * narrow to one — full access on top of the GM view, not a separate one.
  */
 
 import { useEffect, useState } from 'react';
 import type { AdvanceWithBalanceDTO } from '@toit/contracts';
-import { fmt, fmtEventDate } from '@toit/recon-core/display';
+import { OUTLET_CODES, OUTLET_NAMES, type OutletCode, fmt, fmtEventDate } from '@toit/recon-core/display';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ApiError, closeAdvance, listAdvances } from '@/lib/api';
 
 export function AdvancesManagementPage() {
   const user = useCurrentUser();
+  const isAdmin = user.role === 'admin';
+  const [outletFilter, setOutletFilter] = useState<OutletCode | ''>('');
   const [rows, setRows] = useState<AdvanceWithBalanceDTO[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user.outlet === null) return;
+    if (!isAdmin && user.outlet === null) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [outletFilter]);
 
   async function refresh() {
     try {
-      setRows(await listAdvances());
+      setRows(await listAdvances(outletFilter || undefined));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load advances.');
     }
@@ -60,7 +63,7 @@ export function AdvancesManagementPage() {
     }
   }
 
-  if (user.outlet === null) {
+  if (!isAdmin && user.outlet === null) {
     return (
       <main className="app-main">
         <div className="alert alert-err">
@@ -85,9 +88,25 @@ export function AdvancesManagementPage() {
             <span className="pill">Close advances that will never be applied — e.g. returned to the POC outside of recon</span>
           </div>
         </div>
-        <a className="btn" href="/">
-          🏠 All modules
-        </a>
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <select
+              className="field-input"
+              value={outletFilter}
+              onChange={(e) => setOutletFilter(e.target.value as OutletCode | '')}
+            >
+              <option value="">All outlets</option>
+              {OUTLET_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {OUTLET_NAMES[code]}
+                </option>
+              ))}
+            </select>
+          )}
+          <a className="btn" href="/">
+            🏠 All modules
+          </a>
+        </div>
       </div>
 
       {error && (
@@ -103,6 +122,7 @@ export function AdvancesManagementPage() {
           <table className="data-table">
             <thead>
               <tr>
+                {isAdmin && <th>Outlet</th>}
                 <th>Customer</th>
                 <th>Event date</th>
                 <th>Notes</th>
@@ -114,19 +134,20 @@ export function AdvancesManagementPage() {
             <tbody>
               {!rows ? (
                 <tr>
-                  <td colSpan={6} className="text-center text-ink-3">
+                  <td colSpan={isAdmin ? 7 : 6} className="text-center text-ink-3">
                     Loading…
                   </td>
                 </tr>
               ) : open.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center text-ink-3">
+                  <td colSpan={isAdmin ? 7 : 6} className="text-center text-ink-3">
                     No open advances.
                   </td>
                 </tr>
               ) : (
                 open.map((r) => (
                   <tr key={r.advance.id}>
+                    {isAdmin && <td>{r.advance.outlet}</td>}
                     <td>
                       {r.advance.custName}
                       {r.advance.phone && <span className="text-ink-3 text-tiny"> · {r.advance.phone}</span>}
@@ -160,6 +181,7 @@ export function AdvancesManagementPage() {
             <table className="data-table">
               <thead>
                 <tr>
+                  {isAdmin && <th>Outlet</th>}
                   <th>Customer</th>
                   <th>Event date</th>
                   <th className="num">Original amount</th>
@@ -172,6 +194,7 @@ export function AdvancesManagementPage() {
               <tbody>
                 {closed.map((r) => (
                   <tr key={r.advance.id}>
+                    {isAdmin && <td>{r.advance.outlet}</td>}
                     <td>{r.advance.custName}</td>
                     <td className="mono">{fmtEventDate(r.advance.eventDate)}</td>
                     <td className="num">{fmt(r.advance.originalAmount)}</td>

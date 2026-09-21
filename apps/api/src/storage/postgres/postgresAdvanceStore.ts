@@ -29,8 +29,10 @@ export function createPostgresAdvanceStore(pool: Pool): AdvanceStore {
 
     async list(outlet) {
       const { rows } = await pool.query<{ data: Advance }>(
-        'SELECT data FROM recon.advances WHERE outlet = $1',
-        [outlet],
+        outlet === null
+          ? 'SELECT data FROM recon.advances'
+          : 'SELECT data FROM recon.advances WHERE outlet = $1',
+        outlet === null ? [] : [outlet],
       );
       return rows.map((r) => r.data);
     },
@@ -46,10 +48,12 @@ export function createPostgresAdvanceStore(pool: Pool): AdvanceStore {
 
     async listApplications(outlet) {
       const { rows } = await pool.query<{ data: AdvanceApplication }>(
-        `SELECT aa.data FROM recon.advance_applications aa
-         JOIN recon.advances a ON a.id = aa.advance_id
-         WHERE a.outlet = $1`,
-        [outlet],
+        outlet === null
+          ? `SELECT aa.data FROM recon.advance_applications aa`
+          : `SELECT aa.data FROM recon.advance_applications aa
+             JOIN recon.advances a ON a.id = aa.advance_id
+             WHERE a.outlet = $1`,
+        outlet === null ? [] : [outlet],
       );
       return rows.map((r) => r.data);
     },

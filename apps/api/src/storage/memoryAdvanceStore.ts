@@ -26,7 +26,7 @@ export function createMemoryAdvanceStore(): AdvanceStore {
     },
 
     async list(outlet) {
-      return [...advances.values()].filter((a) => a.outlet === outlet);
+      return [...advances.values()].filter((a) => outlet === null || a.outlet === outlet);
     },
 
     async recordApplication(application) {
@@ -35,7 +35,9 @@ export function createMemoryAdvanceStore(): AdvanceStore {
     },
 
     async listApplications(outlet) {
-      const outletAdvanceIds = new Set([...advances.values()].filter((a) => a.outlet === outlet).map((a) => a.id));
+      const outletAdvanceIds = new Set(
+        [...advances.values()].filter((a) => outlet === null || a.outlet === outlet).map((a) => a.id),
+      );
       return [...applications.values()].filter((a) => outletAdvanceIds.has(a.advanceId));
     },
 

@@ -81,9 +81,10 @@ export interface AdvanceStore {
   readonly driver: 'memory' | 'postgres';
   create(advance: Advance): Promise<Advance>;
   get(id: string): Promise<Advance | null>;
-  list(outlet: OutletCode): Promise<Advance[]>;
+  /** `outlet: null` lists across every outlet — for an admin viewing the standalone Advance Closure module. */
+  list(outlet: OutletCode | null): Promise<Advance[]>;
   recordApplication(application: AdvanceApplication): Promise<AdvanceApplication>;
-  listApplications(outlet: OutletCode): Promise<AdvanceApplication[]>;
+  listApplications(outlet: OutletCode | null): Promise<AdvanceApplication[]>;
   /** Durable closure outside any recon session — see `Advance.status`. */
   close(id: string, closedAt: string, closedBy: string, closedReason: string): Promise<Advance>;
 }

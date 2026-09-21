@@ -68,14 +68,18 @@ advancesRouter.get('/eligible', async (req, res, next) => {
 // closeable rows, for the standalone Advance Closure module.
 advancesRouter.get('/', async (req, res, next) => {
   try {
-    let outlet: OutletCode | null = req.user.outlet;
+    let outlet: OutletCode | null;
     if (req.user.role === 'admin') {
+      // An admin with no `?outlet=` sees every outlet at once; passing one
+      // filters down to it, same as a GM's own implicit scope.
       const requested = typeof req.query.outlet === 'string' ? (req.query.outlet as OutletCode) : undefined;
-      outlet = requested && (OUTLET_CODES as string[]).includes(requested) ? requested : OUTLET_CODES[0]!;
-    }
-    if (!outlet) {
-      res.status(400).json({ error: 'No outlet to show advances for.' });
-      return;
+      outlet = requested && (OUTLET_CODES as string[]).includes(requested) ? requested : null;
+    } else {
+      outlet = req.user.outlet;
+      if (!outlet) {
+        res.status(400).json({ error: 'No outlet to show advances for.' });
+        return;
+      }
     }
     const [advances, applications] = await Promise.all([
       getAdvanceStore().list(outlet),
