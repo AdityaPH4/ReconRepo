@@ -20,6 +20,7 @@ import {
   BadRequestError,
   outletName,
   runReconciliation,
+  supersedeSessions,
   windowLabel,
 } from '../services/reconService.js';
 import {
@@ -149,6 +150,8 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
         files: stored,
         hdfcStatement: outcome.hdfcStatementMeta,
         warnings: outcome.warnings,
+        discardedAt: null,
+        supersededBySessionId: null,
       },
       // JSON.stringify performs the Date→string and NaN→null erasure that
       // `Jsonified` documents on the contract type.
@@ -169,6 +172,9 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
     session.explanation = buildExplanationItems(session);
 
     await getSessionStore().create(session);
+    // Starting fresh over an open draft discards it — see supersedeSessions()'s
+    // own doc comment for why only 'draft' siblings, not 'submitted' ones.
+    await supersedeSessions(session.meta.outlet, session.meta.businessDate, session.meta.id, ['draft']);
     res.status(201).json(session);
   } catch (err) {
     next(err);
@@ -373,6 +379,10 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
       explanation: buildExplanationItems(session),
     };
     const saved = await getSessionStore().update(session.meta.id, submitted);
+    // Discards both a leftover sibling draft (never submitted, same day) and
+    // a prior submitted session for this same outlet+date (an approved
+    // re-run) — this newly-submitted one is now the definitive record.
+    await supersedeSessions(session.meta.outlet, session.meta.businessDate, session.meta.id, ['draft', 'submitted']);
     res.json(saved);
   } catch (err) {
     next(err);

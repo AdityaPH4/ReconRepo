@@ -36,9 +36,13 @@ export function createMemorySessionStore(): SessionStore {
     },
 
     async list({ outlet, status, limit = 50 }: SessionQuery) {
+      // No explicit status filter: every caller today means "the sessions a
+      // human should see" — a discarded one is a superseded leftover, not
+      // that. An explicit `status: 'discarded'` still works normally, for
+      // whenever something actually needs to look at them.
       return [...sessions.values()]
         .filter((s) => (outlet ? s.meta.outlet === outlet : true))
-        .filter((s) => (status ? s.meta.status === status : true))
+        .filter((s) => (status ? s.meta.status === status : s.meta.status !== 'discarded'))
         .sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt))
         .slice(0, limit)
         .map(toListItem);

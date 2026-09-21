@@ -82,7 +82,7 @@ export interface HdfcStatementMetaDTO {
 
 // ── Session ───────────────────────────────────────────────────────────────
 
-export type SessionStatus = 'draft' | 'submitted';
+export type SessionStatus = 'draft' | 'submitted' | 'discarded';
 
 export interface SessionMetaDTO {
   id: string;
@@ -111,6 +111,16 @@ export interface SessionMetaDTO {
    * survive a page refresh.
    */
   warnings: string[];
+  /**
+   * Set only when `status === 'discarded'` — a newer session became the
+   * definitive one for this outlet+businessDate, either because a GM chose
+   * to start fresh over an open draft, or because a second session for an
+   * already-submitted day was itself submitted (an approved re-run). See
+   * `supersedeSessions()` in `apps/api/src/services/reconService.ts`.
+   */
+  discardedAt: string | null;
+  /** The session that superseded this one — set alongside `discardedAt`. */
+  supersededBySessionId: string | null;
 }
 
 // ── Final Recon Summary ───────────────────────────────────────────────────

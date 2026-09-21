@@ -49,6 +49,10 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
       if (status) {
         params.push(status);
         conditions.push(`status = $${params.length}`);
+      } else {
+        // No explicit filter: exclude discarded (superseded) sessions by
+        // default — see the memory store's own version of this comment.
+        conditions.push(`status != 'discarded'`);
       }
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       params.push(limit);

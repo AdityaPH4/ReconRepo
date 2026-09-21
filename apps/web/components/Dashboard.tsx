@@ -67,7 +67,7 @@ function downloadBohAgingCsv(outlet: string, aging: DashboardBohAgingRowDTO[], t
   URL.revokeObjectURL(url);
 }
 
-export function Dashboard() {
+export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => void } = {}) {
   const user = useCurrentUser();
   const [dashboard, setDashboard] = useState<DashboardDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,8 +75,12 @@ export function Dashboard() {
 
   useEffect(() => {
     getDashboard()
-      .then(setDashboard)
+      .then((d) => {
+        setDashboard(d);
+        onLoad?.(d);
+      })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load dashboard.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user.email]);
 
   if (error) {

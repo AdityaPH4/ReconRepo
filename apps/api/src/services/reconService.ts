@@ -53,7 +53,9 @@ import type {
   PanelTotalsDTO,
   PinelabsBreakdownDTO,
   ReconCountsDTO,
+  SessionStatus,
 } from '@toit/contracts';
+import { getSessionStore } from '../storage/index.js';
 
 /** Raw file bytes for one run. `pr` and `zip` are required; the rest optional. */
 export interface RunInputFiles {
@@ -364,6 +366,52 @@ function buildTotals(
     pinelabs: { prTotal: plPR, terminalTotal: plTerm, diff: plTerm - plPR },
     tipsTotal,
   };
+}
+
+// ── Draft session lifecycle ─────────────────────────────────────────────
+
+/**
+ * Marks every OTHER session for this outlet+businessDate whose status is in
+ * `discardStatuses` as `'discarded'`, superseded by `keepSessionId`. Called
+ * from two places, with two different `discardStatuses`:
+ *   - session creation (`routes/sessions.ts`'s `POST /`): `['draft']` only —
+ *     a GM uploading fresh files while an old draft sits open starts from
+ *     scratch; the old draft is discarded, an existing *submitted* session
+ *     is untouched (that pairing only exists via the approval flow, and
+ *     isn't superseded until the new session is itself submitted).
+ *   - submit (`routes/sessions.ts`'s `POST /:id/submit`): `['draft',
+ *     'submitted']` — covers both a stray sibling draft left open the same
+ *     day, and a prior submitted session from an approved re-run (which
+ *     otherwise leaves two live submitted sessions for one outlet+date with
+ *     no relationship recorded between them).
+ * `list()` already excludes `'discarded'` sessions by default, so this
+ * naturally never re-discards something it (or an earlier call) already did.
+ */
+export async function supersedeSessions(
+  outlet: OutletCode,
+  businessDate: string | null,
+  keepSessionId: string,
+  discardStatuses: readonly SessionStatus[],
+): Promise<void> {
+  if (!businessDate) return; // nothing to key the sweep on — same tolerance assertReconAllowed() already has
+  const store = getSessionStore();
+  const siblings = await store.list({ outlet });
+  const toDiscard = siblings.filter(
+    (s) => s.businessDate === businessDate && s.id !== keepSessionId && discardStatuses.includes(s.status),
+  );
+  for (const item of toDiscard) {
+    const full = await store.get(item.id);
+    if (!full) continue;
+    await store.update(full.meta.id, {
+      ...full,
+      meta: {
+        ...full.meta,
+        status: 'discarded',
+        discardedAt: new Date().toISOString(),
+        supersededBySessionId: keepSessionId,
+      },
+    });
+  }
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────

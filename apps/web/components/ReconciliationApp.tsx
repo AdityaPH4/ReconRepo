@@ -9,7 +9,7 @@
  */
 
 import type { OutletCode } from '@toit/recon-core/display';
-import type { SessionDTO } from '@toit/contracts';
+import type { DashboardDTO, SessionDTO } from '@toit/contracts';
 import { useState } from 'react';
 import { Dashboard } from '@/components/Dashboard';
 import { Header } from '@/components/Header';
@@ -30,9 +30,23 @@ export function ReconciliationApp() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [approvalBlock, setApprovalBlock] = useState<ApprovalBlock | null>(null);
+  const [dashboard, setDashboard] = useState<DashboardDTO | null>(null);
 
   async function run() {
     if (!files.pr || !files.zip) return;
+    // An unsubmitted draft already exists for today — offer to return to it
+    // instead of silently piling up a second one. Proceeding here is safe:
+    // the backend discards the old draft as soon as the new one is created.
+    if (dashboard?.todayStatus.status === 'draft' && dashboard.todayStatus.sessionId) {
+      const proceed = window.confirm(
+        `You already have an unsubmitted draft for ${dashboard.outlet} on ${dashboard.today}.\n\n` +
+          `Click OK to discard it and continue with these new files, or Cancel to go back to your existing draft instead.`,
+      );
+      if (!proceed) {
+        window.location.href = `/recon/sessions/${dashboard.todayStatus.sessionId}`;
+        return;
+      }
+    }
     setRunning(true);
     setError(null);
     setApprovalBlock(null);
@@ -91,7 +105,7 @@ export function ReconciliationApp() {
         <SessionWorkspace session={session} onNewUpload={reset} />
       ) : (
         <main className="app-main">
-          <Dashboard />
+          <Dashboard onLoad={setDashboard} />
           <UploadPanel
             files={files}
             onFilesChange={setFiles}
