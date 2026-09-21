@@ -6,9 +6,10 @@
  */
 
 import type { BohAgingBucket, DashboardBohAgingRowDTO, DashboardDateRangeDTO, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
-import { fmt } from '@toit/recon-core/display';
+import { fmt, fmtDate } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
+import { ModalShell } from '@/components/justification/ModalShell';
 import { ApiError, getDashboard } from '@/lib/api';
 import { diffClass } from '@/components/ui/table';
 
@@ -70,6 +71,7 @@ export function Dashboard() {
   const user = useCurrentUser();
   const [dashboard, setDashboard] = useState<DashboardDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedBucket, setSelectedBucket] = useState<DashboardBohAgingRowDTO | null>(null);
 
   useEffect(() => {
     getDashboard()
@@ -217,7 +219,11 @@ export function Dashboard() {
               </thead>
               <tbody>
                 {dashboard.bohAging.map((row) => (
-                  <tr key={row.bucket}>
+                  <tr
+                    key={row.bucket}
+                    className={row.count > 0 ? 'cursor-pointer' : undefined}
+                    onClick={() => row.count > 0 && setSelectedBucket(row)}
+                  >
                     <td className="text-left!">
                       <span className={`tag ${BOH_BUCKET_TAG[row.bucket]}`}>{row.bucket}</span>
                     </td>
@@ -240,6 +246,36 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      {selectedBucket && (
+        <ModalShell
+          title={`Bills on hold — ${selectedBucket.bucket} day${selectedBucket.bucket === '1' ? '' : 's'} (${selectedBucket.count})`}
+          onClose={() => setSelectedBucket(null)}
+          footer={
+            <button type="button" className="btn" onClick={() => setSelectedBucket(null)}>
+              Close
+            </button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            {selectedBucket.entries.map((e) => (
+              <div key={e.id} className="pick-card">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold">
+                    {e.orderNo} — {e.custName}
+                  </span>
+                  <span className="font-semibold">{fmt(e.amount)}</span>
+                </div>
+                <div className="text-tiny text-ink-3 mt-1">
+                  {fmtDate(e.bohDate)}
+                  {e.phone && <> · {e.phone}</>}
+                </div>
+                {e.notes && <div className="text-tiny text-ink-3 mt-1">{e.notes}</div>}
+              </div>
+            ))}
+          </div>
+        </ModalShell>
+      )}
     </div>
   );
 }

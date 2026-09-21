@@ -16,7 +16,7 @@
  * date out of it first.
  */
 
-import type { BohAgingBucket, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
+import type { BohAgingBucket, BohEntryDTO, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core';
 import { civilToISO, parsePRDate } from '@toit/recon-core';
 import { getBohStore, getSessionStore } from '../storage/index.js';
@@ -75,7 +75,11 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     // The Payment Report's own `tips` column — auto-populated, not a
     // manually-entered justification remark (which is what this used to
     // read; that required an operator to notice and log it by hand).
-    const tips = full.totals.tipsTotal;
+    // `?? 0`: sessions stored before `tipsTotal` existed on `PanelSummariesDTO`
+    // have no such key at all — without the fallback, `undefined` poisons the
+    // running sum into `NaN` for that date, which then silently propagates
+    // into the week totals and renders as unexplained dashes on the UI.
+    const tips = full.totals.tipsTotal ?? 0;
     if (tips === 0) continue;
     tipsByDate.set(businessDate, (tipsByDate.get(businessDate) ?? 0) + tips);
   }
@@ -99,8 +103,8 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
   // ── Bills-on-Hold aging ──────────────────────────────────────────────
   const bohEntries = await getBohStore().list(outlet);
   const open = bohEntries.filter((e) => e.status === 'open');
-  const buckets = new Map<BohAgingBucket, { count: number; amount: number }>(
-    (['1', '2', '3', '4', '5', '5+'] as const).map((b) => [b, { count: 0, amount: 0 }]),
+  const buckets = new Map<BohAgingBucket, { count: number; amount: number; entries: BohEntryDTO[] }>(
+    (['1', '2', '3', '4', '5', '5+'] as const).map((b) => [b, { count: 0, amount: 0, entries: [] }]),
   );
   for (const entry of open) {
     const civilDate = bohCivilDateISO(entry.bohDate);
@@ -109,6 +113,7 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     const bucket = buckets.get(bucketFor(age))!;
     bucket.count += 1;
     bucket.amount += entry.amount;
+    bucket.entries.push(entry);
   }
   const bohAging = (['1', '2', '3', '4', '5', '5+'] as const).map((bucket) => ({ bucket, ...buckets.get(bucket)! }));
   const bohTotal = open.reduce(
