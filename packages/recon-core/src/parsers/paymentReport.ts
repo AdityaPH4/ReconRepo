@@ -58,6 +58,17 @@ export function parsePaymentReport(text: string): PRParse {
     // Trailing blanks and total lines are shorter than a real record.
     if (r.length < 5 || !r[0]?.trim()) continue;
 
+    const pn = cell(r, C.paymentName);
+    // The per-outlet subtotal line (right after the file's own metadata
+    // header) and the trailing "Grand Total" line both have a non-blank
+    // first cell (the outlet name / "Grand Total" itself, not an order
+    // number) but no Payment Name at all — the one thing every real
+    // transaction row always has. Previously harmless (they landed in
+    // `tab: 'other'`, which nothing read); now that an unrecognized
+    // payment name is rejected outright, they must be filtered here
+    // instead of surfacing as a blank "unrecognized payment method".
+    if (!pn.trim()) continue;
+
     const rawDate = cell(r, C.date);
     if (!bizDate) {
       const pd = parsePRDate(rawDate);
@@ -65,7 +76,6 @@ export function parsePaymentReport(text: string): PRParse {
     }
 
     const bank = cell(r, C.bank);
-    const pn = cell(r, C.paymentName);
 
     data.push({
       orderNo: cell(r, C.orderNo),

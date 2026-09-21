@@ -249,6 +249,25 @@ describe('parsePaymentReport()', () => {
     assert.equal(counts.bank, 1);
     assert.equal(counts.swiggy, 1);
   });
+
+  it('excludes the per-outlet subtotal line and the trailing Grand Total line — both have a non-blank first cell (outlet name / "Grand Total") but no Payment Name', () => {
+    const csvWithBoundaryRows = [
+      'Payment Report,Toit(Toit Bangalore),From : 17/09/2026  To : 17/09/2026,Generated On : 18-Sep-2026',
+      'Order No,Vendor ID,Transaction Date,Customer Name,Employee Name,Payment Type,Payment Name,Reason,Comment,Card Number,Auth Code,Amount,Tips,Bank Name,Retrieval Ref. No',
+      '',
+      'Toit Bangalore,,,,,,,,,,,"1,630.00",0.00,,',
+      '1001,,17-Sep-2026 12:05:55,Nitesh,,OnlineOrder,SWIGGY-Online,,,,,630.00,0.00,,',
+      '1002,,17-Sep-2026 12:53:47,Walk-in,Deepak,PINELABS-APOS,Pinelabs APOS,,,\'@axl\',\'721762\',1000.00,0.00,HDFC UPI,698346708753',
+      '',
+      'Grand Total,,,,,,,,,,,"1,630.00",0.00,,',
+    ].join('\n');
+
+    const { rows } = parsePaymentReport(csvWithBoundaryRows);
+    assert.equal(rows.length, 2, 'only the two real transaction rows parsed');
+    assert.ok(rows.every((r) => r.paymentName.trim() !== ''), 'no phantom blank-payment-name row');
+    assert.ok(!rows.some((r) => r.orderNo === 'Toit Bangalore'), 'subtotal line excluded');
+    assert.ok(!rows.some((r) => r.orderNo === 'Grand Total'), 'Grand Total line excluded');
+  });
 });
 
 describe('parseTransactionsZip()', () => {
