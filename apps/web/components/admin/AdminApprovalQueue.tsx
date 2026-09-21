@@ -1,24 +1,22 @@
 'use client';
 
 /**
- * The approval queue — every pending "please let me re-reconcile this
- * outlet/date" request, with one-click approve/deny. Admin-only; redirects
- * anyone else back to the module hub.
+ * The approval queue section — every pending "please let me re-reconcile
+ * this outlet/date" request, with one-click approve/deny. A section of
+ * `AdminDashboard`, not a page of its own — the parent owns role-gating and
+ * page chrome; this assumes it's only ever rendered for an admin.
  */
 
 import type { ApprovalRequestDTO } from '@toit/contracts';
 import { useEffect, useState } from 'react';
-import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ApiError, approveRequest, denyRequest, listApprovalRequests } from '@/lib/api';
 
 export function AdminApprovalQueue() {
-  const user = useCurrentUser();
   const [requests, setRequests] = useState<ApprovalRequestDTO[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (user.role !== 'admin') return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -44,33 +42,12 @@ export function AdminApprovalQueue() {
     }
   }
 
-  if (user.role !== 'admin') {
-    return (
-      <main className="app-main">
-        <div className="alert alert-err">
-          <span>✕</span>
-          <span>Admins only.</span>
-        </div>
-      </main>
-    );
-  }
-
   const pending = requests?.filter((r) => r.status === 'pending') ?? [];
   const decided = requests?.filter((r) => r.status !== 'pending') ?? [];
 
   return (
-    <main className="app-main">
-      <div className="results-header mt-6">
-        <div>
-          <h1 className="results-title">Approval requests</h1>
-          <div className="results-meta">
-            <span className="pill">Re-reconciliation requests from GMs</span>
-          </div>
-        </div>
-        <a className="btn" href="/">
-          🏠 All modules
-        </a>
-      </div>
+    <section className="mt-6">
+      <h2 className="text-lede font-semibold mb-3">Approval requests</h2>
 
       {error && (
         <div className="alert alert-err mt-4">
@@ -173,6 +150,6 @@ export function AdminApprovalQueue() {
           </div>
         </div>
       )}
-    </main>
+    </section>
   );
 }

@@ -1,5 +1,5 @@
-import { AdminApprovalQueue } from '@/components/admin/AdminApprovalQueue';
+import { AdminDashboard } from '@/components/admin/AdminDashboard';
 
 export default function AdminPage() {
-  return <AdminApprovalQueue />;
+  return <AdminDashboard />;
 }

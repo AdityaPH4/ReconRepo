@@ -8,6 +8,7 @@
 import type {
   AddBohStagingRequest,
   AddJustificationEntryRequest,
+  AdminDashboardDTO,
   AdvanceDTO,
   AdvanceWithBalanceDTO,
   ApiErrorDTO,
@@ -269,6 +270,11 @@ export function reopenTds(id: string): Promise<TdsEntryDTO> {
 export async function getDashboard(outlet?: OutletCode): Promise<DashboardDTO> {
   const params = outlet ? `?outlet=${outlet}` : '';
   const res = await fetch(`${API_BASE}/api/dashboard${params}`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap(res);
+}
+
+export async function getAdminDashboard(): Promise<AdminDashboardDTO> {
+  const res = await fetch(`${API_BASE}/api/admin/dashboard`, { cache: 'no-store', headers: authHeaders() });
   return unwrap(res);
 }
 

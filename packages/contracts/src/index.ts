@@ -609,6 +609,46 @@ export interface DashboardDTO {
   bohTotal: { count: number; amount: number };
 }
 
+// ── Admin dashboard — cross-outlet submission timeliness + comment review ──
+
+export type SubmissionDayStatus = 'done' | 'missed' | 'today';
+
+export interface AdminSubmissionDayDTO {
+  /** `yyyy-mm-dd`. */
+  date: string;
+  /** `null` for a future day — nothing to judge yet. */
+  status: SubmissionDayStatus | null;
+}
+
+export interface AdminOutletSubmissionsDTO {
+  outlet: OutletCode;
+  outletName: string;
+  days: AdminSubmissionDayDTO[];
+}
+
+/** One justification entry surfaced for admin review — a GM's written explanation for a variance. */
+export interface AdminCommentDTO {
+  id: string;
+  sessionId: string;
+  outlet: OutletCode;
+  businessDate: string | null;
+  remark: string;
+  direction: 'excess' | 'shortage';
+  amount: number;
+  /** Whichever free-text field the entry actually has — description, comment, notes, or reason, in that order. */
+  text: string;
+  createdAt: string;
+  /** The session's own creator — entries carry no author field of their own. */
+  createdBy: string;
+}
+
+export interface AdminDashboardDTO {
+  /** `yyyy-mm`. */
+  month: string;
+  submissions: AdminOutletSubmissionsDTO[];
+  recentComments: AdminCommentDTO[];
+}
+
 // ── Errors ────────────────────────────────────────────────────────────────
 
 export interface ApiErrorDTO {

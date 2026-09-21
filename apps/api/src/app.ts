@@ -10,6 +10,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { MulterError } from 'multer';
 import { config } from './config.js';
 import { attachUser } from './middleware/auth.js';
+import { adminDashboardRouter } from './routes/adminDashboard.js';
 import { approvalRequestsRouter } from './routes/approvalRequests.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { advancesRouter, bohRouter } from './routes/repositories.js';
@@ -51,6 +52,7 @@ app.use('/api/boh', bohRouter);
 app.use('/api/mpr-sessions', mprSessionsRouter);
 app.use('/api/approval-requests', approvalRequestsRouter);
 app.use('/api/dashboard', dashboardRouter);
+app.use('/api/admin/dashboard', adminDashboardRouter);
 app.use('/api/tds', tdsRouter);
 
 app.use((_req, res) => {
