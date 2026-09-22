@@ -26,33 +26,15 @@
  * soonest `eventDate` first, capped at 5 — a "view all" link covers the rest.
  */
 
-import type { BohAgingBucket, BohEntryDTO, DashboardDTO, DashboardOpenAdvanceDTO } from '@toit/contracts';
+import type { DashboardDTO, DashboardOpenAdvanceDTO } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core';
-import { advanceBalance, civilToISO, OUTLET_NAMES, parsePRDate } from '@toit/recon-core';
+import { advanceBalance, OUTLET_NAMES } from '@toit/recon-core';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
+import { buildBohAging } from './bohAging.js';
 import { buildOutletSubmissionDays } from './submissionCalendar.js';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function daysBetween(earlier: string, later: string): number {
-  return Math.round((Date.parse(`${later}T00:00:00Z`) - Date.parse(`${earlier}T00:00:00Z`)) / DAY_MS);
-}
-
-/** Pulls the calendar date out of a raw PR date/time string — see `BohEntry.bohDate`. `null` when unparseable, rather than silently miscounting an entry's age. */
-function bohCivilDateISO(bohDate: string): string | null {
-  const civil = parsePRDate(bohDate);
-  return civil ? civilToISO(civil) : null;
-}
-
-function bucketFor(ageDays: number): BohAgingBucket {
-  if (ageDays <= 7) return '0-7';
-  if (ageDays <= 15) return '8-15';
-  if (ageDays <= 30) return '16-30';
-  return '30+';
 }
 
 export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> {
@@ -97,24 +79,7 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
 
   // ── Bills-on-Hold aging ──────────────────────────────────────────────
   const bohEntries = await getBohStore().list(outlet);
-  const open = bohEntries.filter((e) => e.status === 'open');
-  const buckets = new Map<BohAgingBucket, { count: number; amount: number; entries: BohEntryDTO[] }>(
-    (['0-7', '8-15', '16-30', '30+'] as const).map((b) => [b, { count: 0, amount: 0, entries: [] }]),
-  );
-  for (const entry of open) {
-    const civilDate = bohCivilDateISO(entry.bohDate);
-    if (!civilDate) continue; // unparseable — don't miscount it into an arbitrary bucket
-    const age = daysBetween(civilDate, today);
-    const bucket = buckets.get(bucketFor(age))!;
-    bucket.count += 1;
-    bucket.amount += entry.amount;
-    bucket.entries.push(entry);
-  }
-  const bohAging = (['0-7', '8-15', '16-30', '30+'] as const).map((bucket) => ({ bucket, ...buckets.get(bucket)! }));
-  const bohTotal = open.reduce(
-    (acc, e) => ({ count: acc.count + 1, amount: acc.amount + e.amount }),
-    { count: 0, amount: 0 },
-  );
+  const { bohAging, bohTotal } = buildBohAging(bohEntries, today);
 
   // ── Open advances ────────────────────────────────────────────────────
   const advanceStore = getAdvanceStore();

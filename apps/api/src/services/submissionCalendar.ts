@@ -18,6 +18,7 @@ export function buildOutletSubmissionDays(
   outletName: string,
   month: string,
   today: string,
+  assignedGms: readonly string[] = [],
 ): OutletSubmissionsDTO {
   const submittedDates = new Set(
     sessions
@@ -34,5 +35,5 @@ export function buildOutletSubmissionDays(
     else status = submittedDates.has(date) ? 'done' : 'missed';
     days.push({ date, status });
   }
-  return { outlet, outletName, days };
+  return { outlet, outletName, days, assignedGms: [...assignedGms] };
 }

@@ -640,9 +640,48 @@ export interface OutletSubmissionsDTO {
   outlet: OutletCode;
   outletName: string;
   days: SubmissionDayDTO[];
+  /** This outlet's `GM_OUTLETS`-assigned emails — empty when none are configured. Admin dashboard only; always `[]` on the GM dashboard's own single-outlet call. */
+  assignedGms: string[];
 }
 
 // ── Admin dashboard — cross-outlet submission timeliness + comment review ──
+
+/** One outlet's Bills-on-Hold exposure, for the admin dashboard's cross-outlet card. */
+export interface AdminOutletBohSummaryDTO {
+  outlet: OutletCode;
+  outletName: string;
+  count: number;
+  amount: number;
+  /** The single oldest non-empty aging bucket present — `null` when nothing is open. */
+  worstBucket: BohAgingBucket | null;
+}
+
+export interface AdminBohSummaryDTO {
+  count: number;
+  amount: number;
+  byOutlet: AdminOutletBohSummaryDTO[];
+}
+
+/** One outlet's open-advances exposure, for the admin dashboard's cross-outlet card. */
+export interface AdminOutletAdvanceSummaryDTO {
+  outlet: OutletCode;
+  outletName: string;
+  count: number;
+  balance: number;
+}
+
+export interface AdminAdvancesSummaryDTO {
+  count: number;
+  balance: number;
+  byOutlet: AdminOutletAdvanceSummaryDTO[];
+}
+
+/** Count + total amount for one remark value, across every outlet — the Justifications panel's summary chips. */
+export interface AdminJustificationCountDTO {
+  remark: string;
+  count: number;
+  amount: number;
+}
 
 /** One justification entry surfaced for admin review — a GM's written explanation for a variance. */
 export interface AdminCommentDTO {
@@ -653,7 +692,7 @@ export interface AdminCommentDTO {
   remark: string;
   direction: 'excess' | 'shortage';
   amount: number;
-  /** Whichever free-text field the entry actually has — description, comment, notes, or reason, in that order. */
+  /** A remark-aware human-readable line — e.g. the linked advance/bill's own name, not just a raw free-text field. */
   text: string;
   createdAt: string;
   /** The session's own creator — entries carry no author field of their own. */
@@ -664,6 +703,10 @@ export interface AdminDashboardDTO {
   /** `yyyy-mm`. */
   month: string;
   submissions: OutletSubmissionsDTO[];
+  boh: AdminBohSummaryDTO;
+  advances: AdminAdvancesSummaryDTO;
+  /** Every `Remark` value, including zero-count ones — the full vocabulary is always represented. */
+  justificationCounts: AdminJustificationCountDTO[];
   recentComments: AdminCommentDTO[];
 }
 
