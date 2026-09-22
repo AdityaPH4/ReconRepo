@@ -15,6 +15,7 @@ import {
   advanceBalance,
   buildHdfcUpiItems,
   buildPinelabsItems,
+  buildReportHtml,
   buildSnapshot,
   canSubmit,
   cashOk,
@@ -48,6 +49,7 @@ import type {
   OutletCode,
   PinelabsResult,
   ResolvableItem,
+  Snapshot,
 } from '../dist/index.js';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
@@ -849,12 +851,15 @@ describe('buildSnapshot', () => {
       applications: [],
       bohOpen: [],
       bohClearedThisSession: [],
+      bohStagedIds: [],
+      pinelabsBreakdown: { rows: [], totalCount: 0, totalPinelabs: 0, totalPR: 0, totalDiff: 0, amexDupCount: 0 },
+      taxes: null,
     });
 
     assert.equal(snapshot.meta.outlet, 'BLRT');
     assert.equal(snapshot.finalReconSummary.status, 'balanced');
     assert.deepEqual(snapshot.settlementLedger, []);
-    assert.deepEqual(snapshot.billsOnHold, { open: [], cleared: [] });
+    assert.deepEqual(snapshot.billsOnHold, { open: [], openThisSession: [], cleared: [] });
     assert.deepEqual(snapshot.cash.transactions, []);
     assert.deepEqual(snapshot.cash.justifications, []);
     assert.deepEqual(snapshot.bank.transactions, []);
@@ -900,6 +905,9 @@ describe('buildSnapshot', () => {
       applications: [],
       bohOpen: [],
       bohClearedThisSession: [],
+      bohStagedIds: [],
+      pinelabsBreakdown: { rows: [], totalCount: 0, totalPinelabs: 0, totalPR: 0, totalDiff: 0, amexDupCount: 0 },
+      taxes: null,
     });
 
     assert.equal(snapshot.cash.transactions.length, 1);
@@ -955,11 +963,139 @@ describe('buildSnapshot', () => {
       applications: [],
       bohOpen: [],
       bohClearedThisSession: [],
+      bohStagedIds: [],
+      pinelabsBreakdown: { rows: [], totalCount: 0, totalPinelabs: 0, totalPR: 0, totalDiff: 0, amexDupCount: 0 },
+      taxes: null,
     });
 
     const mmRow = snapshot.settlementLedger.find((r) => r.rrn === 'R1')!;
     assert.equal(mmRow.l1Status, 'squared_off');
     assert.equal(mmRow.squaredOff, true);
     assert.equal(mmRow.l1Remark, 'Extra Payment Received');
+  });
+});
+
+// ── Report ────────────────────────────────────────────────────────────────
+
+describe('buildReportHtml()', () => {
+  const outlet: OutletCode = 'BLRT';
+
+  function bohEntry(overrides: Partial<BohEntry> = {}): BohEntry {
+    return {
+      id: 'boh-1',
+      outlet,
+      orderNo: 'O-500',
+      custName: 'Rahul',
+      phone: null,
+      amount: 750,
+      bohDate: '01-Aug-2026 21:14:03',
+      notes: null,
+      recordedDate: '2026-08-01',
+      status: 'open',
+      clearedAt: null,
+      clearedBySessionId: null,
+      ...overrides,
+    };
+  }
+
+  function fullSnapshot(): Snapshot {
+    const entries = [
+      entry({ source: 'cash', direction: 'excess', remark: 'Tips', amount: 120 }),
+      entry({ source: 'bank', direction: 'shortage', remark: 'Received in excess', amount: 45 }),
+    ];
+    const advance: Advance = {
+      id: 'adv-1',
+      outlet,
+      custName: 'Priya',
+      phone: null,
+      eventDate: '2026-09-01',
+      notes: null,
+      originalAmount: 1000,
+      recordedDate: '2026-07-01',
+      recordedBySessionId: 's-1',
+      status: 'open',
+      closedAt: null,
+      closedBy: null,
+      closedReason: null,
+    };
+    const applications: AdvanceApplication[] = [
+      { id: 'app-1', advanceId: 'adv-1', sessionId: 's-2', targetKey: null, amount: 400, appliedDate: '2026-08-02' },
+    ];
+
+    return buildSnapshot({
+      outlet,
+      businessDate: '2026-08-01',
+      businessWindow: '01 Aug 08:00 – 02 Aug 07:00',
+      businessWindowStart: '2026-08-01T02:30:00.000Z',
+      businessWindowEnd: '2026-08-02T01:30:00.000Z',
+      submittedAt: '2026-08-02T10:00:00.000Z',
+      submittedBy: 'gm@toit.local',
+      prFileRows: 10,
+      zipRows: 8,
+      result: {
+        pinelabs: pinelabsResult(),
+        upiHdfc: null,
+        swiggy: [],
+        cash: [],
+        upi: [],
+        bills: [],
+        bank: [],
+        hdfcLink: [],
+        other: [],
+        zipFiltered: [],
+      } as never,
+      summaryData: null,
+      methodBreakdown: [],
+      grandDiff: 0,
+      residual: 0,
+      status: 'balanced',
+      justification: { ...emptyJustificationState(), entries },
+      advances: [advance],
+      applications,
+      bohOpen: [bohEntry({ id: 'boh-1' }), bohEntry({ id: 'boh-2', orderNo: 'O-501' })],
+      bohClearedThisSession: [],
+      bohStagedIds: ['boh-1'],
+      pinelabsBreakdown: {
+        rows: [{ acquirer: 'HDFC', count: 2, pinelabsTotal: 1000, prTotal: 950, diff: 50 }],
+        totalCount: 2,
+        totalPinelabs: 1000,
+        totalPR: 950,
+        totalDiff: 50,
+        amexDupCount: 0,
+      },
+      taxes: { netSales: 250000, netCgst: 4500, netSgst: 4500, vat: 100, total: 9100 },
+    });
+  }
+
+  it('renders every new section when the snapshot has the new fields populated', () => {
+    const html = buildReportHtml(fullSnapshot());
+    assert.match(html, /Payment Report vs Actual Collection/);
+    assert.match(html, /Pinelabs Terminal Breakdown/);
+    assert.match(html, /Tips \(1 item\)/);
+    assert.match(html, /Received in excess \(1 item\)/);
+    assert.match(html, /BOH from current session \(1\)/);
+    assert.match(html, /Total open BOH \(2\)/);
+    assert.match(html, /Open advances/);
+    assert.match(html, /Applied this session/);
+    assert.match(html, /Taxes/);
+    assert.match(html, /Net CGST/);
+    assert.match(html, />VAT</);
+  });
+
+  it('renders an old-shape snapshot (predating acquirerBreakdown/openThisSession/taxes) without throwing, omitting the new sections', () => {
+    const full = fullSnapshot();
+    const old: Snapshot = {
+      ...full,
+      pinelabs: { squareOffPairs: full.pinelabs.squareOffPairs },
+      billsOnHold: { open: full.billsOnHold.open, cleared: full.billsOnHold.cleared },
+      taxes: undefined,
+    };
+    const html = buildReportHtml(old);
+    assert.match(html, /Payment Report vs Actual Collection/);
+    assert.doesNotMatch(html, /Pinelabs Terminal Breakdown/);
+    assert.doesNotMatch(html, /BOH from current session/);
+    assert.doesNotMatch(html, /<h2>Taxes<\/h2>/);
+    // The rest of the report still renders — old snapshots aren't otherwise degraded.
+    assert.match(html, /Total open BOH \(2\)/);
   });
 });

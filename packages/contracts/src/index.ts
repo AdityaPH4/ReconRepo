@@ -229,6 +229,18 @@ export interface PinelabsBreakdownDTO {
   amexDupCount: number;
 }
 
+// ── Taxes summary (from the optional Sale Summary upload) ────────────────
+
+export interface TaxesSummaryDTO {
+  netSales: number | null;
+  netCgst: number;
+  netSgst: number;
+  /** `null` when the Sale Summary's TAXES section has no VAT line — most real uploads don't. */
+  vat: number | null;
+  /** `null` when the TAXES section has no "Total" row. */
+  total: number | null;
+}
+
 // ── FRS explanation of excess/shortage ────────────────────────────────────
 // One row per justification entry that has a resolvable transaction-level
 // row or an aggregate-tab entry behind it — the flat list the FRS screen
@@ -253,6 +265,8 @@ export interface SessionDTO {
   /** Engine output, as it survives JSON. */
   result: Jsonified<ReconResult>;
   summaryData: SummaryData | null;
+  /** `null` when no Sale Summary was uploaded, or it had no TAXES section. */
+  taxes: TaxesSummaryDTO | null;
   frs: FrsDTO;
   counts: ReconCountsDTO;
   totals: PanelSummariesDTO;

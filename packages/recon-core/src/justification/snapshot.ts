@@ -11,6 +11,7 @@
 
 import { isAmexAcq, isMaterial, money } from '../util/money.js';
 import { OUTLET_NAMES } from '../constants.js';
+import type { PinelabsAcquirerBreakdown } from '../engine/pinelabsBreakdown.js';
 import type { FrsRowDTOLike } from './reportTypes.js';
 import type { OutletCode, PinelabsResult, PRRow, ReconResult, SummaryData, ZipRow } from '../types.js';
 import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
@@ -61,6 +62,15 @@ export interface AggregateJustificationSnapshot {
   amount: number;
 }
 
+/** Net Sales / net CGST / net SGST / VAT, from the optional Sale Summary upload's `TAXES` section — recon-core-native mirror of `@toit/contracts`' `TaxesSummaryDTO`. */
+export interface TaxesSummary {
+  netSales: number | null;
+  netCgst: number;
+  netSgst: number;
+  vat: number | null;
+  total: number | null;
+}
+
 export interface Snapshot {
   meta: {
     appVersion: string;
@@ -88,6 +98,8 @@ export interface Snapshot {
   settlementLedger: SettlementLedgerRow[];
   pinelabs: {
     squareOffPairs: Array<{ from: string; to: string[] }>;
+    /** Absent on snapshots predating this field — the report renders no acquirer-breakdown table for those. */
+    acquirerBreakdown?: PinelabsAcquirerBreakdown;
   };
   cash: {
     prTotal: number;
@@ -154,7 +166,14 @@ export interface Snapshot {
     transactions: Array<{ outlet: OutletCode; orderNo: string; date: string; paymentName: string; amount: number }>;
   };
   billsOnHold: {
+    /** Every currently-open BOH entry for this outlet, regardless of which session opened it. */
     open: Array<{ id: string; orderNo: string; custName: string; amount: number; bohDate: string }>;
+    /**
+     * Subset of `open` whose entry was staged (opened) in this session —
+     * ids matching `justification.bohStaging`. Absent on snapshots
+     * predating this field; the report then shows only "Total open BOH".
+     */
+    openThisSession?: Array<{ id: string; orderNo: string; custName: string; amount: number; bohDate: string }>;
     cleared: Array<{ id: string; orderNo: string; source: string; clearedDate: string; amount: number }>;
   };
   advances: {
@@ -185,6 +204,8 @@ export interface Snapshot {
    * field to match legacy's snapshot shape exactly.
    */
   extraPayments: Array<{ billNo: string; clientName: string; amount: number; notes: string | null }>;
+  /** From the optional Sale Summary upload. Absent when none was uploaded, it had no `TAXES` section, or the snapshot predates this field. */
+  taxes?: TaxesSummary;
 }
 
 export interface BuildSnapshotInput {
@@ -211,6 +232,10 @@ export interface BuildSnapshotInput {
   bohOpen: readonly BohEntry[];
   /** This session's own clearances, joined against the entries they closed. */
   bohClearedThisSession: ReadonlyArray<{ clearance: BohClearance; entry: BohEntry }>;
+  /** BOH entry ids staged (opened) in this session — post-commit, these reuse their staging id. Used to split `billsOnHold.open` into `openThisSession` vs the rest. */
+  bohStagedIds: readonly string[];
+  pinelabsBreakdown: PinelabsAcquirerBreakdown;
+  taxes: TaxesSummary | null;
 }
 
 function pinelabsSettlementLedger(
@@ -376,7 +401,9 @@ function toAggregateJustification(e: JustificationEntry): AggregateJustification
 }
 
 export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
-  const { result, outlet, justification, advances, applications, bohOpen, bohClearedThisSession } = input;
+  const { result, outlet, justification, advances, applications, bohOpen, bohClearedThisSession, bohStagedIds } =
+    input;
+  const stagedIds = new Set(bohStagedIds);
 
   const hdfcRows = result.upi.filter((x) => /hdfc/i.test(x.paymentName));
   const kotakRows = result.upi.filter((x) => /kotak/i.test(x.paymentName));
@@ -427,6 +454,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     ],
     pinelabs: {
       squareOffPairs: squareOffPairList(justification.squareOff),
+      acquirerBreakdown: input.pinelabsBreakdown,
     },
     cash: {
       prTotal: result.cash.reduce((s, x) => s + (Number.isNaN(x.amount) ? 0 : x.amount), 0),
@@ -490,6 +518,15 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
         amount: b.amount,
         bohDate: b.bohDate,
       })),
+      openThisSession: bohOpen
+        .filter((b) => stagedIds.has(b.id))
+        .map((b) => ({
+          id: b.id,
+          orderNo: b.orderNo,
+          custName: b.custName,
+          amount: b.amount,
+          bohDate: b.bohDate,
+        })),
       cleared: bohClearedThisSession.map(({ clearance, entry }) => ({
         id: clearance.id,
         orderNo: entry.orderNo,
@@ -533,5 +570,6 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
         amount: e.amount,
         notes: e.notes,
       })),
+    taxes: input.taxes ?? undefined,
   };
 }

@@ -39,19 +39,14 @@ export function parsePaymentSummary(text: string): SummaryData | null {
 }
 
 /**
- * Reads the "DRAWER SUMMARY" section embedded in a Sale Summary report — a
- * fallback for outlets that can't get the native Drawer Summary Report.
- * That section is a vertical `label,value` list (unlike the native report's
- * single header row + single data row), so this is a deliberately separate
- * reader rather than a branch inside `parsePaymentSummary`.
- *
- * Stops at the first row that no longer looks like `label,value` — either a
- * blank label or a value that doesn't parse as an amount — which in practice
- * is the next section's own header row (e.g. "Department Summary").
+ * Reads one vertical `label,value` section embedded in a Sale Summary
+ * report — shared by every reader below. Stops at the first row that no
+ * longer looks like `label,value` — either a blank label or a value that
+ * doesn't parse as an amount — which in practice is the next section's own
+ * header row (e.g. "Department Summary", "DISCOUNT SUMMARY").
  */
-export function parseSaleSummaryDrawerSection(text: string): SummaryData | null {
-  const rows = parseCSV(text);
-  const start = rows.findIndex((r) => (r[0] ?? '').trim().toUpperCase() === 'DRAWER SUMMARY');
+function readLabelValueSection(rows: readonly string[][], sectionHeader: string): SummaryData | null {
+  const start = rows.findIndex((r) => (r[0] ?? '').trim().toUpperCase() === sectionHeader);
   if (start === -1) return null;
 
   const obj: SummaryData = {};
@@ -62,4 +57,34 @@ export function parseSaleSummaryDrawerSection(text: string): SummaryData | null 
     obj[label] = (rawValue ?? '').trim();
   }
   return Object.keys(obj).length ? obj : null;
+}
+
+/**
+ * Reads the "DRAWER SUMMARY" section embedded in a Sale Summary report — a
+ * fallback for outlets that can't get the native Drawer Summary Report.
+ * That section is a vertical `label,value` list (unlike the native report's
+ * single header row + single data row), so this is a deliberately separate
+ * reader rather than a branch inside `parsePaymentSummary`.
+ */
+export function parseSaleSummaryDrawerSection(text: string): SummaryData | null {
+  return readLabelValueSection(parseCSV(text), 'DRAWER SUMMARY');
+}
+
+/**
+ * Reads the "SALES" section — order/guest counts, Net Sales, tax total,
+ * etc. Only `Net Sales` is used today (the printable report's Taxes table),
+ * but the whole section is returned for consistency with the other readers.
+ */
+export function parseSaleSummarySalesSection(text: string): SummaryData | null {
+  return readLabelValueSection(parseCSV(text), 'SALES');
+}
+
+/**
+ * Reads the "TAXES" section — one row per CGST/SGST/VAT/etc. category
+ * (e.g. "CGST- F&B", "SGST - TOBACCO (20%)", "VAT"), plus a "Total" row.
+ * Free-form labels, not a fixed enum — whatever categories this outlet's
+ * export actually has.
+ */
+export function parseSaleSummaryTaxesSection(text: string): SummaryData | null {
+  return readLabelValueSection(parseCSV(text), 'TAXES');
 }

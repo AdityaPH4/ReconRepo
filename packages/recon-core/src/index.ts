@@ -105,7 +105,12 @@ export { cell, headerIndex, parseCSV } from './util/csv.js';
 // ── Parsers ───────────────────────────────────────────────────────────────
 export { parsePaymentReport } from './parsers/paymentReport.js';
 export { findUnsettledSuccessRows, parseTransactionsZip } from './parsers/transactionsZip.js';
-export { parsePaymentSummary, parseSaleSummaryDrawerSection } from './parsers/paymentSummary.js';
+export {
+  parsePaymentSummary,
+  parseSaleSummaryDrawerSection,
+  parseSaleSummarySalesSection,
+  parseSaleSummaryTaxesSection,
+} from './parsers/paymentSummary.js';
 export { HdfcStatementFormatError, parseHdfcStatement } from './parsers/hdfcStatement.js';
 
 // ── Engine ────────────────────────────────────────────────────────────────
@@ -188,7 +193,7 @@ export { autoStageBohRows, eligibleBohEntries } from './justification/boh.js';
 export type { AutoStagedBohRow, EligibleBohEntry, EligibleBohOptions } from './justification/boh.js';
 
 export { buildSnapshot } from './justification/snapshot.js';
-export type { BuildSnapshotInput, Snapshot, SettlementLedgerRow } from './justification/snapshot.js';
+export type { BuildSnapshotInput, Snapshot, SettlementLedgerRow, TaxesSummary } from './justification/snapshot.js';
 
 export { buildReportHtml } from './justification/report.js';
 

@@ -157,6 +157,7 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       // `Jsonified` documents on the contract type.
       result: JSON.parse(JSON.stringify(outcome.result)),
       summaryData: outcome.summaryData,
+      taxes: outcome.taxes,
       frs: outcome.frs,
       counts: outcome.counts,
       totals: outcome.totals,
@@ -369,6 +370,9 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
       applications: justification.draftApplications,
       bohOpen: bohOpen.filter((b) => b.status === 'open'),
       bohClearedThisSession,
+      bohStagedIds: justification.bohStaging.map((b) => b.id),
+      pinelabsBreakdown: session.pinelabsBreakdown,
+      taxes: session.taxes,
     });
 
     const submitted: SessionDTO = {

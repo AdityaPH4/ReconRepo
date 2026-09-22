@@ -28,6 +28,8 @@ import {
   parsePaymentReport,
   parsePaymentSummary,
   parseSaleSummaryDrawerSection,
+  parseSaleSummarySalesSection,
+  parseSaleSummaryTaxesSection,
   parseTransactionsZip,
   reconcile,
   routePayName,
@@ -124,6 +126,23 @@ const SALE_SUMMARY_CSV = [
   'Department Summary',
   'Label,Quantity,Base Price,Net Sales',
   'ALCOHOL,6059,"2,901,715.00","2,893,391.24"',
+].join('\n');
+
+const SALE_SUMMARY_TAXES_CSV = [
+  'Sale Summary,Toit(Toit - Bengaluru),From : 01/09/2026  To : 09/09/2026,Generated On : 10-Sep-2026 11:25 AM',
+  'SALES',
+  'Total Orders,120',
+  'Net Sales,"2,557,998.06"',
+  'TAXES',
+  'SGST- MERCHANDISE (9.00),291.74',
+  'CGST - TOBACCO (20%),"2,071.30"',
+  'CGST- F&B,"26,778.23"',
+  'SGST- F&B,"26,778.23"',
+  'VAT,"4,087.39"',
+  'Total,"60,006.66"',
+  'DISCOUNT SUMMARY',
+  'Discount Type,Amount',
+  'Complimentary,0.00',
 ].join('\n');
 
 async function makeZip(csv: string): Promise<Buffer> {
@@ -375,6 +394,47 @@ describe('parseSaleSummaryDrawerSection()', () => {
 
   it('returns null when no DRAWER SUMMARY section exists', () => {
     assert.equal(parseSaleSummaryDrawerSection('a,b,c\n1,2,3'), null);
+  });
+});
+
+describe('parseSaleSummarySalesSection()', () => {
+  it('reads the SALES section, including Net Sales', () => {
+    const sales = parseSaleSummarySalesSection(SALE_SUMMARY_TAXES_CSV);
+    assert.ok(sales);
+    assert.equal(sales!['Net Sales'], '2,557,998.06');
+    assert.equal(sales!['Total Orders'], '120');
+  });
+
+  it('stops at the next section (TAXES) rather than reading past it', () => {
+    const sales = parseSaleSummarySalesSection(SALE_SUMMARY_TAXES_CSV);
+    assert.ok(sales);
+    assert.equal('VAT' in sales!, false);
+  });
+
+  it('returns null when no SALES section exists', () => {
+    assert.equal(parseSaleSummarySalesSection(SALE_SUMMARY_CSV), null);
+  });
+});
+
+describe('parseSaleSummaryTaxesSection()', () => {
+  it('reads every free-form CGST/SGST/VAT line plus the Total row', () => {
+    const taxes = parseSaleSummaryTaxesSection(SALE_SUMMARY_TAXES_CSV);
+    assert.ok(taxes);
+    assert.equal(taxes!['SGST- MERCHANDISE (9.00)'], '291.74');
+    assert.equal(taxes!['CGST - TOBACCO (20%)'], '2,071.30');
+    assert.equal(taxes!['VAT'], '4,087.39');
+    assert.equal(taxes!['Total'], '60,006.66');
+  });
+
+  it('stops at the next section (DISCOUNT SUMMARY) rather than reading past it', () => {
+    const taxes = parseSaleSummaryTaxesSection(SALE_SUMMARY_TAXES_CSV);
+    assert.ok(taxes);
+    assert.equal('Discount Type' in taxes!, false);
+    assert.equal('Complimentary' in taxes!, false);
+  });
+
+  it('returns null when no TAXES section exists', () => {
+    assert.equal(parseSaleSummaryTaxesSection(SALE_SUMMARY_CSV), null);
   });
 });
 

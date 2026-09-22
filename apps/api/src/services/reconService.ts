@@ -33,6 +33,8 @@ import {
   parsePaymentReport,
   parsePaymentSummary,
   parseSaleSummaryDrawerSection,
+  parseSaleSummarySalesSection,
+  parseSaleSummaryTaxesSection,
   parseTransactionsZip,
   pinelabsAcquirerBreakdown,
   reconcile,
@@ -54,6 +56,7 @@ import type {
   PinelabsBreakdownDTO,
   ReconCountsDTO,
   SessionStatus,
+  TaxesSummaryDTO,
 } from '@toit/contracts';
 import { getSessionStore } from '../storage/index.js';
 
@@ -70,6 +73,7 @@ export interface RunOutcome {
   zipInside: ZipRow[];
   zipFiltered: ZipRow[];
   summaryData: SummaryData | null;
+  taxes: TaxesSummaryDTO | null;
   hdfcStmtRows: HdfcStatementRow[] | null;
   hdfcStatementMeta: HdfcStatementMetaDTO | null;
   result: ReconResult;
@@ -167,6 +171,7 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
       'The Sales Summary file could not be read as either a Drawer Summary Report or a Sale Summary report — drawer comparisons are unavailable.',
     );
   }
+  const taxes = summaryText ? buildTaxesSummary(summaryText) : null;
 
   let hdfcStmtRows: HdfcStatementRow[] | null = null;
   let hdfcStatementMeta: HdfcStatementMetaDTO | null = null;
@@ -228,6 +233,7 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
     zipInside: inside,
     zipFiltered: filtered,
     summaryData,
+    taxes,
     hdfcStmtRows,
     hdfcStatementMeta,
     result,
@@ -245,6 +251,33 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
 /** Window label for the session header, or null when no date was found. */
 export function windowLabel(win: BusinessWindow | null): string | null {
   return win ? fmtWin(win) : null;
+}
+
+/**
+ * Net Sales / net CGST / net SGST / VAT, read from the Sale Summary
+ * upload's `SALES` and `TAXES` sections. `null` when the file has no
+ * `TAXES` section at all — the Sale Summary upload is optional, and even
+ * when present it may be a native Drawer Summary Report export that lacks
+ * these sections entirely.
+ */
+function buildTaxesSummary(text: string): TaxesSummaryDTO | null {
+  const sales = parseSaleSummarySalesSection(text);
+  const taxes = parseSaleSummaryTaxesSection(text);
+  if (!taxes) return null;
+
+  const entries = Object.entries(taxes).filter(([k]) => k.toLowerCase() !== 'total');
+  const sum = (prefix: string) =>
+    entries
+      .filter(([k]) => k.toLowerCase().startsWith(prefix))
+      .reduce((s, [, v]) => s + money(v), 0);
+
+  return {
+    netSales: sales?.['Net Sales'] !== undefined ? money(sales['Net Sales']!) : null,
+    netCgst: sum('cgst'),
+    netSgst: sum('sgst'),
+    vat: taxes['VAT'] !== undefined ? money(taxes['VAT']!) : null,
+    total: taxes['Total'] !== undefined ? money(taxes['Total']!) : null,
+  };
 }
 
 export function outletName(outlet: OutletCode): string {
