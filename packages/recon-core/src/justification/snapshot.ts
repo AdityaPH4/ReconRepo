@@ -15,7 +15,7 @@ import type { FrsRowDTOLike } from './reportTypes.js';
 import type { OutletCode, PinelabsResult, PRRow, ReconResult, SummaryData, ZipRow } from '../types.js';
 import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals, type ExplainedItem } from './residual.js';
-import { squareOffPairList } from './squareOff.js';
+import { squareOffGroupKey, squareOffPairList } from './squareOff.js';
 import type { SubmitStatus } from './submitGate.js';
 import type {
   Advance,
@@ -24,6 +24,7 @@ import type {
   BohEntry,
   JustificationEntry,
   JustificationState,
+  ResolvableItem,
 } from './types.js';
 
 export interface SettlementLedgerRow {
@@ -216,6 +217,7 @@ function pinelabsSettlementLedger(
   pinelabs: PinelabsResult,
   outlet: OutletCode,
   justification: JustificationState,
+  pinelabsItems: readonly ResolvableItem[],
 ): SettlementLedgerRow[] {
   const rows: SettlementLedgerRow[] = [];
   const squaredOffIds = new Set(
@@ -226,14 +228,30 @@ function pinelabsSettlementLedger(
   const remarkByTargetKey = new Map(
     justification.entries.filter((e) => e.source === 'pinelabs').map((e) => [e.targetKey, e.remark]),
   );
+  // A reconRow (`MM-N`) that's part of a GM-driven square-off has no fixed
+  // index correspondence to its position in `pinelabs.reconRows` — `items.ts`
+  // assigns `MM-N` only to rows that pass its own filter, indexed among just
+  // those. Rebuilding that same globalId from `pinelabsItems` (already
+  // filtered/indexed identically) is the only way to look up its manual
+  // square-off state without duplicating that filter here.
+  const mmGlobalIdByRrn = new Map(
+    pinelabsItems.filter((i) => i.globalId.startsWith('MM-')).map((i) => [i.targetKey, i.globalId]),
+  );
+  const groupResidualRemark = new Map(
+    justification.entries.filter((e) => e.source === 'pinelabs' && e.targetKey?.startsWith('sqoff:')).map((e) => [e.targetKey!, e.remark]),
+  );
 
   // Pinelabs' terminal side is always a ZipRow — the union with
   // `HdfcStatementRow` on `ReconRow`'s generic only matters for the separate
   // HDFC-UPI transaction-level match, which never flows through here.
   pinelabs.reconRows.forEach((x) => {
     const zip = x.zip as ZipRow;
+    const mmGlobalId = mmGlobalIdByRrn.get(x.rrn);
+    const manuallySquaredOff = mmGlobalId ? squaredOffIds.has(mmGlobalId) : false;
+    const groupKey = mmGlobalId && manuallySquaredOff ? squareOffGroupKey(justification.squareOff, mmGlobalId) : null;
+    const residualRemark = groupKey ? groupResidualRemark.get(groupKey) : undefined;
     let status: SettlementLedgerRow['l1Status'] = 'matched';
-    if (x.squaredOff) status = 'squared_off';
+    if (x.squaredOff || manuallySquaredOff) status = 'squared_off';
     else if (isMaterial(x.diff)) status = remarkByTargetKey.has(x.rrn) ? 'explained' : 'unresolved';
     const isAmex = isAmexAcq(zip?.acquirer || '');
     rows.push({
@@ -250,10 +268,10 @@ function pinelabsSettlementLedger(
       outlet,
       store: zip?.store || '',
       l1Status: status,
-      l1Remark: remarkByTargetKey.get(x.rrn) ?? null,
+      l1Remark: remarkByTargetKey.get(x.rrn) ?? residualRemark ?? null,
       l1Diff: x.diff,
-      squaredOff: x.squaredOff || false,
-      matchBy: 'rrn',
+      squaredOff: x.squaredOff || manuallySquaredOff,
+      matchBy: manuallySquaredOff && !x.squaredOff ? 'square_off' : 'rrn',
     });
   });
 
@@ -261,6 +279,8 @@ function pinelabsSettlementLedger(
     const key = `term-${x.rrn}-${x.date}`;
     const globalId = `PL-${i + 1}`;
     const isSq = squaredOffIds.has(globalId);
+    const groupKey = isSq ? squareOffGroupKey(justification.squareOff, globalId) : null;
+    const residualRemark = groupKey ? groupResidualRemark.get(groupKey) : undefined;
     rows.push({
       rrn: x.rrn,
       authCode: '',
@@ -275,7 +295,7 @@ function pinelabsSettlementLedger(
       outlet,
       store: x.store || '',
       l1Status: isSq ? 'squared_off' : remarkByTargetKey.has(key) ? 'explained' : 'unresolved',
-      l1Remark: remarkByTargetKey.get(key) ?? null,
+      l1Remark: remarkByTargetKey.get(key) ?? residualRemark ?? null,
       l1Diff: x.amount,
       squaredOff: isSq,
       matchBy: isSq ? 'square_off' : 'none',
@@ -368,10 +388,12 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     return Number.isNaN(n) ? null : n;
   };
 
+  const pinelabsItems = buildPinelabsItems(result.pinelabs);
   const explanations = collectExplained(
     justification.entries,
-    buildPinelabsItems(result.pinelabs),
+    pinelabsItems,
     buildHdfcUpiItems(result.upiHdfc),
+    justification.squareOff,
   );
   const { excessTotal, shortTotal } = explainedTotals(explanations);
 
@@ -400,7 +422,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       explanations,
     },
     settlementLedger: [
-      ...pinelabsSettlementLedger(result.pinelabs, outlet, justification),
+      ...pinelabsSettlementLedger(result.pinelabs, outlet, justification, pinelabsItems),
       ...hdfcLinkSettlementLedger(result.hdfcLink, outlet),
     ],
     pinelabs: {

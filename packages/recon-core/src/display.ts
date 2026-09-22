@@ -104,11 +104,16 @@ export { buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js'
 
 export {
   isEligibleSquareOffPartner,
+  isSquareOffGroupKey,
   isSquareOffResolved,
   isSquaredOff,
+  squareOffComponent,
+  squareOffGroupKey,
   squareOffNet,
+  squareOffNetByGroupKey,
   squareOffPairList,
   squareOffPartners,
+  SQUARE_OFF_GROUP_KEY_PREFIX,
   toggleSquareOff,
 } from './justification/squareOff.js';
 

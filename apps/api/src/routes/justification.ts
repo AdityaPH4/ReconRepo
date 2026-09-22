@@ -26,6 +26,7 @@ import {
   addBohStaging,
   addEntry,
   applyAdvance,
+  buildAllItems,
   buildExplanationItems,
   clearBoh,
   computeSubmitGate,
@@ -73,7 +74,7 @@ justificationRouter.post('/entries', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as AddJustificationEntryRequest;
-    const justification = addEntry(session.justification, body);
+    const justification = addEntry(session.justification, body, buildAllItems(session));
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
   } catch (err) {
@@ -124,6 +125,7 @@ justificationRouter.post('/advances', async (req, res, next) => {
       sessionId: session.meta.id,
       outlet: session.meta.outlet,
       businessDate: session.meta.businessDate,
+      allItems: buildAllItems(session),
     });
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
@@ -145,6 +147,7 @@ justificationRouter.post('/advances/apply', async (req, res, next) => {
       sessionId: session.meta.id,
       advances: [...committedAdvances, ...session.justification.draftAdvances],
       applications: [...committedApplications, ...session.justification.draftApplications],
+      allItems: buildAllItems(session),
     });
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
@@ -186,6 +189,7 @@ justificationRouter.post('/boh/clear', async (req, res, next) => {
       sessionId: session.meta.id,
       entries,
       staging: session.justification.bohStaging,
+      allItems: buildAllItems(session),
     });
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
@@ -202,6 +206,7 @@ justificationRouter.post('/tds', async (req, res, next) => {
       sessionId: session.meta.id,
       outlet: session.meta.outlet,
       businessDate: session.meta.businessDate,
+      allItems: buildAllItems(session),
     });
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);

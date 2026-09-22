@@ -37,7 +37,7 @@ function itemsCompleteness(
     (item) =>
       item.countsTowardGate &&
       !resolvedKeys.has(item.targetKey) &&
-      !isSquareOffResolved(squareOff, item.globalId, items),
+      !isSquareOffResolved(squareOff, item.globalId, items, entries),
   );
   return {
     netDiff: unresolved.reduce((s, u) => s + u.diff, 0),

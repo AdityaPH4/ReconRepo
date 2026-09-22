@@ -113,7 +113,7 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
 
   const pinelabsItems = buildPinelabsItems(pinelabs);
   const hdfcItems = buildHdfcUpiItems(upiHdfc);
-  const explained = collectExplained(entries, pinelabsItems, hdfcItems);
+  const explained = collectExplained(entries, pinelabsItems, hdfcItems, squareOff);
   const { excessTotal, shortTotal } = explainedTotals(explained);
   const residual = grandDiff - (excessTotal - shortTotal);
 

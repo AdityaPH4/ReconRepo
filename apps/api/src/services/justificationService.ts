@@ -24,27 +24,73 @@ import type {
   SubmitGateDTO,
 } from '@toit/contracts';
 import {
+  AMOUNT_EPSILON,
   NO_RRN_REMARKS,
   advanceBalance,
+  buildHdfcUpiItems,
+  buildPinelabsItems,
   canSubmit,
   isAdvanceClosed,
   isAdvanceExhausted,
+  isSquareOffGroupKey,
+  squareOffGroupKey,
+  squareOffNetByGroupKey,
   toggleSquareOff as coreToggleSquareOff,
   type Advance,
   type AdvanceApplication,
   type BohClearance,
   type BohEntry,
   type BohStagingEntry,
+  type Direction,
   type JustificationEntry,
   type JustificationState,
   type PinelabsResult,
   type MatchResult,
   type HdfcStatementRow,
+  type ResolvableItem,
   type TdsEntry,
 } from '@toit/recon-core';
 
 export class JustificationError extends Error {
   readonly status = 400;
+}
+
+/** Every Pinelabs + HDFC-UPI resolvable item for a session — what a square-off group's net is computed against. */
+export function buildAllItems(session: SessionDTO): ResolvableItem[] {
+  const pinelabs = session.result.pinelabs as unknown as PinelabsResult;
+  const upiHdfc = session.result.upiHdfc as unknown as MatchResult<HdfcStatementRow> | null;
+  return [...buildPinelabsItems(pinelabs), ...buildHdfcUpiItems(upiHdfc)];
+}
+
+/**
+ * A row-level entry whose `targetKey` is a square-off group key is a
+ * *residual* explanation — unlike a normal row entry (where `collectExplained`
+ * always re-derives the diff from the row's own live `item.diff`, ignoring
+ * whatever `amount` the client sent), a group has no such fallback: the
+ * entry's own stored `amount`/`direction` is what flows into every
+ * downstream total. So, unlike every other entry type, this one has to be
+ * validated against the truth before it's trusted. No-op for a non-group
+ * `targetKey` (an ordinary row/aggregate entry).
+ */
+function assertResolvesSquareOffGroup(
+  state: JustificationState,
+  targetKey: string | null,
+  direction: Direction,
+  amount: number,
+  allItems: readonly ResolvableItem[],
+): void {
+  if (targetKey === null || !isSquareOffGroupKey(targetKey)) return;
+  const net = squareOffNetByGroupKey(state.squareOff, targetKey, allItems);
+  if (net === null) {
+    throw new JustificationError('This square-off group has changed — refresh and re-pick a remark.');
+  }
+  const signed = direction === 'excess' ? amount : -amount;
+  if (Math.abs(net - signed) >= AMOUNT_EPSILON) {
+    const side = net >= 0 ? 'excess' : 'shortage';
+    throw new JustificationError(
+      `Amount ₹${amount.toFixed(2)} does not match the group's actual net (₹${Math.abs(net).toFixed(2)} ${side}).`,
+    );
+  }
 }
 
 function newEntry(base: Partial<JustificationEntry> & Pick<JustificationEntry, 'source' | 'direction' | 'remark' | 'amount'>): JustificationEntry {
@@ -71,7 +117,11 @@ function newEntry(base: Partial<JustificationEntry> & Pick<JustificationEntry, '
 
 // ── Plain entries (no repository interaction) ─────────────────────────────
 
-export function addEntry(state: JustificationState, req: AddJustificationEntryRequest): JustificationState {
+export function addEntry(
+  state: JustificationState,
+  req: AddJustificationEntryRequest,
+  allItems: readonly ResolvableItem[],
+): JustificationState {
   // Every UPI-tab remark except `NO_RRN_REMARKS` needs a real, identifiable
   // 12-digit RRN, re-validated server-side — legacy: `addUpiEntry`
   // (reconciliation (68).html:2725-2761).
@@ -83,6 +133,8 @@ export function addEntry(state: JustificationState, req: AddJustificationEntryRe
       throw new JustificationError('This RRN has already been used elsewhere in this session.');
     }
   }
+
+  assertResolvesSquareOffGroup(state, req.targetKey ?? null, req.direction, req.amount, allItems);
 
   const entry = newEntry({
     source: req.source,
@@ -170,8 +222,35 @@ function removeTdsDraft(state: JustificationState, tdsEntryId: string): Justific
 
 // ── Square-off ─────────────────────────────────────────────────────────────
 
+/**
+ * Toggling a pairing can change which group `a`/`b` belong to — any residual
+ * entry that was explaining the OLD group's leftover is now explaining
+ * nothing real, so it's removed via `removeEntry`'s own existing cascade
+ * (not a hand-rolled filter), the same way any other stale entry is: a
+ * residual that itself created an advance/BOH clearance/TDS row needs that
+ * cleaned up too, or it leaks into the repository unexplained at submit.
+ * Comparing group keys before/after (not just "was an edge touched") means a
+ * redundant multi-edge removal in a clique — where the member set is
+ * unchanged — doesn't unnecessarily discard a still-valid residual.
+ */
 export function setSquareOff(state: JustificationState, a: string, b: string, on: boolean): JustificationState {
-  return { ...state, squareOff: coreToggleSquareOff(state.squareOff, a, b, on) };
+  const preKeys = new Set(
+    [a, b].map((id) => squareOffGroupKey(state.squareOff, id)).filter((k): k is string => k !== null),
+  );
+  const squareOff = coreToggleSquareOff(state.squareOff, a, b, on);
+  const postKeys = new Set(
+    [a, b].map((id) => squareOffGroupKey(squareOff, id)).filter((k): k is string => k !== null),
+  );
+  const staleKeys = [...preKeys].filter((k) => !postKeys.has(k));
+
+  let next: JustificationState = { ...state, squareOff };
+  if (staleKeys.length > 0) {
+    const staleSet = new Set(staleKeys);
+    for (const e of next.entries.filter((e) => e.targetKey !== null && staleSet.has(e.targetKey))) {
+      next = removeEntry(next, e.id);
+    }
+  }
+  return next;
 }
 
 // ── Advances ────────────────────────────────────────────────────────────────
@@ -179,7 +258,7 @@ export function setSquareOff(state: JustificationState, a: string, b: string, on
 export function recordAdvance(
   state: JustificationState,
   req: RecordAdvanceRequest,
-  ctx: { sessionId: string; outlet: Advance['outlet']; businessDate: string | null },
+  ctx: { sessionId: string; outlet: Advance['outlet']; businessDate: string | null; allItems: readonly ResolvableItem[] },
 ): JustificationState {
   if (!req.custName.trim()) throw new JustificationError('Customer name is required.');
   if (!req.eventDate) throw new JustificationError('Event date is required.');
@@ -200,6 +279,8 @@ export function recordAdvance(
       throw new JustificationError('This RRN has already been used elsewhere in this session.');
     }
   }
+
+  assertResolvesSquareOffGroup(state, req.targetKey ?? null, 'excess', req.amount, ctx.allItems);
 
   const advance: Advance = {
     id: randomUUID(),
@@ -244,7 +325,7 @@ export interface AdvanceContext {
 export function applyAdvance(
   state: JustificationState,
   req: ApplyAdvanceRequest,
-  ctx: { sessionId: string } & AdvanceContext,
+  ctx: { sessionId: string; allItems: readonly ResolvableItem[] } & AdvanceContext,
 ): JustificationState {
   const advance = ctx.advances.find((a) => a.id === req.advanceId);
   if (!advance) throw new JustificationError('Advance not found.');
@@ -255,6 +336,10 @@ export function applyAdvance(
   if (isAdvanceExhausted(advance, ctx.applications)) {
     throw new JustificationError('This advance has no remaining balance.');
   }
+
+  // Applying always consumes the FULL balance (no partial-apply path — see
+  // below), so the group-residual check runs against that full amount.
+  assertResolvesSquareOffGroup(state, req.targetKey ?? null, 'shortage', balance, ctx.allItems);
 
   const application: AdvanceApplication = {
     id: randomUUID(),
@@ -307,7 +392,12 @@ export function removeBohStaging(state: JustificationState, id: string): Justifi
 export function clearBoh(
   state: JustificationState,
   req: ClearBohRequest,
-  ctx: { sessionId: string; entries: readonly BohEntry[]; staging: readonly BohStagingEntry[] },
+  ctx: {
+    sessionId: string;
+    entries: readonly BohEntry[];
+    staging: readonly BohStagingEntry[];
+    allItems: readonly ResolvableItem[];
+  },
 ): JustificationState {
   const entry = ctx.entries.find((b) => b.id === req.bohEntryId);
   const staged = ctx.staging.find((b) => b.id === req.bohEntryId);
@@ -340,6 +430,9 @@ export function clearBoh(
 
   const bill = entry ?? staged!;
   const amount = bill.amount;
+  // Clearing is always full (see below), so the group-residual check runs
+  // against the bill's own full amount.
+  assertResolvesSquareOffGroup(state, req.targetKey ?? null, 'excess', amount, ctx.allItems);
   const rrn = needsRrn ? req.rrn! : null;
   const mprDate = needsMprDate ? req.mprDate! : null;
   const clearance: BohClearance = {
@@ -391,10 +484,12 @@ export function clearBoh(
 export function recordTds(
   state: JustificationState,
   req: RecordTdsRequest,
-  ctx: { sessionId: string; outlet: TdsEntry['outlet']; businessDate: string | null },
+  ctx: { sessionId: string; outlet: TdsEntry['outlet']; businessDate: string | null; allItems: readonly ResolvableItem[] },
 ): JustificationState {
   if (!req.clientName.trim()) throw new JustificationError('Client name is required.');
   if (!(req.amount > 0)) throw new JustificationError('Amount must be greater than zero.');
+
+  assertResolvesSquareOffGroup(state, req.targetKey ?? null, 'shortage', req.amount, ctx.allItems);
 
   const tds: TdsEntry = {
     id: randomUUID(),
@@ -641,6 +736,32 @@ export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
           plAmt: x.plAmt,
           prAmt: x.prAmt,
           diff: x.diff,
+        });
+      });
+  }
+
+  // A square-off pairing that doesn't net to zero on its own, explained by
+  // one remark attached to the group rather than either member row — mirrors
+  // `collectExplained`'s own group-residual branch (recon-core's canonical
+  // version, used at submit time) so the live pre-submit view here can never
+  // disagree with what the submit gate actually decides.
+  const allItems = buildAllItems(session);
+  for (const source of ['pinelabs', 'upi_hdfc'] as const) {
+    session.justification.entries
+      .filter((e) => e.source === source && e.targetKey !== null && isSquareOffGroupKey(e.targetKey))
+      .forEach((e) => {
+        const net = squareOffNetByGroupKey(session.justification.squareOff, e.targetKey!, allItems);
+        if (net === null) return; // stale group — excluded, never double-counted
+        const diff = e.direction === 'excess' ? e.amount : -e.amount;
+        items.push({
+          source: source === 'pinelabs' ? 'Pinelabs — square-off residual' : 'HDFC Static UPI — square-off residual',
+          remark: e.remark,
+          label: e.description || e.remark,
+          orderNo: '',
+          rrn: e.rrn || '',
+          plAmt: e.direction === 'excess' ? e.amount : 0,
+          prAmt: e.direction === 'shortage' ? e.amount : 0,
+          diff,
         });
       });
   }

@@ -12,7 +12,8 @@
 
 import { AMOUNT_EPSILON } from '../constants.js';
 import type { Remark } from '../constants.js';
-import type { JustificationEntry, JustificationSource, ResolvableItem } from './types.js';
+import { isSquareOffGroupKey, squareOffNetByGroupKey } from './squareOff.js';
+import type { JustificationEntry, JustificationSource, ResolvableItem, SquareOffMap } from './types.js';
 
 /** Per-`JustificationSource` label for the aggregate (Cash/UPI/Bank/HDFC Link) tabs — legacy's own `source:` literals in `collectExplainedForSubmit` (5060–5069); `hdfc_link` has no legacy equivalent. */
 const AGGREGATE_LABEL: Record<'cash' | 'upi' | 'bank' | 'hdfc_link', string> = {
@@ -42,11 +43,20 @@ export interface ExplainedItem {
  * item doesn't `appearsInExplanation` (Pinelabs' own `dupRRN` rows) satisfies
  * the completeness gate but never becomes a row here — matching legacy's
  * `collectExplainedForSubmit`, which has no such entry for that bucket.
+ *
+ * A row-level entry whose `targetKey` is a square-off group key (not an
+ * individual row's key) is a *residual* explanation — it behaves like an
+ * aggregate-tab entry, not a row entry: its own stored `amount`/`direction`
+ * is the diff, never re-derived from any single member's `item.diff`, since
+ * the group's own rows already cancel each other out and only the leftover
+ * needs accounting for. A group whose membership has since changed (the
+ * key no longer matches) is excluded entirely, never double-counted.
  */
 export function collectExplained(
   entries: readonly JustificationEntry[],
   pinelabsItems: readonly ResolvableItem[],
   hdfcItems: readonly ResolvableItem[],
+  squareOff: SquareOffMap,
 ): ExplainedItem[] {
   const plByKey = new Map(pinelabsItems.map((i) => [i.targetKey, i]));
   const hdfcByKey = new Map(hdfcItems.map((i) => [i.targetKey, i]));
@@ -58,12 +68,20 @@ export function collectExplained(
     let orderNo = '';
     let rrn = e.rrn ?? '';
     if (e.source === 'pinelabs' || e.source === 'upi_hdfc') {
-      const item = e.targetKey === null ? undefined : (e.source === 'pinelabs' ? plByKey : hdfcByKey).get(e.targetKey);
-      if (!item || !item.appearsInExplanation) continue;
-      diff = item.diff;
-      label = item.label;
-      orderNo = item.orderNo;
-      rrn = item.rrn;
+      if (e.targetKey !== null && isSquareOffGroupKey(e.targetKey)) {
+        const items = e.source === 'pinelabs' ? pinelabsItems : hdfcItems;
+        const net = squareOffNetByGroupKey(squareOff, e.targetKey, items);
+        if (net === null) continue; // stale group — excluded, never double-counted
+        diff = e.direction === 'excess' ? e.amount : -e.amount;
+        label = e.source === 'pinelabs' ? 'Pinelabs — square-off residual' : 'HDFC Static UPI — square-off residual';
+      } else {
+        const item = e.targetKey === null ? undefined : (e.source === 'pinelabs' ? plByKey : hdfcByKey).get(e.targetKey);
+        if (!item || !item.appearsInExplanation) continue;
+        diff = item.diff;
+        label = item.label;
+        orderNo = item.orderNo;
+        rrn = item.rrn;
+      }
     } else if (e.source === 'cash' || e.source === 'upi' || e.source === 'bank' || e.source === 'hdfc_link') {
       diff = e.direction === 'excess' ? e.amount : -e.amount;
       label = AGGREGATE_LABEL[e.source];

@@ -31,8 +31,11 @@ import {
   isAdvanceClosed,
   isAdvanceExhausted,
   isEligibleSquareOffPartner,
+  isSquareOffResolved,
   pinelabsCompleteness,
+  squareOffGroupKey,
   squareOffNet,
+  squareOffNetByGroupKey,
   toggleSquareOff,
   upiOk,
 } from '../dist/index.js';
@@ -250,6 +253,64 @@ describe('square-off', () => {
   });
 });
 
+// ── Square-off with a residual remark ──────────────────────────────────────
+
+describe('square-off residual', () => {
+  const lopsidedItems: ResolvableItem[] = [
+    { globalId: 'MM-1', targetKey: 'R1', diff: 1000, label: 'Amount mismatch', orderNo: '', rrn: 'R1', appearsInExplanation: true, countsTowardGate: true },
+    { globalId: 'POS-1', targetKey: 't2', diff: -800, label: 'Only in POS', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+  ];
+
+  it('a group key is order-independent and stable across which member asks for it', () => {
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const fromHub = squareOffGroupKey(map, 'MM-1');
+    const fromPartner = squareOffGroupKey(map, 'POS-1');
+    assert.equal(fromHub, fromPartner);
+    assert.ok(fromHub!.startsWith('sqoff:'));
+  });
+
+  it('returns null for an id that is not squared off at all', () => {
+    assert.equal(squareOffGroupKey({}, 'MM-1'), null);
+  });
+
+  it('a lopsided pair is unresolved without a residual entry, resolved with a matching one', () => {
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    assert.equal(isSquareOffResolved(map, 'MM-1', lopsidedItems, []), false);
+
+    const key = squareOffGroupKey(map, 'MM-1')!;
+    const residual = [entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
+    assert.equal(isSquareOffResolved(map, 'MM-1', lopsidedItems, residual), true);
+    // Every member of the group resolves, not just the one that got remarked.
+    assert.equal(isSquareOffResolved(map, 'POS-1', lopsidedItems, residual), true);
+  });
+
+  it('a residual entry whose amount does not match the real net does NOT resolve the group', () => {
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const key = squareOffGroupKey(map, 'MM-1')!;
+    // Net is +200 (1000 - 800); this entry claims 150.
+    const wrong = [entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 150 })];
+    assert.equal(isSquareOffResolved(map, 'MM-1', lopsidedItems, wrong), false);
+  });
+
+  it('squareOffNetByGroupKey returns null once the group membership has changed (stale key)', () => {
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const staleKey = squareOffGroupKey(map, 'MM-1')!;
+    // Un-pair, then pair MM-1 with a different partner instead.
+    const rePaired = toggleSquareOff(toggleSquareOff(map, 'MM-1', 'POS-1', false), 'MM-1', 'POS-2', true);
+    const items = [...lopsidedItems, { globalId: 'POS-2', targetKey: 't3', diff: -1000, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true }];
+    assert.equal(squareOffNetByGroupKey(rePaired, staleKey, items), null);
+  });
+
+  it('an exact-zero group still resolves with no remark at all — unchanged behavior', () => {
+    const items: ResolvableItem[] = [
+      { globalId: 'MM-1', targetKey: 'R1', diff: 500, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+      { globalId: 'POS-1', targetKey: 't2', diff: -500, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+    ];
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    assert.equal(isSquareOffResolved(map, 'MM-1', items, []), true);
+  });
+});
+
 // ── Completeness ──────────────────────────────────────────────────────────
 
 describe('completeness', () => {
@@ -295,6 +356,21 @@ describe('completeness', () => {
     const result = pinelabsCompleteness(pinelabs, [], map);
     assert.equal(result.allResolved, true);
     assert.equal(result.unresolvedCount, 0);
+  });
+
+  it('a lopsided square-off group resolves once its residual is remarked', () => {
+    const pinelabs = pinelabsResult({
+      reconRows: [reconRow({ rrn: 'R1', diff: 1000 })] as never,
+      onlyPOS: [{ orders: ['O1'], amount: 800, rrn: 'R2' }] as never,
+    });
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const unresolved = pinelabsCompleteness(pinelabs, [], map);
+    assert.equal(unresolved.allResolved, false);
+
+    const key = squareOffGroupKey(map, 'MM-1')!;
+    const entries = [entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
+    const resolved = pinelabsCompleteness(pinelabs, entries, map);
+    assert.equal(resolved.allResolved, true);
   });
 
   it('count-based HDFC completeness is not fooled by opposite-sign items netting near zero', () => {
@@ -393,11 +469,39 @@ describe('residual', () => {
       entry({ source: 'pinelabs', targetKey: 'R1', remark: 'Tips', direction: 'excess', amount: 300 }),
       entry({ source: 'cash', direction: 'shortage', remark: 'Short Collection', amount: 100 }),
     ];
-    const explained = collectExplained(entries, pinelabsItems, []);
+    const explained = collectExplained(entries, pinelabsItems, [], {});
     assert.equal(explained.length, 2);
     const totals = explainedTotals(explained);
     assert.equal(totals.excessTotal, 300);
     assert.equal(totals.shortTotal, 100);
+  });
+
+  it('a square-off group residual entry contributes its own stored amount, not any member row\'s diff', () => {
+    const items: ResolvableItem[] = [
+      { globalId: 'MM-1', targetKey: 'R1', diff: 1000, label: 'Amount mismatch', orderNo: '', rrn: 'R1', appearsInExplanation: true, countsTowardGate: true },
+      { globalId: 'POS-1', targetKey: 't2', diff: -800, label: 'Only in POS', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+    ];
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const key = squareOffGroupKey(map, 'MM-1')!;
+    const entries = [entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
+    const explained = collectExplained(entries, items, [], map);
+    assert.equal(explained.length, 1);
+    assert.equal(explained[0]!.diff, 200);
+    assert.equal(explained[0]!.label, 'Pinelabs — square-off residual');
+  });
+
+  it('a stale square-off group residual entry (membership since changed) is excluded, never double-counted', () => {
+    const items: ResolvableItem[] = [
+      { globalId: 'MM-1', targetKey: 'R1', diff: 1000, label: '', orderNo: '', rrn: 'R1', appearsInExplanation: true, countsTowardGate: true },
+      { globalId: 'POS-1', targetKey: 't2', diff: -800, label: '', orderNo: '', rrn: '', appearsInExplanation: true, countsTowardGate: true },
+    ];
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const staleKey = squareOffGroupKey(map, 'MM-1')!;
+    // The pairing is gone now — the entry's key no longer matches anything live.
+    const unpaired = toggleSquareOff(map, 'MM-1', 'POS-1', false);
+    const entries = [entry({ source: 'pinelabs', targetKey: staleKey, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
+    const explained = collectExplained(entries, items, [], unpaired);
+    assert.equal(explained.length, 0);
   });
 
   it('a Pinelabs dupRRN row satisfies completeness via a remark but never becomes an explained row', () => {
@@ -412,7 +516,7 @@ describe('residual', () => {
       countsTowardGate: true,
     };
     const entries = [entry({ source: 'pinelabs', targetKey: 'dup-R9', remark: 'Other', comment: 'ambiguous' })];
-    const explained = collectExplained(entries, [dupItem], []);
+    const explained = collectExplained(entries, [dupItem], [], {});
     assert.equal(explained.length, 0);
   });
 
@@ -428,7 +532,7 @@ describe('residual', () => {
       countsTowardGate: false,
     };
     const entries = [entry({ source: 'upi_hdfc', targetKey: 'udup-R9', remark: 'Other', comment: 'ambiguous' })];
-    const explained = collectExplained(entries, [], [udupItem]);
+    const explained = collectExplained(entries, [], [udupItem], {});
     assert.equal(explained.length, 1);
     assert.equal(explained[0]!.diff, 0);
     assert.equal(explained[0]!.label, 'HDFC UPI — Duplicate RRN');
@@ -531,6 +635,48 @@ describe('canSubmit', () => {
     });
     assert.equal(result.ok, true);
     assert.equal(result.status, 'balanced');
+  });
+
+  it('a square-off pair that does not net to zero blocks submission until its residual is remarked', () => {
+    const pinelabs = pinelabsResult({
+      reconRows: [reconRow({ rrn: 'R1', diff: 1000 })] as never,
+      onlyPOS: [{ orders: ['O1'], amount: 800, rrn: 'R2' }] as never,
+    });
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+
+    const blocked = canSubmit({
+      pinelabs,
+      upiHdfc: null,
+      justification: { ...emptyJustificationState(), squareOff: map },
+      grandDiff: 200,
+      hasSummary: false,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 0,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications: [],
+    });
+    assert.equal(blocked.ok, false);
+    assert.ok(blocked.blockers.some((b) => b.includes('Pinelabs')));
+
+    const key = squareOffGroupKey(map, 'MM-1')!;
+    const entries = [entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
+    const unblocked = canSubmit({
+      pinelabs,
+      upiHdfc: null,
+      justification: { ...emptyJustificationState(), squareOff: map, entries },
+      grandDiff: 200,
+      hasSummary: false,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 0,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications: [],
+    });
+    assert.equal(unblocked.ok, true);
+    assert.equal(unblocked.status, 'balanced');
   });
 });
 
@@ -764,5 +910,56 @@ describe('buildSnapshot', () => {
     assert.equal(snapshot.cash.justifications[0]!.remark, 'Tips');
     assert.equal(snapshot.bank.justifications.length, 1);
     assert.equal(snapshot.bank.justifications[0]!.sign, 'shortage');
+  });
+
+  it('a manually squared-off reconRow (MM-N) shows squared_off in the settlement ledger, with its residual remark', () => {
+    const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
+    const key = squareOffGroupKey(map, 'MM-1')!;
+    const entries = [
+      entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 200 }),
+    ];
+    const snapshot = buildSnapshot({
+      outlet: 'BLRT',
+      businessDate: '2026-08-01',
+      businessWindow: '01 Aug 08:00 – 02 Aug 07:00',
+      businessWindowStart: '2026-08-01T02:30:00.000Z',
+      businessWindowEnd: '2026-08-02T01:30:00.000Z',
+      submittedAt: '2026-08-02T10:00:00.000Z',
+      submittedBy: 'gm@toit.local',
+      prFileRows: 10,
+      zipRows: 8,
+      result: {
+        pinelabs: pinelabsResult({
+          // The engine's own `squaredOff` flag stays false — this is a GM
+          // manual pairing, not something the engine auto-matched.
+          reconRows: [reconRow({ rrn: 'R1', diff: 1000, squaredOff: false })] as never,
+          onlyPOS: [{ orders: ['O1'], amount: 800, rrn: 'R2' }] as never,
+        }),
+        upiHdfc: null,
+        swiggy: [],
+        cash: [],
+        upi: [],
+        bills: [],
+        bank: [],
+        hdfcLink: [],
+        other: [],
+        zipFiltered: [],
+      } as never,
+      summaryData: null,
+      methodBreakdown: [],
+      grandDiff: 200,
+      residual: 0,
+      status: 'balanced',
+      justification: { ...emptyJustificationState(), squareOff: map, entries },
+      advances: [],
+      applications: [],
+      bohOpen: [],
+      bohClearedThisSession: [],
+    });
+
+    const mmRow = snapshot.settlementLedger.find((r) => r.rrn === 'R1')!;
+    assert.equal(mmRow.l1Status, 'squared_off');
+    assert.equal(mmRow.squaredOff, true);
+    assert.equal(mmRow.l1Remark, 'Extra Payment Received');
   });
 });

@@ -15,7 +15,7 @@
  */
 
 import { useState } from 'react';
-import type { JustificationSourceDTO } from '@toit/contracts';
+import type { DirectionDTO, JustificationSourceDTO } from '@toit/contracts';
 import {
   AMOUNT_EPSILON,
   REMARKS_ALL,
@@ -23,6 +23,7 @@ import {
   REMARKS_SHORTAGE_WITH_TDS,
   fmt,
   isEligibleSquareOffPartner,
+  squareOffGroupKey,
   squareOffNet,
   type ResolvableItem,
 } from '@toit/recon-core/display';
@@ -47,6 +48,9 @@ export function RemarkCell({ source, item, allItems }: Props) {
   const isSquared = partners.length > 0;
   const net = isSquared ? squareOffNet(session.justification.squareOff, item.globalId, allItems) : null;
   const netUnresolved = net !== null && Math.abs(net) >= AMOUNT_EPSILON;
+  const groupKey = isSquared ? squareOffGroupKey(session.justification.squareOff, item.globalId) : null;
+  const residualEntry = groupKey ? (entries.find((e) => e.targetKey === groupKey) ?? null) : null;
+  const residualRemarkOptions = net === null ? [] : net > 0 ? REMARKS_EXCESS : REMARKS_SHORTAGE_WITH_TDS;
 
   // A dupRRN item (diff === 0) offers both lists — deduped, since 'Other'
   // appears in both and a raw REMARKS_ALL would render it as two <option>s
@@ -87,25 +91,33 @@ export function RemarkCell({ source, item, allItems }: Props) {
     return true;
   });
 
-  async function handleRemarkChange(remark: string) {
+  /**
+   * Shared save path for both a row's own remark and a square-off group's
+   * residual remark — same remove-then-add/modal-routing logic either way,
+   * just pointed at a different `targetKey`/`amount`/`direction`. Kept as
+   * one function rather than two independently-maintained copies.
+   */
+  async function saveRemark(
+    target: { targetKey: string; amount: number; direction: DirectionDTO; existingEntryId: string | null; rrn?: string },
+    remark: string,
+  ) {
     setBusy(true);
     try {
       let base = session;
-      if (entry) {
-        base = await removeJustificationEntry(session.meta.id, entry.id);
+      if (target.existingEntryId) {
+        base = await removeJustificationEntry(session.meta.id, target.existingEntryId);
         updateSession(base);
       }
       if (!remark) return;
 
-      const direction = item.diff >= 0 ? 'excess' : 'shortage';
       const modalKind = modalKindForRemark(remark);
       if (modalKind) {
         openModal({
           kind: modalKind,
           source,
-          targetKey: item.targetKey,
-          amount: Math.abs(item.diff),
-          direction,
+          targetKey: target.targetKey,
+          amount: target.amount,
+          direction: target.direction,
           // BOH Clear's source is locked to whichever row triggered it —
           // legacy: `openBohClearFromRecon` (reconciliation (68).html:4607-4665).
           lockedSource: modalKind === 'boh-clear' ? (source === 'pinelabs' ? 'Pinelabs' : 'HDFC Static UPI') : undefined,
@@ -113,16 +125,17 @@ export function RemarkCell({ source, item, allItems }: Props) {
           // it got matched/listed in the first place) — `BohClearModal` uses
           // this to skip asking the operator to re-type an RRN the system
           // already knows, when the source is HDFC Static UPI specifically.
-          rrn: item.rrn || undefined,
+          // A group residual has no single row's RRN to pass through.
+          rrn: target.rrn,
         });
         return;
       }
       const updated = await addJustificationEntry(session.meta.id, {
         source,
-        targetKey: item.targetKey,
-        direction,
+        targetKey: target.targetKey,
+        direction: target.direction,
         remark: remark as never,
-        amount: Math.abs(item.diff),
+        amount: target.amount,
       });
       updateSession(updated);
     } catch (err) {
@@ -130,6 +143,33 @@ export function RemarkCell({ source, item, allItems }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleRemarkChange(remark: string) {
+    return saveRemark(
+      {
+        targetKey: item.targetKey,
+        amount: Math.abs(item.diff),
+        direction: item.diff >= 0 ? 'excess' : 'shortage',
+        existingEntryId: entry?.id ?? null,
+        rrn: item.rrn || undefined,
+      },
+      remark,
+    );
+  }
+
+  /** Explains a square-off group's leftover net — attached to the group, not this row alone. */
+  function handleResidualRemarkChange(remark: string) {
+    if (net === null || !groupKey) return;
+    return saveRemark(
+      {
+        targetKey: groupKey,
+        amount: Math.abs(net),
+        direction: net >= 0 ? 'excess' : 'shortage',
+        existingEntryId: residualEntry?.id ?? null,
+      },
+      remark,
+    );
   }
 
   async function handleSquareOffToggle(partnerId: string) {
@@ -151,10 +191,29 @@ export function RemarkCell({ source, item, allItems }: Props) {
   return (
     <div className="flex items-center gap-1">
       {isSquared ? (
-        <div className="flex items-center gap-2 text-tiny">
+        <div className="flex items-center gap-2 text-tiny flex-wrap">
           <span className="tag tag-pur">🔗 Squared off</span>
           {netUnresolved && (
-            <span className="tag tag-warn">⚠ Net {net! > 0 ? '+' : ''}{fmt(net!)}</span>
+            <span className={`tag ${residualEntry ? 'tag-ok' : 'tag-warn'}`}>
+              {residualEntry ? '✓' : '⚠'} Net {net! > 0 ? '+' : ''}
+              {fmt(net!)}
+              {residualEntry ? ` — ${residualEntry.remark}` : ''}
+            </span>
+          )}
+          {netUnresolved && (
+            <select
+              className="field-input flex-1 min-w-0"
+              value={residualEntry?.remark ?? ''}
+              disabled={disabled}
+              onChange={(e) => handleResidualRemarkChange(e.target.value)}
+            >
+              <option value="">Explain residual…</option>
+              {residualRemarkOptions.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
           )}
           <button
             type="button"

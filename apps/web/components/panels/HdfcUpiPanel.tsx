@@ -77,7 +77,9 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
   }, [allItems, upiHdfc, mismatched.length]);
 
   const rowFadeStyle = (globalId: string): { opacity: number } | undefined =>
-    isSquareOffResolved(session.justification.squareOff, globalId, allItems) ? { opacity: 0.55 } : undefined;
+    isSquareOffResolved(session.justification.squareOff, globalId, allItems, session.justification.entries)
+      ? { opacity: 0.55 }
+      : undefined;
 
   const buckets: Array<{ label: string; rows: BucketRow[] }> = [
     {
