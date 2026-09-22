@@ -1,11 +1,12 @@
 'use client';
 
 /**
- * The "Approval Requests" module card — admin-only, shows a live count of
- * pending re-reconciliation approval requests right on the card, so an
- * admin sees there's something waiting without opening the queue first.
- * Same corner-link-to-real-module promotion the "Unreconciled TDS" module
- * got — see `AdminLink.tsx`'s history; this replaces it.
+ * The home-page entry point into `/admin` — the admin dashboard (submissions
+ * calendar, comment review, approval requests). Still shows a live count of
+ * pending approval requests right on the card, so an admin sees there's
+ * something waiting without opening the dashboard first. Same
+ * corner-link-to-real-module promotion the "Unreconciled TDS" module got —
+ * see `AdminLink.tsx`'s history; this replaces it.
  */
 
 import { useEffect, useState } from 'react';
@@ -30,8 +31,8 @@ export function ApprovalsModuleCard() {
     <ModuleCard
       href="/admin"
       icon="🛡"
-      title="Approval Requests"
-      description="Re-reconciliation requests from GMs waiting on your decision — approve or deny before they can re-run an outlet's already-reconciled business date."
+      title="Admin Dashboard"
+      description="Submission timeliness across outlets, recent comments to review, and approval requests from GMs waiting on your decision."
       badge={pendingCount}
     />
   );
