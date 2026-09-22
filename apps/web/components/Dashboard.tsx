@@ -159,16 +159,32 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
             </div>
           </div>
           <div className="p-4">
-            <p className="text-[28px] font-bold leading-tight">{fmt(tipsMonth.total)}</p>
+            <p className="text-[32px] font-bold leading-tight">{fmt(tipsMonth.total)}</p>
             <p className="text-tiny text-ink-3 mb-3">running total</p>
+
+            <div className="h-2 rounded-full bg-line overflow-hidden flex mb-4">
+              {tipsMonth.total > 0 && (
+                <>
+                  <div className="h-full bg-accent" style={{ width: `${(tipsMonth.firstHalf / tipsMonth.total) * 100}%` }} />
+                  <div className="h-full bg-warn" style={{ width: `${(tipsMonth.secondHalf / tipsMonth.total) * 100}%` }} />
+                </>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <div className="pick-card">
-                <p className="text-tiny text-ink-3">{halfMonthLabel(tipsMonth.firstHalfRange)}</p>
-                <p className="font-semibold">{fmt(tipsMonth.firstHalf)}</p>
+              <div className="pick-card bg-sunken p-3">
+                <p className="text-tiny text-ink-3 inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+                  {halfMonthLabel(tipsMonth.firstHalfRange)}
+                </p>
+                <p className="font-semibold text-body mt-1">{fmt(tipsMonth.firstHalf)}</p>
               </div>
-              <div className="pick-card">
-                <p className="text-tiny text-ink-3">{halfMonthLabel(tipsMonth.secondHalfRange)}</p>
-                <p className="font-semibold">{fmt(tipsMonth.secondHalf)}</p>
+              <div className="pick-card bg-sunken p-3">
+                <p className="text-tiny text-ink-3 inline-flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-warn shrink-0" />
+                  {halfMonthLabel(tipsMonth.secondHalfRange)}
+                </p>
+                <p className="font-semibold text-body mt-1">{fmt(tipsMonth.secondHalf)}</p>
               </div>
             </div>
             {tipsMonth.total === 0 && (
@@ -222,14 +238,14 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
           title={`Bills on hold — ${BOH_BUCKET_LABEL[selectedBucket.bucket]} (${selectedBucket.count})`}
           onClose={() => setSelectedBucket(null)}
           footer={
-            <button type="button" className="btn" onClick={() => setSelectedBucket(null)}>
+            <button type="button" className="btn bg-red-500 text-white" onClick={() => setSelectedBucket(null)}>
               Close
             </button>
           }
         >
           <div className="flex flex-col gap-3">
             {selectedBucket.entries.map((e) => (
-              <div key={e.id} className="pick-card">
+              <div key={e.id} className="pick-card p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-semibold">
                     {e.orderNo} — {e.custName}

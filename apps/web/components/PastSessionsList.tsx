@@ -24,6 +24,13 @@ function openSession(s: SessionListItemDTO): void {
   }
 }
 
+/** Falls back to the session's `createdAt` day when the Payment Report had no parseable business date — this column should never show a bare dash. Today's own row reads "Today" rather than its raw date. */
+function businessDateLabel(s: SessionListItemDTO): string {
+  const date = s.businessDate ?? s.createdAt.slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  return date === today ? 'Today' : date;
+}
+
 export function PastSessionsList() {
   const [sessions, setSessions] = useState<SessionListItemDTO[] | null>(null);
 
@@ -66,9 +73,9 @@ export function PastSessionsList() {
               {sessions.map((s) => (
                 <tr key={s.id} className="cursor-pointer" onClick={() => openSession(s)}>
                   <td className="text-left!">{s.outlet}</td>
-                  <td className="text-left! mono">{s.businessDate ?? '—'}</td>
+                  <td className="text-left! mono">{businessDateLabel(s)}</td>
                   <td className="text-left!">
-                    <span className={`tag ${s.status === 'submitted' ? 'tag-ok' : 'tag-neutral'}`}>
+                    <span className={`tag ${s.status === 'submitted' ? 'tag-ok' : 'tag-warn'}`}>
                       {s.status === 'submitted' ? 'Submitted' : 'Draft'}
                     </span>
                   </td>
