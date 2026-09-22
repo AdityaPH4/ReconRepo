@@ -118,10 +118,22 @@ export function RemarkCell({ source, item, allItems }: Props) {
         })
       : [];
 
-  /** Every other row currently in this group — every member shows the same list, not just a "parent"/hub, since a star's non-hub members are otherwise invisible to each other. */
+  /** Every other row currently in this group — every member shows this list, not just a "parent"/hub, since a star's non-hub members are otherwise invisible to each other. */
   const groupPartnerItems = currentGroupMembers
     ? allItems.filter((x) => x.globalId !== item.globalId && currentGroupMembers.has(x.globalId))
     : [];
+
+  /**
+   * The one row in the group that stays fully interactive — the largest
+   * `|diff|` (the "big" amount smaller ones are being squared into), not a
+   * topology-derived hub: a plain two-row pairing has no hub at all
+   * (`toggleSquareOff` links both sides symmetrically), so magnitude is the
+   * only stable, always-defined notion of "parent" here. Every other member
+   * ("child") only ever shows a muted state plus Undo — the group is
+   * reviewed and managed from the parent row alone, not duplicated on each
+   * member.
+   */
+  const isGroupParent = !isSquared || groupPartnerItems.every((p) => Math.abs(item.diff) >= Math.abs(p.diff));
 
   /**
    * Shared save path for both a row's own remark and a square-off group's
@@ -235,7 +247,23 @@ export function RemarkCell({ source, item, allItems }: Props) {
 
   return (
     <div className="flex items-center gap-1">
-      {isSquared ? (
+      {isSquared && !isGroupParent ? (
+        // Child row — the group is reviewed and managed from the parent
+        // (largest-magnitude) row alone; duplicating the net/add-partner/
+        // explain controls on every member was cluttered and, worse,
+        // confusing (which row's "Explain residual" is authoritative?).
+        <div className="flex items-center gap-2 text-tiny opacity-60">
+          <span className="tag tag-neutral">🔗 Squared off</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={disabled}
+            onClick={() => handleSquareOffToggle(partners[0]!)}
+          >
+            Undo
+          </button>
+        </div>
+      ) : isSquared ? (
         <div className="flex items-center gap-2 text-tiny flex-wrap">
           <span className="tag tag-pur">🔗 Squared off</span>
           {groupPartnerItems.length > 0 && (

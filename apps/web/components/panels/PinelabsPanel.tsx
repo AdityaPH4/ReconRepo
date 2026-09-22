@@ -265,13 +265,13 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <thead>
               <tr>
                 <th className="w-[12%]">Category / ID</th>
-                <th className="w-[8%]">RRN</th>
-                <th className="w-[8%]">Order No(s)</th>
+                <th className="w-[7%]">RRN</th>
+                <th className="w-[7%]">Order No(s)</th>
                 <th className="w-[13%]">Date / Time</th>
-                <th className="w-[7%]">Payment name</th>
+                <th className="w-[6%]">Payment name</th>
                 <th className="w-[8%] num">Pinelabs</th>
                 <th className="w-[8%] num">PR</th>
-                <th className="w-[7%] num">Difference</th>
+                <th className="w-[10%] num">Difference</th>
                 <th className="w-[29%]">Remark</th>
               </tr>
             </thead>
@@ -303,7 +303,7 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                             <td>{r.paymentName}</td>
                             <td className="num">{r.plAmt === null ? '—' : fmt(r.plAmt)}</td>
                             <td className="num">{r.prAmt === null ? '—' : fmt(r.prAmt)}</td>
-                            <td className={`num ${diffClass(r.diff)}`}>
+                            <td className={`num whitespace-nowrap ${diffClass(r.diff)}`}>
                               {r.diff === null ? '—' : `${r.diff > 0 ? '+' : ''}${fmt(r.diff)}`}
                             </td>
                             <td>
@@ -351,7 +351,7 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                         <td>{x.pr?.paymentName}</td>
                         <td className="num">{fmt(x.plAmt)}</td>
                         <td className="num">{fmt(x.prAmt)}</td>
-                        <td className={`num ${diffClass(x.diff)}`}>
+                        <td className={`num whitespace-nowrap ${diffClass(x.diff)}`}>
                           {Math.abs(x.diff ?? 0) < AMOUNT_EPSILON ? '—' : `${(x.diff ?? 0) > 0 ? '+' : ''}${fmt(x.diff)}`}
                         </td>
                         <td>
