@@ -187,6 +187,7 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
       count: bohTotal.count,
       amount: bohTotal.amount,
       worstBucket: worstBohBucket(bohAging),
+      entries: bohEntries.filter((e) => e.status === 'open'),
     });
     bohCountTotal += bohTotal.count;
     bohAmountTotal += bohTotal.amount;

@@ -2,16 +2,16 @@
 
 /**
  * Admin's landing page — cross-outlet Bills-on-hold and Open-advances
- * exposure, submission timeliness, a Justifications review feed, and the
+ * exposure, submission timeliness, a Justifications stat summary, and the
  * approval-requests queue. Replaces the old bare approvals-only `/admin`
  * page.
  */
 
-import type { AdminDashboardDTO, BohAgingBucket } from '@toit/contracts';
-import { fmt } from '@toit/recon-core/display';
+import type { AdminDashboardDTO, AdminOutletBohSummaryDTO, BohAgingBucket } from '@toit/contracts';
+import { fmt, fmtDate } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
-import { diffClass } from '@/components/ui/table';
+import { ModalShell } from '@/components/justification/ModalShell';
 import { SubmissionCalendar } from '@/components/SubmissionCalendar';
 import { ApiError, getAdminDashboard } from '@/lib/api';
 import { AdminApprovalQueue } from './AdminApprovalQueue';
@@ -39,12 +39,9 @@ const BOH_BUCKET_TAG: Record<BohAgingBucket, string> = {
   '30+': 'tag-err',
 };
 
-/** One icon + tag color per remark — 10 remarks across 7 available tag colors, so a few intentionally share a hue (same as `tag-excess`/`tag-ok` already do elsewhere). */
+/** Stat-card icons — only the remarks actually shown here (see `HIDDEN_REMARKS` below for why the other 3 are excluded). */
 const REMARK_ICON: Record<string, string> = {
   Tips: '🪙',
-  'Advance Received': '💵',
-  'Advance Applied': '🔄',
-  'Bill on Hold Cleared': '📦',
   'Extra Payment Received': '➕',
   'Short Collection': '⚠️',
   'Paid In': '⬇️',
@@ -53,24 +50,14 @@ const REMARK_ICON: Record<string, string> = {
   Other: '📝',
 };
 
-const REMARK_TAG: Record<string, string> = {
-  Tips: 'tag-ok',
-  'Extra Payment Received': 'tag-ok',
-  'Paid In': 'tag-ok',
-  'Advance Received': 'tag-accent',
-  'Bill on Hold Cleared': 'tag-accent',
-  'Advance Applied': 'tag-warn',
-  'Paid Out': 'tag-warn',
-  'Short Collection': 'tag-err',
-  'TDS Deducted': 'tag-pur',
-  Other: 'tag-neutral',
-};
+/** These three remarks' detail already lives elsewhere the admin would actually look (the Advance Closure module, the BOH card's own click-through) — kept out of this panel per explicit request. */
+const HIDDEN_REMARKS = new Set(['Advance Received', 'Advance Applied', 'Bill on Hold Cleared']);
 
 export function AdminDashboard() {
   const user = useCurrentUser();
   const [dashboard, setDashboard] = useState<AdminDashboardDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [filterRemark, setFilterRemark] = useState<string | null>(null);
+  const [selectedBohOutlet, setSelectedBohOutlet] = useState<AdminOutletBohSummaryDTO | null>(null);
 
   useEffect(() => {
     if (user.role !== 'admin') return;
@@ -91,8 +78,7 @@ export function AdminDashboard() {
     );
   }
 
-  const comments = dashboard?.recentComments ?? [];
-  const filteredComments = filterRemark ? comments.filter((c) => c.remark === filterRemark) : comments;
+  const justificationChips = dashboard?.justificationCounts.filter((jc) => !HIDDEN_REMARKS.has(jc.remark)) ?? [];
 
   return (
     <main className="app-main">
@@ -144,7 +130,11 @@ export function AdminDashboard() {
                   </thead>
                   <tbody>
                     {dashboard.boh.byOutlet.map((o) => (
-                      <tr key={o.outlet}>
+                      <tr
+                        key={o.outlet}
+                        className={o.count > 0 ? 'cursor-pointer' : undefined}
+                        onClick={() => o.count > 0 && setSelectedBohOutlet(o)}
+                      >
                         <td className="text-left!">{o.outletName}</td>
                         <td className="num">{o.count}</td>
                         <td className="num">{fmt(o.amount)}</td>
@@ -210,83 +200,53 @@ export function AdminDashboard() {
           </section>
 
           <section className="mt-6">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lede font-semibold">Justifications</h2>
-              {filterRemark && (
-                <button type="button" className="btn btn-sm" onClick={() => setFilterRemark(null)}>
-                  ✕ Clear filter: {filterRemark}
-                </button>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
-              {dashboard.justificationCounts.map((jc) => (
-                <button
-                  key={jc.remark}
-                  type="button"
-                  onClick={() => setFilterRemark(filterRemark === jc.remark ? null : jc.remark)}
-                  className={`pick-card text-left p-3 ${
-                    filterRemark === jc.remark ? 'pick-card-selected' : jc.count === 0 ? 'opacity-50' : 'bg-sunken'
-                  }`}
-                >
+            <h2 className="text-lede font-semibold mb-3">Justifications</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {justificationChips.map((jc) => (
+                <div key={jc.remark} className={`pick-card p-3 ${jc.count === 0 ? 'opacity-50' : 'bg-sunken'}`}>
                   <div className="flex items-center gap-1.5 text-tiny text-ink-3">
                     <span aria-hidden>{REMARK_ICON[jc.remark] ?? '•'}</span>
                     <span className="truncate">{jc.remark}</span>
                   </div>
                   <div className="font-semibold mt-1">{jc.count}</div>
                   <div className="text-tiny text-ink-3">{fmt(jc.amount)}</div>
-                </button>
+                </div>
               ))}
-            </div>
-
-            <div className="panel">
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Outlet</th>
-                      <th>Business date</th>
-                      <th>Remark</th>
-                      <th className="num">Amount</th>
-                      <th>Detail</th>
-                      <th>By</th>
-                      <th>When</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredComments.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="text-center text-ink-3">
-                          {filterRemark ? `No ${filterRemark} entries recorded yet.` : 'No justifications recorded yet.'}
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredComments.map((c) => (
-                        <tr key={c.id}>
-                          <td>{c.outlet}</td>
-                          <td className="mono">{c.businessDate ?? '—'}</td>
-                          <td>
-                            <span className={`tag ${REMARK_TAG[c.remark] ?? 'tag-neutral'}`}>
-                              {REMARK_ICON[c.remark] ?? ''} {c.remark}
-                            </span>
-                          </td>
-                          <td className={`num ${diffClass(c.direction === 'excess' ? c.amount : -c.amount)}`}>
-                            {c.direction === 'excess' ? '▲' : '▼'} {fmt(Math.abs(c.amount))}
-                          </td>
-                          <td className="text-tiny">{c.text}</td>
-                          <td className="text-tiny text-ink-3">{c.createdBy}</td>
-                          <td className="text-tiny text-ink-3">{new Date(c.createdAt).toLocaleString('en-IN')}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </section>
 
           <AdminApprovalQueue />
         </>
+      )}
+
+      {selectedBohOutlet && (
+        <ModalShell
+          title={`Bills on hold — ${selectedBohOutlet.outletName} (${selectedBohOutlet.count})`}
+          onClose={() => setSelectedBohOutlet(null)}
+          footer={
+            <button type="button" className="btn" onClick={() => setSelectedBohOutlet(null)}>
+              Close
+            </button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            {selectedBohOutlet.entries.map((e) => (
+              <div key={e.id} className="pick-card p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold">
+                    {e.orderNo} — {e.custName}
+                  </span>
+                  <span className="font-semibold">{fmt(e.amount)}</span>
+                </div>
+                <div className="text-tiny text-ink-3 mt-1">
+                  {fmtDate(e.bohDate)}
+                  {e.phone && <> · {e.phone}</>}
+                </div>
+                {e.notes && <div className="text-tiny text-ink-3 mt-1">{e.notes}</div>}
+              </div>
+            ))}
+          </div>
+        </ModalShell>
       )}
     </main>
   );

@@ -654,6 +654,8 @@ export interface AdminOutletBohSummaryDTO {
   amount: number;
   /** The single oldest non-empty aging bucket present — `null` when nothing is open. */
   worstBucket: BohAgingBucket | null;
+  /** Every open entry for this outlet — lets the dashboard show full details on click, same as the GM dashboard's own bucket rows. */
+  entries: BohEntryDTO[];
 }
 
 export interface AdminBohSummaryDTO {
