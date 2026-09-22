@@ -118,6 +118,11 @@ export function RemarkCell({ source, item, allItems }: Props) {
         })
       : [];
 
+  /** Every other row currently in this group — every member shows the same list, not just a "parent"/hub, since a star's non-hub members are otherwise invisible to each other. */
+  const groupPartnerItems = currentGroupMembers
+    ? allItems.filter((x) => x.globalId !== item.globalId && currentGroupMembers.has(x.globalId))
+    : [];
+
   /**
    * Shared save path for both a row's own remark and a square-off group's
    * residual remark — same remove-then-add/modal-routing logic either way,
@@ -233,6 +238,16 @@ export function RemarkCell({ source, item, allItems }: Props) {
       {isSquared ? (
         <div className="flex items-center gap-2 text-tiny flex-wrap">
           <span className="tag tag-pur">🔗 Squared off</span>
+          {groupPartnerItems.length > 0 && (
+            <span className="inline-flex items-center gap-1 flex-wrap text-ink-3">
+              with
+              {groupPartnerItems.map((p) => (
+                <span key={p.globalId} className="tag tag-neutral">
+                  {p.globalId} ({fmt(p.diff)})
+                </span>
+              ))}
+            </span>
+          )}
           {netUnresolved && (
             <span className={`tag ${residualEntry ? 'tag-ok' : 'tag-warn'}`}>
               {residualEntry ? '✓' : '⚠'} Net {net! > 0 ? '+' : ''}
