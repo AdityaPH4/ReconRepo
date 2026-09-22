@@ -3,13 +3,18 @@
  * Bills-on-Hold aging card, an Open-advances summary, and this outlet's own
  * submissions calendar.
  *
- * Tips: summed from Cash/UPI/Bank justification entries with
- * `remark === 'Tips'` (`REMARKS_EXCESS` in `packages/recon-core/src/constants.ts`
- * always signs it excess), grouped by each session's own `businessDate` —
- * not `createdAt`, since a session can be run a day or more late. Split into
- * the current calendar month's first half (1st–15th) and second half (16th
- * onward) — not a rolling window; matches the admin dashboard's own
- * "current calendar month" convention.
+ * Tips: summed from every justification entry with `remark === 'Tips'`,
+ * regardless of source — `REMARKS_EXCESS` in
+ * `packages/recon-core/src/constants.ts` is shared by the Pinelabs, Cash,
+ * UPI and Bank panels alike, so a tip explained on an unreconciled Pinelabs
+ * row counts exactly the same as one logged on the Cash tab. This is a
+ * manually-entered remark, not a column in the Payment Report — there is no
+ * automatic "Tips" figure anywhere upstream of the operator marking one.
+ * Grouped by each session's own `businessDate` — not `createdAt`, since a
+ * session can be run a day or more late. Split into the current calendar
+ * month's first half (1st–15th) and second half (16th onward) — not a
+ * rolling window; matches the admin dashboard's own "current calendar
+ * month" convention.
  *
  * BOH aging: every still-open Bills-on-Hold entry, bucketed by days since
  * `bohDate` — which is the bill's own raw PR date/time string, not a clean
@@ -71,14 +76,11 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     const full = await sessionStore.get(item.id);
     const businessDate = full?.meta.businessDate;
     if (!full || !businessDate) continue;
-    // The Payment Report's own `tips` column — auto-populated, not a
-    // manually-entered justification remark (which is what this used to
-    // read; that required an operator to notice and log it by hand).
-    // `?? 0`: sessions stored before `tipsTotal` existed on `PanelSummariesDTO`
-    // have no such key at all — without the fallback, `undefined` poisons the
-    // running sum into `NaN`, which then silently propagates into the month
-    // total and renders as an unexplained dash on the UI.
-    const tips = full.totals.tipsTotal ?? 0;
+    // Every source can carry a 'Tips' remark (Pinelabs included — see the
+    // module doc comment), so this deliberately does not filter by source.
+    const tips = full.justification.entries
+      .filter((e) => e.remark === 'Tips')
+      .reduce((s, e) => s + e.amount, 0);
     const day = Number(businessDate.slice(-2));
     if (day <= 15) firstHalf += tips;
     else secondHalf += tips;

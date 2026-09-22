@@ -207,8 +207,6 @@ export interface PanelSummariesDTO {
   swiggy: { prTotal: number; swiggy: PanelTotalsDTO; zomato: PanelTotalsDTO };
   /** Pinelabs is transaction-level, so it reports terminal vs POS instead. */
   pinelabs: { prTotal: number; terminalTotal: number; diff: number };
-  /** Sum of every Payment Report row's own `tips` column — the dashboard's Tips figures come from here, not a manually-entered remark. */
-  tipsTotal: number;
 }
 
 // ── Pinelabs terminal breakdown by acquirer ───────────────────────────────
