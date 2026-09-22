@@ -1,49 +1,52 @@
 'use client';
 
 /**
- * The GM's dashboard, shown before/after running recon — today's status, a
- * rolling Tips breakdown, and a Bills-on-Hold aging table.
+ * The GM's dashboard, shown before/after running recon — today's status,
+ * and 4 cards: Bills on hold, Tips this month, Open advances, and this
+ * outlet's own submissions calendar.
  */
 
-import type { BohAgingBucket, DashboardBohAgingRowDTO, DashboardDateRangeDTO, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
-import { fmt, fmtDate } from '@toit/recon-core/display';
+import type { BohAgingBucket, DashboardBohAgingRowDTO, DashboardDateRangeDTO, DashboardDTO } from '@toit/contracts';
+import { fmt, fmtDate, fmtEventDate } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ModalShell } from '@/components/justification/ModalShell';
+import { SubmissionCalendar } from '@/components/SubmissionCalendar';
 import { ApiError, getDashboard } from '@/lib/api';
-import { diffClass } from '@/components/ui/table';
 
 const STATUS_LABEL: Record<string, string> = {
   draft: 'Draft — not yet submitted',
   submitted: 'Submitted',
 };
 
-/** `row.label` is internal shorthand ('T', 'T-1', …) — a GM needs an actual day, not engineering notation. */
-function tipsDayLabel(row: DashboardTipsRowDTO): string {
-  if (row.label === 'T') return 'Today';
-  if (row.label === 'T-1') return 'Yesterday';
-  return new Date(`${row.date}T00:00:00Z`).toLocaleDateString('en-IN', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
+function monthLabel(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-IN', {
+    month: 'long',
+    year: 'numeric',
     timeZone: 'UTC',
   });
 }
 
-function tipsRangeLabel(range: DashboardDateRangeDTO): string {
-  const fmtShort = (iso: string) =>
-    new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-  return `${fmtShort(range.from)} – ${fmtShort(range.to)}`;
+function halfMonthLabel(range: DashboardDateRangeDTO): string {
+  const from = new Date(`${range.from}T00:00:00Z`);
+  const to = new Date(`${range.to}T00:00:00Z`);
+  const monthShort = to.toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' });
+  return `${from.getUTCDate()}–${to.getUTCDate()} ${monthShort}`;
 }
 
-/** Same green/amber/red logic as everywhere else a magnitude implies urgency — 1-2 days is fine, 3-4 needs attention, 5+ is stale. */
+const BOH_BUCKET_LABEL: Record<BohAgingBucket, string> = {
+  '0-7': '0-7 days',
+  '8-15': '8-15 days',
+  '16-30': '16-30 days',
+  '30+': '30+ days',
+};
+
+/** Same green/amber/red logic as everywhere else a magnitude implies urgency. */
 const BOH_BUCKET_TAG: Record<BohAgingBucket, string> = {
-  '1': 'tag-ok',
-  '2': 'tag-ok',
-  '3': 'tag-warn',
-  '4': 'tag-warn',
-  '5': 'tag-err',
-  '5+': 'tag-err',
+  '0-7': 'tag-ok',
+  '8-15': 'tag-warn',
+  '16-30': 'tag-warn',
+  '30+': 'tag-err',
 };
 
 function csvCell(value: string | number): string {
@@ -53,8 +56,8 @@ function csvCell(value: string | number): string {
 
 function downloadBohAgingCsv(outlet: string, aging: DashboardBohAgingRowDTO[], total: { count: number; amount: number }): void {
   const rows = [
-    ['Ageing (Days)', 'Number of Items', 'Amount'],
-    ...aging.map((r) => [r.bucket, r.count, r.amount]),
+    ['Ageing range', 'Number of Items', 'Amount'],
+    ...aging.map((r) => [BOH_BUCKET_LABEL[r.bucket], r.count, r.amount]),
     ['Total', total.count, total.amount],
   ];
   const csv = rows.map((r) => r.map(csvCell).join(',')).join('\n');
@@ -96,7 +99,7 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
     return <p className="text-body text-ink-3 mb-6">Loading dashboard…</p>;
   }
 
-  const { todayStatus } = dashboard;
+  const { todayStatus, tipsMonth, openAdvances } = dashboard;
 
   return (
     <div className="mb-6">
@@ -113,95 +116,12 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
         <div className="panel">
           <div className="panel-header">
             <div className="panel-header-left">
-              <div className="panel-icon">🪙</div>
-              <div>
-                <p className="panel-title">Tips</p>
-                <p className="panel-subtitle">Daily tips collected from payment reports</p>
-              </div>
-            </div>
-            <span className="pill">
-              📅 {tipsRangeLabel(dashboard.tipsWeekCurrentRange)}
-            </span>
-          </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="text-left!">Date</th>
-                  <th className="num">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.tips.map((row) => (
-                  <tr key={row.label} className={row.label === 'T' ? 'bg-warn-soft!' : undefined}>
-                    <td className="text-left!">
-                      <span className="inline-flex items-center gap-2">
-                        <span aria-hidden className="text-body">📅</span>
-                        <span className={row.label === 'T' ? 'font-semibold' : undefined}>{tipsDayLabel(row)}</span>
-                        {row.label === 'T' && <span className="tag tag-warn">Today</span>}
-                      </span>
-                    </td>
-                    <td className="num">{fmt(row.amount)}</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td colSpan={2} />
-                </tr>
-                <tr className="total-row">
-                  <td className="text-left!">
-                    <span className="inline-flex items-center gap-2">
-                      <span aria-hidden>📊</span>
-                      <span className="font-semibold">This week</span>
-                      <span className="text-tiny text-ink-3 font-normal">({tipsRangeLabel(dashboard.tipsWeekCurrentRange)})</span>
-                    </span>
-                  </td>
-                  <td className="num">
-                    <span className="border-b-2 border-warn pb-0.5">{fmt(dashboard.tipsWeekCurrent)}</span>
-                  </td>
-                </tr>
-                <tr className="total-row">
-                  <td className="text-left!">
-                    <span className="inline-flex items-center gap-2">
-                      <span aria-hidden>📊</span>
-                      <span className="font-semibold">Last week</span>
-                      <span className="text-tiny text-ink-3 font-normal">({tipsRangeLabel(dashboard.tipsWeekPreviousRange)})</span>
-                    </span>
-                  </td>
-                  <td className="num">
-                    <span className="border-b-2 border-warn pb-0.5">{fmt(dashboard.tipsWeekPrevious)}</span>
-                  </td>
-                </tr>
-                {dashboard.tipsWeekPrevious > 0 && (
-                  <tr>
-                    <td className="text-left! text-tiny text-ink-3">vs. last week</td>
-                    <td className={`num text-tiny font-semibold ${diffClass(dashboard.tipsWeekCurrent - dashboard.tipsWeekPrevious)}`}>
-                      {dashboard.tipsWeekCurrent >= dashboard.tipsWeekPrevious ? '▲' : '▼'}{' '}
-                      {fmt(Math.abs(dashboard.tipsWeekCurrent - dashboard.tipsWeekPrevious))}
-                      {' '}({Math.round((Math.abs(dashboard.tipsWeekCurrent - dashboard.tipsWeekPrevious) / dashboard.tipsWeekPrevious) * 100)}%)
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {dashboard.tipsWeekCurrent === 0 && dashboard.tipsWeekPrevious === 0 && (
-            <p className="text-tiny text-ink-3 px-5 py-3 flex items-start gap-1.5">
-              <span aria-hidden>ℹ</span>
-              <span>
-                No tips recorded in the last 14 days — this fills in automatically from the Payment Report&apos;s Tips
-                column once a session is submitted.
-              </span>
-            </p>
-          )}
-        </div>
-
-        <div className="panel">
-          <div className="panel-header">
-            <div className="panel-header-left">
               <div className="panel-icon">📦</div>
               <div>
-                <p className="panel-title">BOH Table</p>
-                <p className="panel-subtitle">Back of House summary by ageing</p>
+                <p className="panel-title">Bills on hold</p>
+                <p className="panel-subtitle">
+                  {dashboard.bohTotal.count} open · {fmt(dashboard.bohTotal.amount)}
+                </p>
               </div>
             </div>
             <button
@@ -212,48 +132,94 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
               📄 Export CSV
             </button>
           </div>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th className="text-left!">Ageing (Days)</th>
-                  <th className="num">Number of Items</th>
-                  <th className="num">Amount (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dashboard.bohAging.map((row) => (
-                  <tr
-                    key={row.bucket}
-                    className={row.count > 0 ? 'cursor-pointer' : undefined}
-                    onClick={() => row.count > 0 && setSelectedBucket(row)}
-                  >
-                    <td className="text-left!">
-                      <span className={`tag ${BOH_BUCKET_TAG[row.bucket]}`}>{row.bucket}</span>
-                    </td>
-                    <td className="num">{row.count}</td>
-                    <td className="num">{fmt(row.amount)}</td>
-                  </tr>
-                ))}
-                <tr className="total-row">
-                  <td className="text-left!">
-                    <span className="inline-flex items-center gap-2">
-                      <span aria-hidden>🧮</span>
-                      <span>Total</span>
-                    </span>
-                  </td>
-                  <td className="num">{dashboard.bohTotal.count}</td>
-                  <td className="num">{fmt(dashboard.bohTotal.amount)}</td>
-                </tr>
-              </tbody>
-            </table>
+          <div className="flex flex-col gap-1 p-4">
+            {dashboard.bohAging.map((row) => (
+              <div
+                key={row.bucket}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg ${row.count > 0 ? 'cursor-pointer hover:bg-sunken' : ''}`}
+                onClick={() => row.count > 0 && setSelectedBucket(row)}
+              >
+                <span className={`tag ${BOH_BUCKET_TAG[row.bucket]}`}>{BOH_BUCKET_LABEL[row.bucket]}</span>
+                <span className="text-tiny text-ink-3">
+                  {row.count} · <span className="font-semibold text-ink-1">{fmt(row.amount)}</span>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-header-left">
+              <div className="panel-icon">🪙</div>
+              <div>
+                <p className="panel-title">Tips this month</p>
+                <p className="panel-subtitle">{monthLabel(tipsMonth.month)}</p>
+              </div>
+            </div>
+          </div>
+          <div className="p-4">
+            <p className="text-[28px] font-bold leading-tight">{fmt(tipsMonth.total)}</p>
+            <p className="text-tiny text-ink-3 mb-3">running total</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="pick-card">
+                <p className="text-tiny text-ink-3">{halfMonthLabel(tipsMonth.firstHalfRange)}</p>
+                <p className="font-semibold">{fmt(tipsMonth.firstHalf)}</p>
+              </div>
+              <div className="pick-card">
+                <p className="text-tiny text-ink-3">{halfMonthLabel(tipsMonth.secondHalfRange)}</p>
+                <p className="font-semibold">{fmt(tipsMonth.secondHalf)}</p>
+              </div>
+            </div>
+            {tipsMonth.total === 0 && (
+              <p className="text-tiny text-ink-3 mt-3 flex items-start gap-1.5">
+                <span aria-hidden>ℹ</span>
+                <span>
+                  No tips recorded this month yet — this fills in automatically from the Payment Report&apos;s Tips
+                  column once a session is submitted.
+                </span>
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-header-left">
+              <div className="panel-icon">🤝</div>
+              <div>
+                <p className="panel-title">Open advances</p>
+                <p className="panel-subtitle">
+                  {openAdvances.count} open · {fmt(openAdvances.totalBalance)} balance
+                </p>
+              </div>
+            </div>
+            <a className="btn btn-sm" href="/advances">
+              View all →
+            </a>
+          </div>
+          <div className="flex flex-col gap-1 p-4">
+            {openAdvances.items.length === 0 ? (
+              <p className="text-tiny text-ink-3">No open advances.</p>
+            ) : (
+              openAdvances.items.map((item) => (
+                <div key={item.id} className="flex items-center justify-between px-1 py-1.5">
+                  <span className="text-body">
+                    {item.custName} <span className="text-tiny text-ink-3">· {fmtEventDate(item.eventDate)}</span>
+                  </span>
+                  <span className="font-semibold">{fmt(item.balance)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <SubmissionCalendar outlet={dashboard.submissions} />
       </div>
 
       {selectedBucket && (
         <ModalShell
-          title={`Bills on hold — ${selectedBucket.bucket} day${selectedBucket.bucket === '1' ? '' : 's'} (${selectedBucket.count})`}
+          title={`Bills on hold — ${BOH_BUCKET_LABEL[selectedBucket.bucket]} (${selectedBucket.count})`}
           onClose={() => setSelectedBucket(null)}
           footer={
             <button type="button" className="btn" onClick={() => setSelectedBucket(null)}>

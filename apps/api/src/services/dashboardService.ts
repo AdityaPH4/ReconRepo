@@ -1,37 +1,36 @@
 /**
- * The GM's dashboard: today's session status, a rolling Tips breakdown, and
- * a Bills-on-Hold aging table.
+ * The GM's dashboard: today's session status, a Tips-this-month total, a
+ * Bills-on-Hold aging card, an Open-advances summary, and this outlet's own
+ * submissions calendar.
  *
  * Tips: summed from Cash/UPI/Bank justification entries with
  * `remark === 'Tips'` (`REMARKS_EXCESS` in `packages/recon-core/src/constants.ts`
  * always signs it excess), grouped by each session's own `businessDate` —
- * not `createdAt`, since a session can be run a day or more late. "Week X" is
- * the rolling sum of today back 6 days (T..T-6, 7 days); "Week X-1" is the
- * preceding 7-day window (T-7..T-13) — not calendar Monday–Sunday weeks,
- * since T-7 is already its own row in the daily breakdown.
+ * not `createdAt`, since a session can be run a day or more late. Split into
+ * the current calendar month's first half (1st–15th) and second half (16th
+ * onward) — not a rolling window; matches the admin dashboard's own
+ * "current calendar month" convention.
  *
  * BOH aging: every still-open Bills-on-Hold entry, bucketed by days since
  * `bohDate` — which is the bill's own raw PR date/time string, not a clean
  * ISO date (see `BohEntry.bohDate`), so aging math parses just the calendar
  * date out of it first.
+ *
+ * Open advances: every still-open advance for this outlet, with its balance
+ * (`originalAmount` minus applications so far, via `advanceBalance()`),
+ * soonest `eventDate` first, capped at 5 — a "view all" link covers the rest.
  */
 
-import type { BohAgingBucket, BohEntryDTO, DashboardDTO, DashboardTipsRowDTO } from '@toit/contracts';
+import type { BohAgingBucket, BohEntryDTO, DashboardDTO, DashboardOpenAdvanceDTO } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core';
-import { civilToISO, parsePRDate } from '@toit/recon-core';
-import { getBohStore, getSessionStore } from '../storage/index.js';
+import { advanceBalance, civilToISO, OUTLET_NAMES, parsePRDate } from '@toit/recon-core';
+import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
+import { buildOutletSubmissionDays } from './submissionCalendar.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-/** `dateOffset('2026-08-10', -1) === '2026-08-09'`. Pure calendar-date math, UTC — no timezone drift. */
-function dateOffset(iso: string, offsetDays: number): string {
-  const d = new Date(`${iso}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
 }
 
 function daysBetween(earlier: string, later: string): number {
@@ -45,16 +44,15 @@ function bohCivilDateISO(bohDate: string): string | null {
 }
 
 function bucketFor(ageDays: number): BohAgingBucket {
-  if (ageDays <= 1) return '1';
-  if (ageDays === 2) return '2';
-  if (ageDays === 3) return '3';
-  if (ageDays === 4) return '4';
-  if (ageDays === 5) return '5';
-  return '5+';
+  if (ageDays <= 7) return '0-7';
+  if (ageDays <= 15) return '8-15';
+  if (ageDays <= 30) return '16-30';
+  return '30+';
 }
 
 export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> {
   const today = todayIso();
+  const month = today.slice(0, 7);
   const sessionStore = getSessionStore();
 
   // ── Today's status ───────────────────────────────────────────────────
@@ -64,11 +62,12 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     ? { sessionId: todaySession.id, status: todaySession.status, grandDiff: todaySession.grandDiff }
     : { sessionId: null, status: null, grandDiff: null };
 
-  // ── Tips ─────────────────────────────────────────────────────────────
-  const oldestNeeded = dateOffset(today, -13);
-  const inRange = recent.filter((s) => s.businessDate && s.businessDate >= oldestNeeded && s.businessDate <= today);
-  const tipsByDate = new Map<string, number>();
-  for (const item of inRange) {
+  // ── Tips this month ──────────────────────────────────────────────────
+  const monthStart = `${month}-01`;
+  const inMonth = recent.filter((s) => s.businessDate && s.businessDate >= monthStart && s.businessDate <= today);
+  let firstHalf = 0;
+  let secondHalf = 0;
+  for (const item of inMonth) {
     const full = await sessionStore.get(item.id);
     const businessDate = full?.meta.businessDate;
     if (!full || !businessDate) continue;
@@ -77,34 +76,28 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     // read; that required an operator to notice and log it by hand).
     // `?? 0`: sessions stored before `tipsTotal` existed on `PanelSummariesDTO`
     // have no such key at all — without the fallback, `undefined` poisons the
-    // running sum into `NaN` for that date, which then silently propagates
-    // into the week totals and renders as unexplained dashes on the UI.
+    // running sum into `NaN`, which then silently propagates into the month
+    // total and renders as an unexplained dash on the UI.
     const tips = full.totals.tipsTotal ?? 0;
-    if (tips === 0) continue;
-    tipsByDate.set(businessDate, (tipsByDate.get(businessDate) ?? 0) + tips);
+    const day = Number(businessDate.slice(-2));
+    if (day <= 15) firstHalf += tips;
+    else secondHalf += tips;
   }
-
-  const tips: DashboardTipsRowDTO[] = Array.from({ length: 8 }, (_, i) => {
-    const date = dateOffset(today, -i);
-    return { label: i === 0 ? 'T' : `T-${i}`, date, amount: tipsByDate.get(date) ?? 0 };
-  });
-  const sumRange = (fromOffset: number, toOffset: number) => {
-    let total = 0;
-    for (let i = fromOffset; i <= toOffset; i++) total += tipsByDate.get(dateOffset(today, -i)) ?? 0;
-    return total;
+  const daysThisMonth = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const tipsMonth = {
+    month,
+    total: firstHalf + secondHalf,
+    firstHalf,
+    secondHalf,
+    firstHalfRange: { from: `${month}-01`, to: `${month}-15` },
+    secondHalfRange: { from: `${month}-16`, to: `${month}-${String(daysThisMonth).padStart(2, '0')}` },
   };
-  const tipsWeekCurrent = sumRange(0, 6);
-  const tipsWeekPrevious = sumRange(7, 13);
-  // Real calendar boundaries for the two rolling windows above — the
-  // dashboard UI shows these instead of the old "Week X"/"Week X-1" labels.
-  const tipsWeekCurrentRange = { from: dateOffset(today, -6), to: today };
-  const tipsWeekPreviousRange = { from: dateOffset(today, -13), to: dateOffset(today, -7) };
 
   // ── Bills-on-Hold aging ──────────────────────────────────────────────
   const bohEntries = await getBohStore().list(outlet);
   const open = bohEntries.filter((e) => e.status === 'open');
   const buckets = new Map<BohAgingBucket, { count: number; amount: number; entries: BohEntryDTO[] }>(
-    (['1', '2', '3', '4', '5', '5+'] as const).map((b) => [b, { count: 0, amount: 0, entries: [] }]),
+    (['0-7', '8-15', '16-30', '30+'] as const).map((b) => [b, { count: 0, amount: 0, entries: [] }]),
   );
   for (const entry of open) {
     const civilDate = bohCivilDateISO(entry.bohDate);
@@ -115,22 +108,46 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     bucket.amount += entry.amount;
     bucket.entries.push(entry);
   }
-  const bohAging = (['1', '2', '3', '4', '5', '5+'] as const).map((bucket) => ({ bucket, ...buckets.get(bucket)! }));
+  const bohAging = (['0-7', '8-15', '16-30', '30+'] as const).map((bucket) => ({ bucket, ...buckets.get(bucket)! }));
   const bohTotal = open.reduce(
     (acc, e) => ({ count: acc.count + 1, amount: acc.amount + e.amount }),
     { count: 0, amount: 0 },
   );
 
+  // ── Open advances ────────────────────────────────────────────────────
+  const advanceStore = getAdvanceStore();
+  const [advances, applications] = await Promise.all([
+    advanceStore.list(outlet),
+    advanceStore.listApplications(outlet),
+  ]);
+  const openAdvancesList = advances
+    .filter((a) => a.status === 'open')
+    .map((a) => ({ advance: a, balance: advanceBalance(a, applications) }))
+    .sort((a, b) => a.advance.eventDate.localeCompare(b.advance.eventDate));
+  const openAdvances = {
+    count: openAdvancesList.length,
+    totalBalance: openAdvancesList.reduce((sum, a) => sum + a.balance, 0),
+    items: openAdvancesList.slice(0, 5).map(
+      (a): DashboardOpenAdvanceDTO => ({
+        id: a.advance.id,
+        custName: a.advance.custName,
+        eventDate: a.advance.eventDate,
+        balance: a.balance,
+      }),
+    ),
+  };
+
+  // ── Submissions calendar ─────────────────────────────────────────────
+  const submissions = buildOutletSubmissionDays(recent, outlet, OUTLET_NAMES[outlet], month, today);
+
   return {
     outlet,
     today,
     todayStatus,
-    tips,
-    tipsWeekCurrent,
-    tipsWeekPrevious,
-    tipsWeekCurrentRange,
-    tipsWeekPreviousRange,
+    tipsMonth,
     bohAging,
     bohTotal,
+    openAdvances,
+    submissions,
   };
 }

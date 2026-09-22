@@ -11,9 +11,9 @@ import { fmt } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { diffClass } from '@/components/ui/table';
+import { SubmissionCalendar } from '@/components/SubmissionCalendar';
 import { ApiError, getAdminDashboard } from '@/lib/api';
 import { AdminApprovalQueue } from './AdminApprovalQueue';
-import { SubmissionCalendar } from './SubmissionCalendar';
 
 function monthLabel(month: string): string {
   return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-IN', {

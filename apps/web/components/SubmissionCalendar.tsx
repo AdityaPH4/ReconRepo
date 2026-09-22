@@ -3,10 +3,11 @@
 /**
  * One outlet's month-at-a-glance submission calendar — green for a
  * submitted day, red for missed, blue for today, blank for the future.
- * Monday-first grid, matching the mockup.
+ * Monday-first grid. Shared by the GM dashboard (its own outlet) and the
+ * admin dashboard (every outlet, one of these per card).
  */
 
-import type { AdminOutletSubmissionsDTO, SubmissionDayStatus } from '@toit/contracts';
+import type { OutletSubmissionsDTO, SubmissionDayStatus } from '@toit/contracts';
 
 const DAY_TAG: Record<SubmissionDayStatus, string> = {
   done: 'tag-ok',
@@ -20,7 +21,7 @@ function mondayFirstWeekday(iso: string): number {
   return (jsDay + 6) % 7;
 }
 
-export function SubmissionCalendar({ outlet }: { outlet: AdminOutletSubmissionsDTO }) {
+export function SubmissionCalendar({ outlet }: { outlet: OutletSubmissionsDTO }) {
   const leadingBlanks = outlet.days.length > 0 ? mondayFirstWeekday(outlet.days[0]!.date) : 0;
   const doneCount = outlet.days.filter((d) => d.status === 'done').length;
   const missedCount = outlet.days.filter((d) => d.status === 'missed').length;

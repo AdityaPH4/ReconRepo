@@ -563,15 +563,7 @@ export interface RequestApprovalRequest {
 
 // ── Manager dashboard ────────────────────────────────────────────────────
 
-export interface DashboardTipsRowDTO {
-  /** `'T'`, `'T-1'` … `'T-7'`. */
-  label: string;
-  /** `yyyy-mm-dd`. */
-  date: string;
-  amount: number;
-}
-
-/** Inclusive calendar-date bounds for a rolling 7-day Tips window. */
+/** Inclusive calendar-date bounds — used for the Tips half-month windows. */
 export interface DashboardDateRangeDTO {
   /** `yyyy-mm-dd`. */
   from: string;
@@ -579,7 +571,19 @@ export interface DashboardDateRangeDTO {
   to: string;
 }
 
-export type BohAgingBucket = '1' | '2' | '3' | '4' | '5' | '5+';
+export interface DashboardTipsMonthDTO {
+  /** `yyyy-mm`. */
+  month: string;
+  total: number;
+  /** 1st–15th. */
+  firstHalf: number;
+  /** 16th–end of month. */
+  secondHalf: number;
+  firstHalfRange: DashboardDateRangeDTO;
+  secondHalfRange: DashboardDateRangeDTO;
+}
+
+export type BohAgingBucket = '0-7' | '8-15' | '16-30' | '30+';
 
 export interface DashboardBohAgingRowDTO {
   bucket: BohAgingBucket;
@@ -587,6 +591,21 @@ export interface DashboardBohAgingRowDTO {
   amount: number;
   /** Every open entry in this bucket — lets the dashboard show full details on click, not just the rolled-up count/amount. */
   entries: BohEntryDTO[];
+}
+
+export interface DashboardOpenAdvanceDTO {
+  id: string;
+  custName: string;
+  /** `yyyy-mm-dd`. */
+  eventDate: string;
+  balance: number;
+}
+
+export interface DashboardAdvancesSummaryDTO {
+  count: number;
+  totalBalance: number;
+  /** Soonest `eventDate` first, capped at 5 — "view all" links to the Advance Closure module for the rest. */
+  items: DashboardOpenAdvanceDTO[];
 }
 
 export interface DashboardTodayStatusDTO {
@@ -600,31 +619,32 @@ export interface DashboardDTO {
   outlet: OutletCode;
   today: string;
   todayStatus: DashboardTodayStatusDTO;
-  tips: DashboardTipsRowDTO[];
-  tipsWeekCurrent: number;
-  tipsWeekPrevious: number;
-  tipsWeekCurrentRange: DashboardDateRangeDTO;
-  tipsWeekPreviousRange: DashboardDateRangeDTO;
+  tipsMonth: DashboardTipsMonthDTO;
   bohAging: DashboardBohAgingRowDTO[];
   bohTotal: { count: number; amount: number };
+  openAdvances: DashboardAdvancesSummaryDTO;
+  /** This outlet's own submissions calendar for the current month. */
+  submissions: OutletSubmissionsDTO;
 }
 
-// ── Admin dashboard — cross-outlet submission timeliness + comment review ──
+// ── Submissions calendar — shared by the GM and admin dashboards ──────────
 
 export type SubmissionDayStatus = 'done' | 'missed' | 'today';
 
-export interface AdminSubmissionDayDTO {
+export interface SubmissionDayDTO {
   /** `yyyy-mm-dd`. */
   date: string;
   /** `null` for a future day — nothing to judge yet. */
   status: SubmissionDayStatus | null;
 }
 
-export interface AdminOutletSubmissionsDTO {
+export interface OutletSubmissionsDTO {
   outlet: OutletCode;
   outletName: string;
-  days: AdminSubmissionDayDTO[];
+  days: SubmissionDayDTO[];
 }
+
+// ── Admin dashboard — cross-outlet submission timeliness + comment review ──
 
 /** One justification entry surfaced for admin review — a GM's written explanation for a variance. */
 export interface AdminCommentDTO {
@@ -645,7 +665,7 @@ export interface AdminCommentDTO {
 export interface AdminDashboardDTO {
   /** `yyyy-mm`. */
   month: string;
-  submissions: AdminOutletSubmissionsDTO[];
+  submissions: OutletSubmissionsDTO[];
   recentComments: AdminCommentDTO[];
 }
 

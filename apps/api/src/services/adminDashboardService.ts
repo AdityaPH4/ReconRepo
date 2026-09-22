@@ -7,25 +7,20 @@
  */
 
 import { OUTLET_CODES, OUTLET_NAMES } from '@toit/recon-core';
-import type { AdminCommentDTO, AdminDashboardDTO, AdminOutletSubmissionsDTO, AdminSubmissionDayDTO, SubmissionDayStatus } from '@toit/contracts';
+import type { AdminCommentDTO, AdminDashboardDTO, OutletSubmissionsDTO } from '@toit/contracts';
 import { getSessionStore } from '../storage/index.js';
+import { buildOutletSubmissionDays } from './submissionCalendar.js';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function daysInMonth(month: string): number {
-  const [year, mon] = month.split('-').map(Number);
-  return new Date(Date.UTC(year!, mon!, 0)).getUTCDate();
 }
 
 export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
   const store = getSessionStore();
   const today = todayIso();
   const month = today.slice(0, 7);
-  const totalDays = daysInMonth(month);
 
-  const submissions: AdminOutletSubmissionsDTO[] = [];
+  const submissions: OutletSubmissionsDTO[] = [];
   const allComments: AdminCommentDTO[] = [];
 
   for (const outlet of OUTLET_CODES) {
@@ -36,21 +31,7 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
     const sessions = await store.list({ outlet, limit: 200 });
 
     // ── Submissions ──────────────────────────────────────────────────
-    const submittedDates = new Set(
-      sessions
-        .filter((s) => s.status === 'submitted' && s.businessDate?.startsWith(month))
-        .map((s) => s.businessDate!),
-    );
-    const days: AdminSubmissionDayDTO[] = [];
-    for (let d = 1; d <= totalDays; d++) {
-      const date = `${month}-${String(d).padStart(2, '0')}`;
-      let status: SubmissionDayStatus | null;
-      if (date > today) status = null;
-      else if (date === today) status = 'today';
-      else status = submittedDates.has(date) ? 'done' : 'missed';
-      days.push({ date, status });
-    }
-    submissions.push({ outlet, outletName: OUTLET_NAMES[outlet], days });
+    submissions.push(buildOutletSubmissionDays(sessions, outlet, OUTLET_NAMES[outlet], month, today));
 
     // ── Comments — bounded to the 60 most recent sessions per outlet, ──
     // "recent" not exhaustive.
