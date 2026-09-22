@@ -23,6 +23,7 @@ import {
   REMARKS_SHORTAGE_WITH_TDS,
   fmt,
   isEligibleSquareOffPartner,
+  squareOffComponent,
   squareOffGroupKey,
   squareOffNet,
   type ResolvableItem,
@@ -90,6 +91,32 @@ export function RemarkCell({ source, item, allItems }: Props) {
     }
     return true;
   });
+
+  /**
+   * Adding a member to an already-squared-off group, one row at a time — the
+   * engine has always supported an arbitrary-size star group (see
+   * `squareOffComponent`), this is purely the missing UI path to build one:
+   * today, once a row shows "Squared off," its own cell has no way to add a
+   * third row — only a *different*, still-unresolved row's own dropdown can
+   * (by offering this group's hub as a partner). Filtered against the
+   * group's current *net*, not this row's own diff — a same-signed addition
+   * would only widen the residual, never shrink it.
+   */
+  const currentGroupMembers = isSquared ? new Set(squareOffComponent(session.justification.squareOff, item.globalId)) : null;
+  const eligibleAdditionalPartners =
+    isSquared && netUnresolved
+      ? allItems.filter((x) => {
+          if (currentGroupMembers!.has(x.globalId)) return false;
+          if (Math.sign(x.diff) === 0 || Math.sign(x.diff) === Math.sign(net!)) return false;
+          if (resolvedTargetKeys.has(x.targetKey)) return false;
+          const xPartners = session.justification.squareOff[x.globalId] ?? [];
+          if (xPartners.length > 0) {
+            const xNet = squareOffNet(session.justification.squareOff, x.globalId, allItems);
+            if (xNet !== null && Math.abs(xNet) < AMOUNT_EPSILON) return false;
+          }
+          return true;
+        })
+      : [];
 
   /**
    * Shared save path for both a row's own remark and a square-off group's
@@ -186,6 +213,19 @@ export function RemarkCell({ source, item, allItems }: Props) {
     }
   }
 
+  /** Extends the current group by one more row — never an undo, unlike `handleSquareOffToggle`. */
+  async function handleAddPartner(partnerId: string) {
+    setBusy(true);
+    try {
+      const updated = await setSquareOff(session.meta.id, { a: item.globalId, b: partnerId }, true);
+      updateSession(updated);
+    } catch (err) {
+      window.alert(err instanceof ApiError ? err.message : 'Failed to add to square-off group.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const disabled = locked || busy;
 
   return (
@@ -199,6 +239,21 @@ export function RemarkCell({ source, item, allItems }: Props) {
               {fmt(net!)}
               {residualEntry ? ` — ${residualEntry.remark}` : ''}
             </span>
+          )}
+          {netUnresolved && eligibleAdditionalPartners.length > 0 && (
+            <select
+              className="field-input flex-1 min-w-0"
+              disabled={disabled}
+              value=""
+              onChange={(e) => e.target.value && handleAddPartner(e.target.value)}
+            >
+              <option value="">+ Square off another against this…</option>
+              {eligibleAdditionalPartners.map((p) => (
+                <option key={p.globalId} value={p.globalId}>
+                  {p.globalId} ({fmt(p.diff)})
+                </option>
+              ))}
+            </select>
           )}
           {netUnresolved && (
             <select
