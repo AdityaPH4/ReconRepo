@@ -266,16 +266,18 @@ function buildTaxesSummary(text: string): TaxesSummaryDTO | null {
   if (!taxes) return null;
 
   const entries = Object.entries(taxes).filter(([k]) => k.toLowerCase() !== 'total');
-  const sum = (prefix: string) =>
-    entries
-      .filter(([k]) => k.toLowerCase().startsWith(prefix))
-      .reduce((s, [, v]) => s + money(v), 0);
+  // CGST/SGST/VAT each ride on a free-form label, not a fixed one — real
+  // exports have category suffixes like "CGST - TOBACCO (20%)" or
+  // "VAT - LIQUOR (5%)", so every category sums every line whose label
+  // *starts with* its prefix rather than looking up one exact key.
+  const matches = (prefix: string) => entries.filter(([k]) => k.toLowerCase().startsWith(prefix));
+  const sum = (prefix: string) => matches(prefix).reduce((s, [, v]) => s + money(v), 0);
 
   return {
     netSales: sales?.['Net Sales'] !== undefined ? money(sales['Net Sales']!) : null,
     netCgst: sum('cgst'),
     netSgst: sum('sgst'),
-    vat: taxes['VAT'] !== undefined ? money(taxes['VAT']!) : null,
+    vat: matches('vat').length ? sum('vat') : null,
     total: taxes['Total'] !== undefined ? money(taxes['Total']!) : null,
   };
 }
