@@ -175,7 +175,7 @@ function MethodBreakdown({ frs, hasSummary }: { frs: SessionDTO['frs']; hasSumma
           <thead>
             <tr>
               <th>Payment method</th>
-              <th className="num">PR</th>
+              <th className="num">Payment Report</th>
               <th className="num">Drawer Summary</th>
               <th className="num">Source Report</th>
               <th className="num">Diff</th>
@@ -261,7 +261,7 @@ function PinelabsBreakdown({ breakdown }: { breakdown: PinelabsBreakdownDTO }) {
               <th>Acquirer</th>
               <th className="num">Count</th>
               <th className="num">Pinelabs</th>
-              <th className="num">PR total</th>
+              <th className="num">Payment Report total</th>
               <th className="num">Diff</th>
             </tr>
           </thead>
@@ -365,7 +365,7 @@ function ExplanationSection({
                     <th>RRN</th>
                     <th>Label</th>
                     <th className="num">Pinelabs</th>
-                    <th className="num">PR amount</th>
+                    <th className="num">Payment Report amount</th>
                     <th className="num">Difference</th>
                   </tr>
                 </thead>

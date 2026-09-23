@@ -592,7 +592,7 @@ function AmexTab({
           <th className="num">Txn Count</th>
           <th className="num">L1 Total</th>
           <th className="num">MPR Amount</th>
-          <th className="num">Diff (PR−MPR)</th>
+          <th className="num">Diff (Payment Report−MPR)</th>
           <th>SOC No.</th>
           <th>SOC Expected</th>
           <th>Status</th>
@@ -741,9 +741,9 @@ function SettledLikeTable({
           <th>Outlet</th>
           <th>Order No(s)</th>
           <th>RRN(s)</th>
-          <th>PR Date</th>
+          <th>Payment Report Date</th>
           <th>Date adj?</th>
-          <th className="num">PR Total</th>
+          <th className="num">Payment Report Total</th>
           <th>MPR Txn Date</th>
           <th className="num">MPR Amount</th>
           <th>Time diff</th>
@@ -836,10 +836,10 @@ function UpiTab({
                 <th>Outlet</th>
                 <th>Order No(s)</th>
                 <th>RRN(s)</th>
-                <th>PR Date</th>
-                <th className="num">PR Amount</th>
+                <th>Payment Report Date</th>
+                <th className="num">Payment Report Amount</th>
                 <th className="num">MPR Amount</th>
-                <th className="num">Diff (PR−MPR)</th>
+                <th className="num">Diff (Payment Report−MPR)</th>
                 <th />
               </tr>
             </thead>
@@ -867,7 +867,7 @@ function UpiTab({
       )}
 
       {pending.length > 0 && (
-        <PanelSection title={`⏳ Pending — ${pending.length} PR transaction${pending.length > 1 ? 's' : ''} not found in MPR`}>
+        <PanelSection title={`⏳ Pending — ${pending.length} Payment Report transaction${pending.length > 1 ? 's' : ''} not found in MPR`}>
           <table className="data-table">
             <thead>
               <tr>
@@ -875,7 +875,7 @@ function UpiTab({
                 <th>Order No</th>
                 <th>RRN</th>
                 <th>Business Date</th>
-                <th>PR Date (raw)</th>
+                <th>Payment Report Date (raw)</th>
                 <th>GM Note</th>
                 <th className="num">Amount</th>
                 <th />

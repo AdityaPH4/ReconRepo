@@ -4,10 +4,10 @@
  * Clickable KPI tiles.
  * Ported from `reconciliation (68).html` lines 1289–1425 (`renderSummaryTiles`,
  * `makeTile`).
- *
+ * 
  * As in the legacy tool, the tiles *are* the navigation — there is no tab bar
  * for the panels; clicking a tile reveals its panel below.
- *
+ * 
  * Colouring is legacy's own three-way scheme, not a plain ok/err binary:
  * **excess is always green, shortage is always red, and a truly balanced or
  * fully-explained tile is neutral** (`makeTile`'s `isExcess ? green :
@@ -134,28 +134,28 @@ function buildTiles(session: SessionDTO): Tile[] {
       id: 'cash',
       label: 'Cash',
       main: diffLabel(cashDiff, hasSummary),
-      note: `${result.cash.length} PR transactions`,
+      note: `${result.cash.length} Payment Report transactions`,
       stat: directionalStat(cashResolved, cashDiff),
     },
     {
       id: 'upi',
       label: 'HDFC / Kotak UPI',
       main: diffLabel(upiDiff, hasSummary),
-      note: `${result.upi.length} PR rows`,
+      note: `${result.upi.length} Payment Report rows`,
       stat: directionalStat(upiResolved, upiDiff),
     },
     {
       id: 'bank',
       label: 'Bank Transfer',
       main: diffLabel(bankDiff, hasSummary),
-      note: `${result.bank.length} PR rows`,
+      note: `${result.bank.length} Payment Report rows`,
       stat: directionalStat(bankResolved, bankDiff),
     },
     {
       id: 'hdfc_link',
       label: 'HDFC Link',
       main: diffLabel(hdfcLinkDiff, hasSummary),
-      note: `${result.hdfcLink.length} PR rows`,
+      note: `${result.hdfcLink.length} Payment Report rows`,
       stat: directionalStat(hdfcLinkResolved, hdfcLinkDiff),
     },
     {

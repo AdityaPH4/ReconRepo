@@ -205,7 +205,7 @@ function TransactionView({
           rows={result.swiggy}
           showPaymentType
           extraStats={[
-            { label: 'Swiggy — PR total', value: fmt(totals.swiggy.swiggy.prTotal) },
+            { label: 'Swiggy — Payment Report total', value: fmt(totals.swiggy.swiggy.prTotal) },
             {
               label: 'Swiggy — Summary total',
               value: totals.swiggy.swiggy.summaryTotal === null ? '—' : fmt(totals.swiggy.swiggy.summaryTotal),
@@ -214,7 +214,7 @@ function TransactionView({
               label: 'Swiggy difference',
               value: totals.swiggy.swiggy.diff === null ? '—' : fmt(totals.swiggy.swiggy.diff),
             },
-            { label: 'Zomato — PR total', value: fmt(totals.swiggy.zomato.prTotal) },
+            { label: 'Zomato — Payment Report total', value: fmt(totals.swiggy.zomato.prTotal) },
             {
               label: 'Zomato — Summary total',
               value: totals.swiggy.zomato.summaryTotal === null ? '—' : fmt(totals.swiggy.zomato.summaryTotal),

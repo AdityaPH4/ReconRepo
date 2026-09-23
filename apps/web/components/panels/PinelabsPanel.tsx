@@ -267,12 +267,12 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
                 <th className="w-[12%]">Category / ID</th>
                 <th className="w-[7%]">RRN</th>
                 <th className="w-[7%]">Order No(s)</th>
-                <th className="w-[13%]">Date / Time</th>
+                <th className="w-[11%]">Date / Time</th>
                 <th className="w-[6%]">Payment name</th>
                 <th className="w-[8%] num">Pinelabs</th>
-                <th className="w-[8%] num">PR</th>
+                <th className="w-[14%] num">Payment Report</th>
                 <th className="w-[10%] num">Difference</th>
-                <th className="w-[29%]">Remark</th>
+                <th className="w-[25%]">Remark</th>
               </tr>
             </thead>
             <tbody>
@@ -324,10 +324,10 @@ export function PinelabsPanel({ pinelabs }: { pinelabs: PL }) {
             <thead>
               <tr>
                 <th className="w-[16%]">RRN</th>
-                <th className="w-[22%]">Order No(s)</th>
-                <th className="w-[18%]">Payment name</th>
+                <th className="w-[19%]">Order No(s)</th>
+                <th className="w-[16%]">Payment name</th>
                 <th className="w-[13%] num">Pinelabs</th>
-                <th className="w-[13%] num">PR</th>
+                <th className="w-[18%] num">Payment Report</th>
                 <th className="w-[10%] num">Difference</th>
                 <th className="w-[8%]">Status</th>
               </tr>

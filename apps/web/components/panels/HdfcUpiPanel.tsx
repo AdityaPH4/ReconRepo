@@ -83,10 +83,10 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
 
   const buckets: Array<{ label: string; rows: BucketRow[] }> = [
     {
-      label: 'Only in PR',
+      label: 'Only in Payment Report',
       rows: upiHdfc.onlyPOS.map((x, i): BucketRow => ({
         key: `upos-${i}`,
-        tagLabel: 'Only in PR',
+        tagLabel: 'Only in Payment Report',
         tagClass: 'tag-short',
         rrn: x.rrn || '—',
         orderNo: (x.orders ?? [x.orderNo]).filter(Boolean).join(', '),
@@ -187,14 +187,14 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[12%]">Category / ID</th>
+                <th className="w-[13%]">Category / ID</th>
                 <th className="w-[7%]">RRN</th>
                 <th className="w-[7%]">Order(s)</th>
-                <th className="w-[13%]">Date / Time</th>
-                <th className="w-[7%] num">PR</th>
+                <th className="w-[11%]">Date / Time</th>
+                <th className="w-[13%] num">Payment Report</th>
                 <th className="w-[8%] num">Statement</th>
                 <th className="w-[10%] num">Diff</th>
-                <th className="w-[36%]">Action</th>
+                <th className="w-[31%]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -244,10 +244,10 @@ export function HdfcUpiPanel({ upiHdfc }: { upiHdfc: UpiHdfc }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[20%]">RRN</th>
+                <th className="w-[17%]">RRN</th>
                 <th className="w-[26%]">Order No(s)</th>
                 <th className="w-[18%] num">Statement amount</th>
-                <th className="w-[18%] num">PR amount</th>
+                <th className="w-[21%] num">Payment Report amount</th>
                 <th className="w-[18%]">Status</th>
               </tr>
             </thead>
