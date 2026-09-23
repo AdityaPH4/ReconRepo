@@ -1246,5 +1246,28 @@ describe('buildReportHtml()', () => {
     assert.doesNotMatch(html, /<h2>Taxes<\/h2>/);
     // The rest of the report still renders — old snapshots aren't otherwise degraded.
     assert.match(html, /Total open BOH \(2\)/);
+    // "Cleared this session" isn't gated on `openThisSession` — it existed
+    // long before this redesign, so it always renders regardless.
+    assert.match(html, /Cleared this session \(0\)/);
+  });
+
+  it('always shows every Bills on Hold / Advance Repository sub-section, with an empty-state row rather than omitting it, when there is nothing to report', () => {
+    const full = fullSnapshot();
+    const empty: Snapshot = {
+      ...full,
+      billsOnHold: { open: [], openThisSession: [], cleared: [] },
+      advances: { repository: [], applications: [] },
+    };
+    const html = buildReportHtml(empty);
+    assert.match(html, /BOH from current session \(0\)/);
+    assert.match(html, /No bills opened this session\./);
+    assert.match(html, /Cleared this session \(0\)/);
+    assert.match(html, /No bills cleared this session\./);
+    assert.match(html, /Total open BOH \(0\)/);
+    assert.match(html, /No bills currently on hold\./);
+    assert.match(html, /Open advances \(0/);
+    assert.match(html, /No open advances for this outlet\./);
+    assert.match(html, /Applied this session \(0\)/);
+    assert.match(html, /No advances applied this session\./);
   });
 });

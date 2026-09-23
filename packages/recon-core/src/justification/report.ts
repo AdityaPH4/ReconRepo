@@ -26,6 +26,11 @@ function esc(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 }
 
+/** A single full-width placeholder row — an empty sub-table still visibly renders as "checked, nothing here" rather than the whole section silently vanishing. */
+function emptyRow(cols: number, message: string): string {
+  return `<tr><td colspan=${cols} style="text-align:center;color:#9ca3af;padding:.6rem .75rem">${esc(message)}</td></tr>`;
+}
+
 /** Groups explained items by remark, preserving first-seen order — ported from `FinalReconSummary.tsx`'s `groupByRemark()` so the report and the live FRS tab agree on how variances are bucketed. */
 function groupByRemark(
   items: readonly ExplainedItem[],
@@ -107,8 +112,12 @@ export function buildReportHtml(snapshot: Snapshot): string {
   const excess = frs.explanations.filter((x) => x.diff > 0.5);
   const short = frs.explanations.filter((x) => x.diff < -0.5);
 
-  const bohOpenThisSession = snapshot.billsOnHold.openThisSession ?? [];
-  const bohOpenThisSessionRows = bohOpenThisSession.map(bohRow).join('');
+  // Kept as its raw optional shape (not defaulted to `[]`) so the template
+  // below can tell "old snapshot, never tracked" (undefined — omit the
+  // sub-section) apart from "tracked, genuinely none opened" ([] — show it
+  // with an empty-state row).
+  const bohOpenThisSession = snapshot.billsOnHold.openThisSession;
+  const bohOpenThisSessionRows = (bohOpenThisSession ?? []).map(bohRow).join('');
   const bohClearedRows = snapshot.billsOnHold.cleared
     .map(
       (c) =>
@@ -181,22 +190,18 @@ ${explanationGroupsHtml(excess, '+', '#16a34a')}
 <div class=var-total><span>Total shortage (${short.length} item${short.length === 1 ? '' : 's'})</span><span style="color:#dc2626">-${fmt(frs.totalShortage)}</span></div>
 ${explanationGroupsHtml(short, '-', '#dc2626')}
 
+<h2>Bills on Hold</h2>
 ${
-  bohOpenThisSession.length || snapshot.billsOnHold.cleared.length || snapshot.billsOnHold.open.length
-    ? `<h2>Bills on Hold</h2>
-${bohOpenThisSession.length ? `<h3>BOH from current session (${bohOpenThisSession.length})</h3><table><thead><tr><th>Order No</th><th>Customer</th><th>BOH Date</th><th class=ra>Amount</th></tr></thead><tbody>${bohOpenThisSessionRows}</tbody></table>` : ''}
-${snapshot.billsOnHold.cleared.length ? `<h3>Cleared this session (${snapshot.billsOnHold.cleared.length})</h3><table><thead><tr><th>Order No</th><th>Source</th><th>Cleared Date</th><th class=ra>Amount</th></tr></thead><tbody>${bohClearedRows}</tbody></table>` : ''}
-${snapshot.billsOnHold.open.length ? `<h3>Total open BOH (${snapshot.billsOnHold.open.length})</h3><table><thead><tr><th>Order No</th><th>Customer</th><th>BOH Date</th><th class=ra>Age (days)</th><th class=ra>Amount</th></tr></thead><tbody>${bohTotalOpenRows}</tbody></table>` : ''}`
+  bohOpenThisSession !== undefined
+    ? `<h3>BOH from current session (${bohOpenThisSession.length})</h3><table><thead><tr><th>Order No</th><th>Customer</th><th>BOH Date</th><th class=ra>Amount</th></tr></thead><tbody>${bohOpenThisSessionRows || emptyRow(4, 'No bills opened this session.')}</tbody></table>`
     : ''
 }
+<h3>Cleared this session (${snapshot.billsOnHold.cleared.length})</h3><table><thead><tr><th>Order No</th><th>Source</th><th>Cleared Date</th><th class=ra>Amount</th></tr></thead><tbody>${bohClearedRows || emptyRow(4, 'No bills cleared this session.')}</tbody></table>
+<h3>Total open BOH (${snapshot.billsOnHold.open.length})</h3><table><thead><tr><th>Order No</th><th>Customer</th><th>BOH Date</th><th class=ra>Age (days)</th><th class=ra>Amount</th></tr></thead><tbody>${bohTotalOpenRows || emptyRow(5, 'No bills currently on hold.')}</tbody></table>
 
-${
-  openAdvances.length || snapshot.advances.applications.length
-    ? `<h2>Advance Repository</h2>
-${openAdvances.length ? `<h3>Open advances (${openAdvances.length} — total balance ${fmt(openAdvancesTotal)})</h3><table><thead><tr><th>Customer</th><th>Event Date</th><th class=ra>Original</th><th class=ra>Applied</th><th class=ra>Balance</th></tr></thead><tbody>${advOpenRows}</tbody></table>` : ''}
-${snapshot.advances.applications.length ? `<h3>Applied this session (${snapshot.advances.applications.length})</h3><table><thead><tr><th>Customer</th><th>Event Date</th><th>Applied On</th><th class=ra>Amount</th></tr></thead><tbody>${advAppliedRows}</tbody></table>` : ''}`
-    : ''
-}
+<h2>Advance Repository</h2>
+<h3>Open advances (${openAdvances.length} — total balance ${fmt(openAdvancesTotal)})</h3><table><thead><tr><th>Customer</th><th>Event Date</th><th class=ra>Original</th><th class=ra>Applied</th><th class=ra>Balance</th></tr></thead><tbody>${advOpenRows || emptyRow(5, 'No open advances for this outlet.')}</tbody></table>
+<h3>Applied this session (${snapshot.advances.applications.length})</h3><table><thead><tr><th>Customer</th><th>Event Date</th><th>Applied On</th><th class=ra>Amount</th></tr></thead><tbody>${advAppliedRows || emptyRow(4, 'No advances applied this session.')}</tbody></table>
 
 ${
   taxes
