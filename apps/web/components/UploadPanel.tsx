@@ -11,8 +11,9 @@
  */
 
 import type { UploadRole } from '@toit/contracts';
-import type { OutletCode } from '@toit/recon-core/display';
+import { OUTLET_CODES, OUTLET_NAMES, type OutletCode } from '@toit/recon-core/display';
 import { useCallback, useRef, useState } from 'react';
+import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ROLE_ICONS, ROLE_LABELS, detectRole } from '@/lib/detectRole';
 
 export type SelectedFiles = Partial<Record<UploadRole, File>>;
@@ -27,6 +28,9 @@ interface Props {
   /** Set only when the API blocked this outlet/date pending admin approval. */
   approvalBlock?: { outlet: OutletCode; businessDate: string; requested: boolean } | null;
   onRequestApproval?: () => void;
+  /** Admin-only manual outlet pick — `undefined` means "auto-detect from the ZIP's terminal store name", the same as before this existed. Ignored (never rendered) for a GM, who has exactly one outlet already. */
+  outlet?: OutletCode | undefined;
+  onOutletChange?: (outlet: OutletCode | undefined) => void;
 }
 
 /** Kept off-screen rather than `display:none` so labels and keyboard focus work. */
@@ -41,7 +45,10 @@ export function UploadPanel({
   error,
   approvalBlock,
   onRequestApproval,
+  outlet,
+  onOutletChange,
 }: Props) {
+  const user = useCurrentUser();
   const mainInput = useRef<HTMLInputElement>(null);
   const hdfcInput = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -90,6 +97,27 @@ export function UploadPanel({
   return (
     <div className="card mb-6">
       <div className="card-body">
+        {user.role === 'admin' && onOutletChange && (
+          <div className="mb-4">
+            <label className="field-label" htmlFor="upload-outlet">
+              Outlet
+            </label>
+            <select
+              id="upload-outlet"
+              className="field-input"
+              value={outlet ?? ''}
+              onChange={(e) => onOutletChange((e.target.value || undefined) as OutletCode | undefined)}
+            >
+              <option value="">Auto-detect from file</option>
+              {OUTLET_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {OUTLET_NAMES[code]}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <p className="eyebrow mb-2">Required</p>
 
         <input

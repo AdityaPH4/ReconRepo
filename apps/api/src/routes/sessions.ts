@@ -9,7 +9,14 @@
 
 import { randomUUID } from 'node:crypto';
 import type { SessionDTO, UploadRole, UploadedFileDTO } from '@toit/contracts';
-import { autoStageBohRows, buildReportHtml, buildSnapshot, emptyJustificationState } from '@toit/recon-core';
+import {
+  autoStageBohRows,
+  buildReportHtml,
+  buildSnapshot,
+  emptyJustificationState,
+  OUTLET_CODES,
+} from '@toit/recon-core';
+import type { OutletCode } from '@toit/recon-core';
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
@@ -77,11 +84,24 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       throw new BadRequestError(`Missing required file(s): ${missing.join(', ')}`);
     }
 
+    // Admin-only manual outlet pick — a GM has exactly one outlet already
+    // (their own), so this field is silently ignored for them rather than
+    // letting a raw API call impersonate a different outlet's upload.
+    const requestedOutlet = typeof req.body.outlet === 'string' ? req.body.outlet : undefined;
+    let outletOverride: OutletCode | undefined;
+    if (requestedOutlet && req.user.role === 'admin') {
+      if (!(OUTLET_CODES as string[]).includes(requestedOutlet)) {
+        throw new BadRequestError(`Unknown outlet: ${requestedOutlet}`);
+      }
+      outletOverride = requestedOutlet as OutletCode;
+    }
+
     const outcome = await runReconciliation({
       pr: { buffer: pr!.buffer, originalName: pr!.originalname },
       zip: { buffer: zip!.buffer, originalName: zip!.originalname },
       ...(sum ? { sum: { buffer: sum.buffer, originalName: sum.originalname } } : {}),
       ...(hdfc ? { hdfc: { buffer: hdfc.buffer, originalName: hdfc.originalname } } : {}),
+      ...(outletOverride ? { outletOverride } : {}),
     });
 
     // A GM must reconcile one calendar day at a time, in order, and can't

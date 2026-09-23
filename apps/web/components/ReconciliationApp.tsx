@@ -31,6 +31,10 @@ export function ReconciliationApp() {
   const [error, setError] = useState<string | null>(null);
   const [approvalBlock, setApprovalBlock] = useState<ApprovalBlock | null>(null);
   const [dashboard, setDashboard] = useState<DashboardDTO | null>(null);
+  // Admin-only manual outlet pick (UploadPanel only renders the selector for
+  // an admin) — left as-is across a Clear, since it's a sticky testing
+  // setting, not part of the file selection it sits next to.
+  const [outlet, setOutlet] = useState<OutletCode | undefined>(undefined);
 
   async function run() {
     if (!files.pr || !files.zip) return;
@@ -56,6 +60,7 @@ export function ReconciliationApp() {
         zip: files.zip,
         sum: files.sum,
         hdfc: files.hdfc,
+        outlet,
       });
       setSession(dto);
     } catch (err) {
@@ -119,6 +124,8 @@ export function ReconciliationApp() {
             error={error}
             approvalBlock={approvalBlock}
             onRequestApproval={askForApproval}
+            outlet={outlet}
+            onOutletChange={setOutlet}
           />
           <PastSessionsList />
         </main>

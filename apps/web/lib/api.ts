@@ -77,6 +77,8 @@ export interface RunFiles {
   zip: File;
   sum?: File | undefined;
   hdfc?: File | undefined;
+  /** Admin-only manual outlet pick — wins over whatever the ZIP's terminal store name would otherwise detect. Ignored by the API for a GM (who has exactly one outlet already). */
+  outlet?: OutletCode | undefined;
 }
 
 /** Uploads the source files and runs a reconciliation. */
@@ -86,6 +88,7 @@ export async function createSession(files: RunFiles): Promise<SessionDTO> {
   fd.append('zip', files.zip);
   if (files.sum) fd.append('sum', files.sum);
   if (files.hdfc) fd.append('hdfc', files.hdfc);
+  if (files.outlet) fd.append('outlet', files.outlet);
 
   const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST', body: fd, headers: authHeaders() });
   return unwrap<SessionDTO>(res);

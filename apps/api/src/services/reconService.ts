@@ -66,6 +66,8 @@ export interface RunInputFiles {
   zip: { buffer: Buffer; originalName: string };
   sum?: { buffer: Buffer; originalName: string };
   hdfc?: { buffer: Buffer; originalName: string };
+  /** Admin-only manual outlet pick (see `routes/sessions.ts`) — wins over whatever the ZIP's terminal store name would otherwise detect. */
+  outletOverride?: OutletCode;
 }
 
 export interface RunOutcome {
@@ -147,8 +149,14 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
 
   // 4. Outlet, before reconcile() — it filters the HDFC statement by outlet.
   const detectedOutlet = detectOutletFromZip(inside);
-  const outlet = detectedOutlet ?? FALLBACK_OUTLET;
-  if (!detectedOutlet) {
+  const outlet = files.outletOverride ?? detectedOutlet ?? FALLBACK_OUTLET;
+  if (files.outletOverride) {
+    if (detectedOutlet && detectedOutlet !== files.outletOverride) {
+      warnings.push(
+        `Outlet manually set to ${outlet} — the terminal store name in this ZIP suggested ${detectedOutlet} instead. Verify this is correct before submitting.`,
+      );
+    }
+  } else if (!detectedOutlet) {
     const stores = [...new Set(inside.map((r) => r.store).filter(Boolean))];
     warnings.push(
       `Outlet could not be determined from the terminal store name${
