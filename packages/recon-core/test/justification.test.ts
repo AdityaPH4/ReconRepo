@@ -1270,4 +1270,21 @@ describe('buildReportHtml()', () => {
     assert.match(html, /Applied this session \(0\)/);
     assert.match(html, /No advances applied this session\./);
   });
+
+  it('Taxes is one column per category (Net Sales/Net CGST/Net SGST/VAT/Total), not a label/value row per category', () => {
+    const html = buildReportHtml(fullSnapshot());
+    const taxesSection = html.slice(html.indexOf('<h2>Taxes</h2>'));
+    assert.match(taxesSection, /<th class=ra>Net Sales<\/th><th class=ra>Net CGST<\/th><th class=ra>Net SGST<\/th><th class=ra>VAT<\/th><th class=ra>Total<\/th>/);
+    // fullSnapshot()'s fixture: netSales 250000, netCgst 4500, netSgst 4500, vat 100, total 9100.
+    assert.match(taxesSection, /₹2,50,000\.00.*₹4,500\.00.*₹4,500\.00.*₹100\.00.*₹9,100\.00/s);
+  });
+
+  it("Taxes' VAT column defaults to ₹0.00 when the source file had no VAT line, rather than being blank or omitted", () => {
+    const full = fullSnapshot();
+    const noVat: Snapshot = { ...full, taxes: { ...full.taxes!, vat: null } };
+    const html = buildReportHtml(noVat);
+    const taxesSection = html.slice(html.indexOf('<h2>Taxes</h2>'));
+    assert.match(taxesSection, /<th class=ra>VAT<\/th>/);
+    assert.match(taxesSection, /₹0\.00/);
+  });
 });

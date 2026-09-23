@@ -206,12 +206,8 @@ ${
 ${
   taxes
     ? `<h2>Taxes</h2>
-<table><thead><tr><th>Category</th><th class=ra>Amount</th></tr></thead><tbody>
-<tr><td>Net Sales</td><td class=ra>${fmt(taxes.netSales)}</td></tr>
-<tr><td>Net CGST</td><td class=ra>${fmt(taxes.netCgst)}</td></tr>
-<tr><td>Net SGST</td><td class=ra>${fmt(taxes.netSgst)}</td></tr>
-${taxes.vat !== null ? `<tr><td>VAT</td><td class=ra>${fmt(taxes.vat)}</td></tr>` : ''}
-</tbody>${taxes.total !== null ? `<tfoot><tr><td>Total</td><td class=ra>${fmt(taxes.total)}</td></tr></tfoot>` : ''}</table>`
+<table><thead><tr><th class=ra>Net Sales</th><th class=ra>Net CGST</th><th class=ra>Net SGST</th><th class=ra>VAT</th><th class=ra>Total</th></tr></thead>
+<tbody><tr><td class=ra>${fmt(taxes.netSales)}</td><td class=ra>${fmt(taxes.netCgst)}</td><td class=ra>${fmt(taxes.netSgst)}</td><td class=ra>${fmt(taxes.vat ?? 0)}</td><td class=ra style="font-weight:700">${fmt(taxes.total)}</td></tr></tbody></table>`
     : ''
 }
 
