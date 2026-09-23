@@ -142,6 +142,19 @@ export function civilToISO(bd: CivilDate): string {
   return `${bd.y}-${String(bd.m + 1).padStart(2, '0')}-${String(bd.d).padStart(2, '0')}`;
 }
 
+/**
+ * "Today" as `yyyy-mm-dd`, read in IST — not `new Date().toISOString().slice(0, 10)`,
+ * which is always UTC and so is a full calendar day *behind* the true IST date
+ * for 5h30m every night (UTC 18:30–23:59 = IST 00:00–05:29, already tomorrow
+ * in IST but still "today" by a naive UTC slice). The same "why this file is
+ * not a straight copy" concern as everywhere else here, just for "what day is
+ * it" instead of a parsed timestamp — every caller that means "today's
+ * business date" should use this, not a raw UTC slice.
+ */
+export function todayIsoIST(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: IST_TIMEZONE }).format(now);
+}
+
 /** A `CivilDate` as `dd MMM yyyy`, for the header line. */
 export function fmtCivil(bd: CivilDate): string {
   return istDate(bd.y, bd.m, bd.d, 12).toLocaleDateString('en-IN', {

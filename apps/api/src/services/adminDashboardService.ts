@@ -7,7 +7,7 @@
  * dashboard's own Tips panel ("just show the current window").
  */
 
-import { OUTLET_CODES, OUTLET_NAMES, REMARKS_ALL, advanceBalance, isAdvanceExhausted } from '@toit/recon-core';
+import { OUTLET_CODES, OUTLET_NAMES, REMARKS_ALL, advanceBalance, isAdvanceExhausted, todayIsoIST } from '@toit/recon-core';
 import type { Advance, AdvanceApplication, JustificationEntry } from '@toit/recon-core';
 import type {
   AdminAdvancesSummaryDTO,
@@ -24,10 +24,6 @@ import { config } from '../config.js';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 import { buildBohAging, worstBohBucket } from './bohAging.js';
 import { buildOutletSubmissionDays } from './submissionCalendar.js';
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /** Every distinct `Remark` value — `REMARKS_ALL` itself repeats 'Other' (shared by the excess and shortage vocabularies), so this dedupes; 'Paid In'/'Paid Out'/'TDS Deducted' aren't in that array at all (see `Remark`'s own type definition). */
 const ALL_REMARKS: readonly string[] = [...new Set([...REMARKS_ALL, 'Paid In', 'Paid Out', 'TDS Deducted'])];
@@ -154,7 +150,7 @@ function openAdvancesByOutlet(advances: readonly Advance[], applications: readon
 
 export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
   const store = getSessionStore();
-  const today = todayIso();
+  const today = todayIsoIST();
   const month = today.slice(0, 7);
   const gmEmails = gmEmailsByOutlet();
 

@@ -33,6 +33,7 @@ import {
   parseTransactionsZip,
   reconcile,
   routePayName,
+  todayIsoIST,
   FRS_METHODS,
 } from '../dist/index.js';
 
@@ -435,6 +436,26 @@ describe('parseSaleSummaryTaxesSection()', () => {
 
   it('returns null when no TAXES section exists', () => {
     assert.equal(parseSaleSummaryTaxesSection(SALE_SUMMARY_CSV), null);
+  });
+});
+
+describe('todayIsoIST()', () => {
+  it('reads the IST calendar date, not the UTC one — differs for 5h30m every night', () => {
+    // 2026-09-23T19:00:00Z is 2026-09-24 00:30 IST — already tomorrow in IST,
+    // but a raw `new Date().toISOString().slice(0, 10)` would still say the 23rd.
+    const justAfterMidnightIST = new Date('2026-09-23T19:00:00.000Z');
+    assert.equal(todayIsoIST(justAfterMidnightIST), '2026-09-24');
+    assert.equal(justAfterMidnightIST.toISOString().slice(0, 10), '2026-09-23');
+  });
+
+  it('agrees with a UTC slice comfortably inside the IST day (no boundary ambiguity)', () => {
+    const midDayIST = new Date('2026-01-01T05:00:00.000Z'); // 2026-01-01 10:30 IST
+    assert.equal(todayIsoIST(midDayIST), '2026-01-01');
+  });
+
+  it('rolls over the year correctly', () => {
+    const newYearEveLateIST = new Date('2027-12-31T20:00:00.000Z'); // 2028-01-01 01:30 IST
+    assert.equal(todayIsoIST(newYearEveLateIST), '2028-01-01');
   });
 });
 

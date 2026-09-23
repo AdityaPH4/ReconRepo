@@ -98,6 +98,7 @@ export {
   parseHDFCTime12h,
   parsePRDate,
   parseZipDT,
+  todayIsoIST,
 } from './util/dates.js';
 
 export { cell, headerIndex, parseCSV } from './util/csv.js';

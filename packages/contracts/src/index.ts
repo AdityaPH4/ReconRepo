@@ -632,6 +632,8 @@ export interface DashboardTodayStatusDTO {
 export interface DashboardDTO {
   outlet: OutletCode;
   today: string;
+  /** The business date this outlet needs reconciled next (see `assertNoDateGap`) — `null` only when nothing has ever been submitted yet, so any date is accepted. */
+  nextReconDate: string | null;
   todayStatus: DashboardTodayStatusDTO;
   tipsMonth: DashboardTipsMonthDTO;
   bohAging: DashboardBohAgingRowDTO[];

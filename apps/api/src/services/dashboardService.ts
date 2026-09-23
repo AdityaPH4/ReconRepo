@@ -1,7 +1,9 @@
 /**
- * The GM's dashboard: today's session status, a Tips-this-month total, a
- * Bills-on-Hold aging card, an Open-advances summary, and this outlet's own
- * submissions calendar.
+ * The GM's dashboard: today's session status, the next business date due
+ * (`nextExpectedReconDate` — see `reconSequenceGate.ts`, the same
+ * computation the upload gate itself enforces against), a Tips-this-month
+ * total, a Bills-on-Hold aging card, an Open-advances summary, and this
+ * outlet's own submissions calendar.
  *
  * Tips: summed from every justification entry with `remark === 'Tips'`,
  * regardless of source — `REMARKS_EXCESS` in
@@ -30,14 +32,11 @@
 
 import type { DashboardDTO, DashboardOpenAdvanceDTO, DashboardTipsPeriodDTO } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core';
-import { advanceBalance, isAdvanceExhausted, OUTLET_NAMES } from '@toit/recon-core';
+import { advanceBalance, isAdvanceExhausted, OUTLET_NAMES, todayIsoIST } from '@toit/recon-core';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 import { buildBohAging } from './bohAging.js';
+import { nextExpectedReconDate } from './reconSequenceGate.js';
 import { buildOutletSubmissionDays } from './submissionCalendar.js';
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /** The calendar month immediately before `month` (`yyyy-mm`) — wraps Jan back to December of the prior year via `Date`'s own rollover. */
 function prevMonth(month: string): string {
@@ -61,7 +60,7 @@ function halfMonthRanges(month: string): [{ from: string; to: string }, { from: 
 }
 
 export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> {
-  const today = todayIso();
+  const today = todayIsoIST();
   const month = today.slice(0, 7);
   const sessionStore = getSessionStore();
 
@@ -71,6 +70,9 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
   const todayStatus = todaySession
     ? { sessionId: todaySession.id, status: todaySession.status, grandDiff: todaySession.grandDiff }
     : { sessionId: null, status: null, grandDiff: null };
+
+  // ── Next date due ─────────────────────────────────────────────────────
+  const nextReconDate = await nextExpectedReconDate(outlet);
 
   // ── Tips: 4 half-month periods ───────────────────────────────────────
   const periodRanges = [...halfMonthRanges(prevMonth(month)), ...halfMonthRanges(month)];
@@ -134,6 +136,7 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
   return {
     outlet,
     today,
+    nextReconDate,
     todayStatus,
     tipsMonth,
     bohAging,

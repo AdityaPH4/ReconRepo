@@ -27,11 +27,19 @@ function monthLabel(month: string): string {
   });
 }
 
+/** Always exactly 3 letters — `Intl`'s en-IN locale renders September as the 4-letter "Sept" (every other month is 3 letters), so `toLocaleDateString({ month: 'short' })` is deliberately avoided below. */
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "24 Sep 2026" — a large, unambiguous date for the "next recon due" banner, distinct from the compact `yyyy-mm-dd` used elsewhere. */
+function bigDateLabel(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return `${d.getUTCDate()} ${MONTH_ABBR[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 function halfMonthLabel(range: DashboardTipsPeriodDTO['range']): string {
   const from = new Date(`${range.from}T00:00:00Z`);
   const to = new Date(`${range.to}T00:00:00Z`);
-  const monthShort = to.toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' });
-  return `${from.getUTCDate()}–${to.getUTCDate()} ${monthShort}`;
+  return `${from.getUTCDate()}–${to.getUTCDate()} ${MONTH_ABBR[to.getUTCMonth()]}`;
 }
 
 const BOH_BUCKET_LABEL: Record<BohAgingBucket, string> = {
@@ -103,18 +111,40 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
     return <p className="text-body text-ink-3 mb-6">Loading dashboard…</p>;
   }
 
-  const { todayStatus, tipsMonth, openAdvances } = dashboard;
+  const { todayStatus, tipsMonth, openAdvances, nextReconDate } = dashboard;
+  // Only actionable dates — a `nextReconDate` in the future (today's own
+  // recon already submitted) has nothing to upload yet, so the banner stays
+  // quiet rather than pointing at a day that doesn't exist as a file yet.
+  const isOverdue = Boolean(nextReconDate && nextReconDate < dashboard.today);
+  const showNextDateBanner = Boolean(nextReconDate && nextReconDate <= dashboard.today);
 
   return (
     <div className="mb-6">
-      <div className="alert alert-info mb-4">
-        <span>ℹ</span>
-        <span>
-          {todayStatus.sessionId
-            ? `${dashboard.outlet} — today (${dashboard.today}): ${STATUS_LABEL[todayStatus.status ?? ''] ?? todayStatus.status} — grand diff ${fmt(todayStatus.grandDiff ?? 0)}`
-            : `${dashboard.outlet} — no reconciliation run for ${dashboard.today} yet.`}
-        </span>
-      </div>
+      {showNextDateBanner && (
+        <div className={`alert ${isOverdue ? 'alert-err' : 'alert-info'} mb-4`}>
+          <span>{isOverdue ? '⚠' : '📅'}</span>
+          <span>
+            {isOverdue ? 'Reconciliation is behind — next up: ' : 'Next reconciliation due: '}
+            <span className="text-figure-lg font-bold">{bigDateLabel(nextReconDate!)}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Suppressed while overdue with nothing run today — that combination
+          only ever shows the generic "no reconciliation run for {today} yet"
+          message below, which names a *different* date than the banner
+          above and reads as a second, conflicting instruction rather than
+          the same situation restated. */}
+      {!(isOverdue && !todayStatus.sessionId) && (
+        <div className="alert alert-info mb-4">
+          <span>ℹ</span>
+          <span>
+            {todayStatus.sessionId
+              ? `${dashboard.outlet} — today (${dashboard.today}): ${STATUS_LABEL[todayStatus.status ?? ''] ?? todayStatus.status} — grand diff ${fmt(todayStatus.grandDiff ?? 0)}`
+              : `${dashboard.outlet} — no reconciliation run for ${dashboard.today} yet.`}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="panel">

@@ -11,6 +11,7 @@
  */
 
 import type { UserRole } from '@toit/contracts';
+import { todayIsoIST } from '@toit/recon-core';
 
 export const RECENT_REPORT_WINDOW_DAYS = 7;
 
@@ -20,10 +21,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Falls back to the session's creation day when the Payment Report had no
  * parseable business date — mirrors `PastSessionsList.tsx`'s own
  * `businessDateLabel()` fallback, so "what's shown" and "what's allowed"
- * never disagree on which date a session counts as.
+ * never disagree on which date a session counts as. `createdAt` is read in
+ * IST for the same reason `today` below is — a raw UTC slice would put a
+ * session created just after midnight IST on the wrong (previous) day.
  */
 function effectiveDate(session: { businessDate: string | null; createdAt: string }): string {
-  return session.businessDate ?? session.createdAt.slice(0, 10);
+  return session.businessDate ?? todayIsoIST(new Date(session.createdAt));
 }
 
 export function canAccessReport(
@@ -31,7 +34,7 @@ export function canAccessReport(
   role: UserRole,
 ): boolean {
   if (role === 'admin') return true;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIsoIST();
   const ageDays = Math.round(
     (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${effectiveDate(session)}T00:00:00Z`)) / DAY_MS,
   );
