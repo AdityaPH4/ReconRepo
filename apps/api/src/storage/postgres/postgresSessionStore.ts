@@ -39,7 +39,7 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
       return rows[0]?.data ?? null;
     },
 
-    async list({ outlet, status, limit = 50 }: SessionQuery) {
+    async list({ outlet, status, limit = 50, businessDate }: SessionQuery) {
       const conditions: string[] = [];
       const params: unknown[] = [];
       if (outlet) {
@@ -53,6 +53,14 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
         // No explicit filter: exclude discarded (superseded) sessions by
         // default — see the memory store's own version of this comment.
         conditions.push(`status != 'discarded'`);
+      }
+      if (businessDate) {
+        // The admin by-date lookup. `businessDate` has no column/index of its
+        // own — this reaches straight into the JSONB blob, which is fine at
+        // this table's size; worth a dedicated column only if it becomes a
+        // hot path.
+        params.push(businessDate);
+        conditions.push(`data->'meta'->>'businessDate' = $${params.length}`);
       }
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
       params.push(limit);

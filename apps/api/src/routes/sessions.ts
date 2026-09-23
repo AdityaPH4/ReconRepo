@@ -23,6 +23,7 @@ import {
   supersedeSessions,
   windowLabel,
 } from '../services/reconService.js';
+import { canAccessReport, RECENT_REPORT_WINDOW_DAYS } from '../services/reportAccess.js';
 import {
   buildStorageKey,
   getAdvanceStore,
@@ -186,8 +187,14 @@ sessionsRouter.get('/', async (req, res, next) => {
   try {
     const rawLimit = req.query.limit ? Number(req.query.limit) : undefined;
     const limit = rawLimit && Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 200;
-    const items = await getSessionStore().list({ outlet: outletScope(req), limit });
-    res.json(items);
+    const businessDate = typeof req.query.businessDate === 'string' ? req.query.businessDate : undefined;
+    const items = await getSessionStore().list({ outlet: outletScope(req), limit, businessDate });
+    // A GM's "Past sessions" list is capped to the same window the report
+    // route itself enforces — an older session (or an out-of-window
+    // `businessDate` lookup) simply doesn't show up, rather than listing a
+    // row that then 403s when clicked. Admins are unrestricted either way.
+    const visible = items.filter((s) => canAccessReport(s, req.user.role));
+    res.json(visible);
   } catch (err) {
     next(err);
   }
@@ -412,6 +419,15 @@ sessionsRouter.get('/:id/report', async (req, res, next) => {
     }
     if (!session.snapshot) {
       res.status(409).json({ error: 'Session has not been submitted yet.' });
+      return;
+    }
+    // Enforced here too, not just in the list — a bookmarked or shared link
+    // to an old report must 403 the same way a GM would never have seen it
+    // listed in the first place.
+    if (!canAccessReport(session.meta, req.user.role)) {
+      res.status(403).json({
+        error: `Reports older than ${RECENT_REPORT_WINDOW_DAYS} days are available to admins only. Ask an admin to look it up by date.`,
+      });
       return;
     }
     const html = buildReportHtml(session.snapshot as never);

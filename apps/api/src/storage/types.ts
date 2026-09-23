@@ -59,6 +59,8 @@ export interface SessionQuery {
   outlet?: OutletCode | null;
   status?: SessionStatus;
   limit?: number;
+  /** Exact match on the persisted business date (`yyyy-mm-dd`) — the admin by-date lookup, for reaching further back than `limit` would otherwise show. */
+  businessDate?: string;
 }
 
 export interface SessionStore {

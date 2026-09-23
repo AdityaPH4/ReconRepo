@@ -7,11 +7,18 @@
  * existed with zero callers anywhere in the frontend; `outletScope()` on the
  * API side already scopes this to the caller's own outlet for a GM, or every
  * outlet for an admin — so this one component serves both roles as-is.
+ *
+ * A GM only gets the last 7 days here — the API itself caps the list (and
+ * 403s the report route directly), this just reflects that back so the
+ * "why is my old session gone" question answers itself. An admin instead
+ * gets a by-date lookup to reach further back, since the default list is
+ * unrestricted for them but can still run past whatever's on screen.
  */
 
 import { useEffect, useState } from 'react';
 import type { SessionListItemDTO } from '@toit/contracts';
 import { fmt } from '@toit/recon-core/display';
+import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { diffClass } from '@/components/ui/table';
 import { listSessions, reportUrl } from '@/lib/api';
 
@@ -32,7 +39,11 @@ function businessDateLabel(s: SessionListItemDTO): string {
 }
 
 export function PastSessionsList() {
+  const user = useCurrentUser();
   const [sessions, setSessions] = useState<SessionListItemDTO[] | null>(null);
+  const [dateQuery, setDateQuery] = useState('');
+  const [filterDate, setFilterDate] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     // No dependency array items needed beyond mount — this component is
@@ -45,18 +56,72 @@ export function PastSessionsList() {
       .catch(() => setSessions([]));
   }, []);
 
+  function handleSearch(): void {
+    if (!dateQuery) return;
+    setSearching(true);
+    listSessions({ businessDate: dateQuery })
+      .then((rows) => {
+        setSessions(rows);
+        setFilterDate(dateQuery);
+      })
+      .catch(() => setSessions([]))
+      .finally(() => setSearching(false));
+  }
+
+  function handleClear(): void {
+    setDateQuery('');
+    setFilterDate(null);
+    setSessions(null);
+    listSessions()
+      .then(setSessions)
+      .catch(() => setSessions([]));
+  }
+
   // Always render the panel itself — even empty/loading — so the feature is
   // discoverable and its state is legible (same fix already applied to the
   // Tips panel: a section that vanishes when there's no data is
   // indistinguishable from a section that was never built at all).
   return (
     <div className="panel mt-6">
-      <div className="panel-section-title">Past sessions{sessions ? ` (${sessions.length})` : ''}</div>
+      <div className="panel-section-title flex items-center justify-between gap-2">
+        <span>Past sessions{sessions ? ` (${sessions.length})` : ''}</span>
+        {user.role !== 'admin' && (
+          <span className="normal-case font-normal text-ink-3">Last 7 days — ask an admin for older reports</span>
+        )}
+      </div>
+
+      {user.role === 'admin' && (
+        <div className="toolbar">
+          <label className="text-tiny text-ink-3 font-semibold" htmlFor="past-sessions-date">
+            Look up a date
+          </label>
+          <input
+            id="past-sessions-date"
+            type="date"
+            className="toolbar-input"
+            value={dateQuery}
+            onChange={(e) => setDateQuery(e.target.value)}
+          />
+          <button type="button" className="btn" disabled={!dateQuery || searching} onClick={handleSearch}>
+            {searching ? 'Searching…' : 'Search'}
+          </button>
+          {filterDate && (
+            <button type="button" className="btn" onClick={handleClear}>
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {!sessions ? (
         <p className="text-body text-ink-3 px-5 py-4">Loading…</p>
       ) : sessions.length === 0 ? (
         <div className="empty-state">
-          <p>No past sessions yet — reconciliations you run will show up here.</p>
+          <p>
+            {filterDate
+              ? `No submissions found for ${filterDate}.`
+              : 'No past sessions yet — reconciliations you run will show up here.'}
+          </p>
         </div>
       ) : (
         <div className="table-wrap">

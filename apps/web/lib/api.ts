@@ -96,8 +96,15 @@ export async function getSession(id: string): Promise<SessionDTO> {
   return unwrap<SessionDTO>(res);
 }
 
-export async function listSessions(): Promise<SessionListItemDTO[]> {
-  const res = await fetch(`${API_BASE}/api/sessions`, { cache: 'no-store', headers: authHeaders() });
+/** `businessDate` is the admin by-date lookup (`yyyy-mm-dd`, exact match) — see `PastSessionsList.tsx`. Omitted, this returns the normal recency-ordered list, capped server-side to the last 7 days for a GM. */
+export async function listSessions(opts: { businessDate?: string } = {}): Promise<SessionListItemDTO[]> {
+  const params = new URLSearchParams();
+  if (opts.businessDate) params.set('businessDate', opts.businessDate);
+  const qs = params.toString();
+  const res = await fetch(`${API_BASE}/api/sessions${qs ? `?${qs}` : ''}`, {
+    cache: 'no-store',
+    headers: authHeaders(),
+  });
   return unwrap<SessionListItemDTO[]>(res);
 }
 
