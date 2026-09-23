@@ -46,16 +46,15 @@ function groupByRemark(
 const explanationRow = (x: ExplainedItem, sign: '+' | '-', color: string) =>
   `<tr><td>${esc(x.label)}</td><td>${esc(x.orderNo || '—')}</td><td class="mono">${esc(x.rrn || '—')}</td><td class=ra style="color:${color}">${sign}${fmt(Math.abs(x.diff))}</td></tr>`;
 
-/** One mini-table per remark group — the grouped layout the sample report uses in place of one flat excess/shortage table. */
+/** One mini-table per remark group — the grouped layout the sample report uses in place of one flat excess/shortage table. Each group's own subtotal sits in its header bar, not a table footer. */
 function explanationGroupsHtml(items: readonly ExplainedItem[], sign: '+' | '-', color: string): string {
   const groups = groupByRemark(items);
   if (!groups.length) return '<p style="color:#9ca3af;font-size:12px">None</p>';
   return groups
     .map(
-      (g) => `<div class=rg-label>${esc(g.remark)} (${g.rows.length} item${g.rows.length > 1 ? 's' : ''})</div>
+      (g) => `<div class=rg-label><span>${esc(g.remark)} (${g.rows.length} item${g.rows.length > 1 ? 's' : ''})</span><span style="color:${color}">${sign}${fmt(g.total)}</span></div>
 <table><thead><tr><th>Source</th><th>Order No</th><th>RRN</th><th class=ra>Amount</th></tr></thead>
-<tbody>${g.rows.map((x) => explanationRow(x, sign, color)).join('')}</tbody>
-<tfoot><tr><td colspan=3>Subtotal</td><td class=ra style="color:${color}">${sign}${fmt(g.total)}</td></tr></tfoot></table>`,
+<tbody>${g.rows.map((x) => explanationRow(x, sign, color)).join('')}</tbody></table>`,
     )
     .join('');
 }
@@ -134,10 +133,6 @@ export function buildReportHtml(snapshot: Snapshot): string {
     })
     .join('');
 
-  const matched = snapshot.settlementLedger.filter((x) => x.l1Status === 'matched').length;
-  const explained = snapshot.settlementLedger.filter((x) => x.l1Status === 'explained').length;
-  const squared = snapshot.settlementLedger.filter((x) => x.l1Status === 'squared_off').length;
-
   const taxes = snapshot.taxes;
 
   return `<!DOCTYPE html><html lang=en><head><meta charset=UTF-8>
@@ -147,18 +142,15 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1f2937;backgr
 h1{font-size:22px;font-weight:700;margin-bottom:.25rem}
 h2{font-size:15px;font-weight:700;margin:1.75rem 0 .75rem;padding:.4rem 0;border-bottom:2px solid #e5e7eb;color:#374151}
 h3{font-size:12px;font-weight:600;margin:.75rem 0 .4rem;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}
-.rg-label{font-size:11px;font-weight:600;color:#4b5563;margin:.7rem 0 .3rem}
+.var-total{display:flex;justify-content:space-between;align-items:center;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.6rem 1rem;font-weight:700;font-size:13px;margin:1rem 0 .5rem}
+.rg-label{display:flex;justify-content:space-between;align-items:center;background:#f3f4f6;padding:.4rem .75rem;font-weight:600;font-size:12px;color:#374151;margin:.7rem 0 0}
+.rg-label + table{margin-top:0}
 .meta{color:#6b7280;font-size:12px;margin-bottom:1.5rem}
 .badge{display:inline-block;padding:.35rem 1rem;border-radius:20px;font-weight:700;font-size:13px;background:#f0fdf4;color:${sc};border:1px solid ${sc}44;margin-bottom:1.5rem}
 table{width:100%;border-collapse:collapse;margin-bottom:1rem;font-size:12px}
 th{background:#f9fafb;padding:.4rem .75rem;text-align:left;font-weight:600;border-bottom:2px solid #e5e7eb}
 td{padding:.35rem .75rem;border-bottom:1px solid #f3f4f6}
 .ra{text-align:right}.mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#6b7280}tfoot td{font-weight:700;background:#f9fafb;border-top:2px solid #e5e7eb}
-.kpis{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
-.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.6rem 1rem;min-width:120px}
-.kpi-l{font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.04em}
-.kpi-v{font-size:20px;font-weight:700;margin-top:.15rem}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
 .footer{margin-top:2rem;padding-top:1rem;border-top:1px solid #e5e7eb;font-size:11px;color:#9ca3af}
 @media print{.np{display:none}}</style></head>
 <body>
@@ -184,19 +176,10 @@ ${
 }
 
 <h2>Explanation of Variances</h2>
-<div class=grid2>
-<div><h3>Excess (${excess.length} items)</h3>${explanationGroupsHtml(excess, '+', '#16a34a')}</div>
-<div><h3>Shortage (${short.length} items)</h3>${explanationGroupsHtml(short, '-', '#dc2626')}</div>
-</div>
-
-<h2>Pinelabs Settlement Ledger</h2>
-<div class=kpis>
-<div class=kpi><div class=kpi-l>Matched</div><div class=kpi-v style="color:#16a34a">${matched}</div></div>
-<div class=kpi><div class=kpi-l>Explained by remark</div><div class=kpi-v style="color:#2563eb">${explained}</div></div>
-<div class=kpi><div class=kpi-l>Squared off</div><div class=kpi-v style="color:#7c3aed">${squared}</div></div>
-<div class=kpi><div class=kpi-l>Total rows</div><div class=kpi-v>${snapshot.settlementLedger.length}</div></div>
-</div>
-<p style="font-size:12px;color:#6b7280">All ${snapshot.settlementLedger.length} Pinelabs terminal rows are archived in the JSON snapshot for downstream settlement matching.</p>
+<div class=var-total><span>Total excess (${excess.length} item${excess.length === 1 ? '' : 's'})</span><span style="color:#16a34a">+${fmt(frs.totalExcess)}</span></div>
+${explanationGroupsHtml(excess, '+', '#16a34a')}
+<div class=var-total><span>Total shortage (${short.length} item${short.length === 1 ? '' : 's'})</span><span style="color:#dc2626">-${fmt(frs.totalShortage)}</span></div>
+${explanationGroupsHtml(short, '-', '#dc2626')}
 
 ${
   bohOpenThisSession.length || snapshot.billsOnHold.cleared.length || snapshot.billsOnHold.open.length

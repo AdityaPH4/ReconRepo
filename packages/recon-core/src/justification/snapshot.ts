@@ -12,6 +12,7 @@
 import { isAmexAcq, isMaterial, money } from '../util/money.js';
 import { OUTLET_NAMES } from '../constants.js';
 import type { PinelabsAcquirerBreakdown } from '../engine/pinelabsBreakdown.js';
+import { advanceBalance, isAdvanceExhausted } from './advances.js';
 import type { FrsRowDTOLike } from './reportTypes.js';
 import type { OutletCode, PinelabsResult, PRRow, ReconResult, SummaryData, ZipRow } from '../types.js';
 import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
@@ -177,6 +178,7 @@ export interface Snapshot {
     cleared: Array<{ id: string; orderNo: string; source: string; clearedDate: string; amount: number }>;
   };
   advances: {
+    /** Every currently open advance for this outlet (not closed, balance > 0) — regardless of which session touched it, mirroring `billsOnHold.open`'s own outlet-wide scope. */
     repository: Array<{
       id: string;
       custName: string;
@@ -187,6 +189,7 @@ export interface Snapshot {
       balance: number;
       recordedDate: string;
     }>;
+    /** This session's own newly-recorded applications only. */
     applications: Array<{
       advanceId: string;
       advanceCustName: string;
@@ -225,9 +228,12 @@ export interface BuildSnapshotInput {
   residual: number;
   status: SubmitStatus;
   justification: JustificationState;
-  /** Every advance this session's entries/applications reference (committed + this session's own drafts, now committed). */
+  /** Every advance recorded for this outlet, open and closed alike — `repository` is filtered to currently-open ones, but the full list is kept here too, so a `sessionApplications` entry that itself exhausts an advance can still resolve that advance's name. */
   advances: readonly Advance[];
+  /** Every application ever recorded against these advances (not just this session's) — used to compute each advance's live balance. */
   applications: readonly AdvanceApplication[];
+  /** This session's own newly-recorded applications — a subset of `applications`, feeding the "Applied this session" report table. */
+  sessionApplications: readonly AdvanceApplication[];
   /** Open BOH entries for this outlet, post-commit. */
   bohOpen: readonly BohEntry[];
   /** This session's own clearances, joined against the entries they closed. */
@@ -401,8 +407,17 @@ function toAggregateJustification(e: JustificationEntry): AggregateJustification
 }
 
 export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
-  const { result, outlet, justification, advances, applications, bohOpen, bohClearedThisSession, bohStagedIds } =
-    input;
+  const {
+    result,
+    outlet,
+    justification,
+    advances,
+    applications,
+    sessionApplications,
+    bohOpen,
+    bohClearedThisSession,
+    bohStagedIds,
+  } = input;
   const stagedIds = new Set(bohStagedIds);
 
   const hdfcRows = result.upi.filter((x) => /hdfc/i.test(x.paymentName));
@@ -536,21 +551,28 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
       })),
     },
     advances: {
-      repository: advances.map((a) => {
-        const balance =
-          a.originalAmount - applications.filter((ap) => ap.advanceId === a.id).reduce((s, ap) => s + ap.amount, 0);
-        return {
-          id: a.id,
-          custName: a.custName,
-          phone: a.phone,
-          eventDate: a.eventDate,
-          originalAmount: a.originalAmount,
-          appliedAmount: a.originalAmount - balance,
-          balance,
-          recordedDate: a.recordedDate,
-        };
-      }),
-      applications: applications.map((ap) => {
+      // `status !== 'closed'`, not `=== 'open'` — defensive against a
+      // pre-existing row whose stored JSON predates that field, matching
+      // `eligibleAdvances()`'s own filter exactly.
+      repository: advances
+        .filter((a) => a.status !== 'closed' && !isAdvanceExhausted(a, applications))
+        .map((a) => {
+          const balance = advanceBalance(a, applications);
+          return {
+            id: a.id,
+            custName: a.custName,
+            phone: a.phone,
+            eventDate: a.eventDate,
+            originalAmount: a.originalAmount,
+            appliedAmount: a.originalAmount - balance,
+            balance,
+            recordedDate: a.recordedDate,
+          };
+        }),
+      applications: sessionApplications.map((ap) => {
+        // Looked up against the full (unfiltered) `advances` list, not
+        // `repository` above — an application that itself exhausts its
+        // advance this session must still resolve that advance's name here.
         const advance = advances.find((a) => a.id === ap.advanceId);
         return {
           advanceId: ap.advanceId,

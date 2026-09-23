@@ -342,10 +342,6 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
       advanceStore.listApplications(outlet),
       bohStore.list(outlet),
     ]);
-    const touchedAdvanceIds = new Set([
-      ...justification.draftAdvances.map((a) => a.id),
-      ...justification.draftApplications.map((a) => a.advanceId),
-    ]);
     const bohEntryById = new Map(bohOpen.map((b) => [b.id, b] as const));
     // A cleared entry no longer shows in `bohOpen` (status flipped above), so
     // fetch it directly for the snapshot's "cleared this session" section.
@@ -373,8 +369,13 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
       residual: gate.residual,
       status: gate.status,
       justification,
-      advances: allAdvances.filter((a) => touchedAdvanceIds.has(a.id)),
-      applications: justification.draftApplications,
+      // The full outlet-wide repository, not just what this session touched
+      // — `buildSnapshot` filters `advances`/`applications` down to
+      // currently-open ones for display, same "every open X for the outlet"
+      // scope `bohOpen` already has below.
+      advances: allAdvances,
+      applications: allApplications,
+      sessionApplications: justification.draftApplications,
       bohOpen: bohOpen.filter((b) => b.status === 'open'),
       bohClearedThisSession,
       bohStagedIds: justification.bohStaging.map((b) => b.id),

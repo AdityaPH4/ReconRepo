@@ -849,6 +849,7 @@ describe('buildSnapshot', () => {
       justification: emptyJustificationState(),
       advances: [],
       applications: [],
+      sessionApplications: [],
       bohOpen: [],
       bohClearedThisSession: [],
       bohStagedIds: [],
@@ -903,6 +904,7 @@ describe('buildSnapshot', () => {
       justification: { ...emptyJustificationState(), entries },
       advances: [],
       applications: [],
+      sessionApplications: [],
       bohOpen: [],
       bohClearedThisSession: [],
       bohStagedIds: [],
@@ -961,6 +963,7 @@ describe('buildSnapshot', () => {
       justification: { ...emptyJustificationState(), squareOff: map, entries },
       advances: [],
       applications: [],
+      sessionApplications: [],
       bohOpen: [],
       bohClearedThisSession: [],
       bohStagedIds: [],
@@ -972,6 +975,151 @@ describe('buildSnapshot', () => {
     assert.equal(mmRow.l1Status, 'squared_off');
     assert.equal(mmRow.squaredOff, true);
     assert.equal(mmRow.l1Remark, 'Extra Payment Received');
+  });
+
+  it('advances.repository is every open advance for the outlet, not just ones this session touched', () => {
+    const outlet: OutletCode = 'BLRT';
+    const advance = (overrides: Partial<Advance>): Advance => ({
+      id: 'adv-untouched',
+      outlet,
+      custName: 'Untouched Customer',
+      phone: null,
+      eventDate: '2026-09-01',
+      notes: null,
+      originalAmount: 1000,
+      recordedDate: '2026-01-01',
+      recordedBySessionId: 's-old',
+      status: 'open',
+      closedAt: null,
+      closedBy: null,
+      closedReason: null,
+      ...overrides,
+    });
+    // Untouched by this session (no draft/application referencing it), with
+    // a balance from an application recorded in an *earlier* session.
+    const untouchedOpen = advance({ id: 'adv-untouched-open' });
+    // Same shape, but a prior application already exhausted it — must NOT
+    // appear as "open".
+    const untouchedExhausted = advance({ id: 'adv-untouched-exhausted' });
+    // Same shape but explicitly closed (e.g. returned outside recon) despite
+    // a nonzero balance — must NOT appear as "open" either.
+    const untouchedClosed = advance({ id: 'adv-untouched-closed', status: 'closed' });
+    const priorApplications: AdvanceApplication[] = [
+      { id: 'app-old-1', advanceId: 'adv-untouched-open', sessionId: 's-old', targetKey: null, amount: 300, appliedDate: '2026-06-01' },
+      { id: 'app-old-2', advanceId: 'adv-untouched-exhausted', sessionId: 's-old', targetKey: null, amount: 1000, appliedDate: '2026-06-01' },
+    ];
+
+    const snapshot = buildSnapshot({
+      outlet,
+      businessDate: '2026-08-01',
+      businessWindow: '01 Aug 08:00 – 02 Aug 07:00',
+      businessWindowStart: '2026-08-01T02:30:00.000Z',
+      businessWindowEnd: '2026-08-02T01:30:00.000Z',
+      submittedAt: '2026-08-02T10:00:00.000Z',
+      submittedBy: 'gm@toit.local',
+      prFileRows: 10,
+      zipRows: 8,
+      result: {
+        pinelabs: pinelabsResult(),
+        upiHdfc: null,
+        swiggy: [],
+        cash: [],
+        upi: [],
+        bills: [],
+        bank: [],
+        hdfcLink: [],
+        other: [],
+        zipFiltered: [],
+      } as never,
+      summaryData: null,
+      methodBreakdown: [],
+      grandDiff: 0,
+      residual: 0,
+      status: 'balanced',
+      // This session's own justification touches none of these advances.
+      justification: emptyJustificationState(),
+      advances: [untouchedOpen, untouchedExhausted, untouchedClosed],
+      applications: priorApplications,
+      sessionApplications: [],
+      bohOpen: [],
+      bohClearedThisSession: [],
+      bohStagedIds: [],
+      pinelabsBreakdown: { rows: [], totalCount: 0, totalPinelabs: 0, totalPR: 0, totalDiff: 0, amexDupCount: 0 },
+      taxes: null,
+    });
+
+    const repoIds = snapshot.advances.repository.map((a) => a.id);
+    assert.deepEqual(repoIds, ['adv-untouched-open']);
+    assert.equal(snapshot.advances.repository[0]!.balance, 700);
+    // Nothing was applied *this* session, so the "applied this session" list stays empty.
+    assert.deepEqual(snapshot.advances.applications, []);
+  });
+
+  it("a session application that itself exhausts an advance still resolves that advance's name in 'applied this session'", () => {
+    const outlet: OutletCode = 'BLRT';
+    const advance: Advance = {
+      id: 'adv-1',
+      outlet,
+      custName: 'Priya',
+      phone: null,
+      eventDate: '2026-09-01',
+      notes: null,
+      originalAmount: 400,
+      recordedDate: '2026-08-01',
+      recordedBySessionId: 's-1',
+      status: 'open',
+      closedAt: null,
+      closedBy: null,
+      closedReason: null,
+    };
+    // Applies the advance's *entire* remaining balance this session — once
+    // this application is accounted for, the advance is exhausted, so it
+    // must NOT appear in `repository`, but its name must still resolve here.
+    const sessionApplications: AdvanceApplication[] = [
+      { id: 'app-1', advanceId: 'adv-1', sessionId: 's-2', targetKey: null, amount: 400, appliedDate: '2026-08-02' },
+    ];
+
+    const snapshot = buildSnapshot({
+      outlet,
+      businessDate: '2026-08-01',
+      businessWindow: '01 Aug 08:00 – 02 Aug 07:00',
+      businessWindowStart: '2026-08-01T02:30:00.000Z',
+      businessWindowEnd: '2026-08-02T01:30:00.000Z',
+      submittedAt: '2026-08-02T10:00:00.000Z',
+      submittedBy: 'gm@toit.local',
+      prFileRows: 10,
+      zipRows: 8,
+      result: {
+        pinelabs: pinelabsResult(),
+        upiHdfc: null,
+        swiggy: [],
+        cash: [],
+        upi: [],
+        bills: [],
+        bank: [],
+        hdfcLink: [],
+        other: [],
+        zipFiltered: [],
+      } as never,
+      summaryData: null,
+      methodBreakdown: [],
+      grandDiff: 0,
+      residual: 0,
+      status: 'balanced',
+      justification: { ...emptyJustificationState(), draftApplications: sessionApplications },
+      advances: [advance],
+      applications: sessionApplications,
+      sessionApplications,
+      bohOpen: [],
+      bohClearedThisSession: [],
+      bohStagedIds: [],
+      pinelabsBreakdown: { rows: [], totalCount: 0, totalPinelabs: 0, totalPR: 0, totalDiff: 0, amexDupCount: 0 },
+      taxes: null,
+    });
+
+    assert.deepEqual(snapshot.advances.repository, []);
+    assert.equal(snapshot.advances.applications.length, 1);
+    assert.equal(snapshot.advances.applications[0]!.advanceCustName, 'Priya');
   });
 });
 
@@ -1052,6 +1200,7 @@ describe('buildReportHtml()', () => {
       justification: { ...emptyJustificationState(), entries },
       advances: [advance],
       applications,
+      sessionApplications: applications,
       bohOpen: [bohEntry({ id: 'boh-1' }), bohEntry({ id: 'boh-2', orderNo: 'O-501' })],
       bohClearedThisSession: [],
       bohStagedIds: ['boh-1'],
