@@ -24,6 +24,7 @@ import {
   windowLabel,
 } from '../services/reconService.js';
 import { canAccessReport, RECENT_REPORT_WINDOW_DAYS } from '../services/reportAccess.js';
+import { assertNoDateGap } from '../services/reconSequenceGate.js';
 import {
   buildStorageKey,
   getAdvanceStore,
@@ -83,10 +84,12 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       ...(hdfc ? { hdfc: { buffer: hdfc.buffer, originalName: hdfc.originalname } } : {}),
     });
 
-    // A GM re-reconciling the same outlet+date needs an admin's approval —
-    // parsing is pure (nothing written yet), so this throws before anything
-    // is persisted. Admins are exempt; they're the approvers.
+    // A GM must reconcile one calendar day at a time, in order, and can't
+    // re-reconcile an already-submitted date without an admin's approval —
+    // parsing is pure (nothing written yet), so both throw before anything
+    // is persisted. Admins are exempt from both; they're the approvers.
     if (req.user.role === 'gm') {
+      await assertNoDateGap(outcome.outlet, outcome.businessDate);
       await assertReconAllowed(outcome.outlet, outcome.businessDate);
     }
 
