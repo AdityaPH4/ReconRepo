@@ -10,7 +10,7 @@ import type { BohAgingBucket, BohEntryDTO, DashboardBohAgingRowDTO } from '@toit
 import { civilToISO, parsePRDate } from '@toit/recon-core';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const BUCKETS = ['0-7', '8-15', '16-30', '30+'] as const;
+const BUCKETS = ['1', '2', '3', '4', '5', '5+'] as const;
 
 function daysBetween(earlier: string, later: string): number {
   return Math.round((Date.parse(`${later}T00:00:00Z`) - Date.parse(`${earlier}T00:00:00Z`)) / DAY_MS);
@@ -22,11 +22,14 @@ function bohCivilDateISO(bohDate: string): string | null {
   return civil ? civilToISO(civil) : null;
 }
 
+/** Day 0 (opened today) folds into bucket '1', same as the old scheme folded day 0 into '0-7' — every open entry lands in exactly one bucket. */
 function bucketFor(ageDays: number): BohAgingBucket {
-  if (ageDays <= 7) return '0-7';
-  if (ageDays <= 15) return '8-15';
-  if (ageDays <= 30) return '16-30';
-  return '30+';
+  if (ageDays <= 1) return '1';
+  if (ageDays <= 2) return '2';
+  if (ageDays <= 3) return '3';
+  if (ageDays <= 4) return '4';
+  if (ageDays <= 5) return '5';
+  return '5+';
 }
 
 export function buildBohAging(

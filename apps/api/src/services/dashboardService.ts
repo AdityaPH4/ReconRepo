@@ -11,10 +11,12 @@
  * manually-entered remark, not a column in the Payment Report — there is no
  * automatic "Tips" figure anywhere upstream of the operator marking one.
  * Grouped by each session's own `businessDate` — not `createdAt`, since a
- * session can be run a day or more late. Split into the current calendar
- * month's first half (1st–15th) and second half (16th onward) — not a
- * rolling window; matches the admin dashboard's own "current calendar
- * month" convention.
+ * session can be run a day or more late. Shown as 4 half-month periods —
+ * previous month's two halves, then the current calendar month's two
+ * halves (1st–15th, 16th–end) — not a rolling window; the current month's
+ * two halves match the admin dashboard's own "current calendar month"
+ * convention, extended one month back so a GM can compare against last
+ * month at a glance.
  *
  * BOH aging: every still-open Bills-on-Hold entry, bucketed by days since
  * `bohDate` — which is the bill's own raw PR date/time string, not a clean
@@ -26,15 +28,36 @@
  * soonest `eventDate` first, capped at 5 — a "view all" link covers the rest.
  */
 
-import type { DashboardDTO, DashboardOpenAdvanceDTO } from '@toit/contracts';
+import type { DashboardDTO, DashboardOpenAdvanceDTO, DashboardTipsPeriodDTO } from '@toit/contracts';
 import type { OutletCode } from '@toit/recon-core';
-import { advanceBalance, OUTLET_NAMES } from '@toit/recon-core';
+import { advanceBalance, isAdvanceExhausted, OUTLET_NAMES } from '@toit/recon-core';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 import { buildBohAging } from './bohAging.js';
 import { buildOutletSubmissionDays } from './submissionCalendar.js';
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** The calendar month immediately before `month` (`yyyy-mm`) — wraps Jan back to December of the prior year via `Date`'s own rollover. */
+function prevMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y!, m! - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function daysInMonth(month: string): number {
+  const [y, m] = month.split('-').map(Number);
+  return new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+}
+
+/** A month's own two halves: 1st–15th, 16th–end of month. */
+function halfMonthRanges(month: string): [{ from: string; to: string }, { from: string; to: string }] {
+  const days = daysInMonth(month);
+  return [
+    { from: `${month}-01`, to: `${month}-15` },
+    { from: `${month}-16`, to: `${month}-${String(days).padStart(2, '0')}` },
+  ];
 }
 
 export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> {
@@ -49,12 +72,12 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     ? { sessionId: todaySession.id, status: todaySession.status, grandDiff: todaySession.grandDiff }
     : { sessionId: null, status: null, grandDiff: null };
 
-  // ── Tips this month ──────────────────────────────────────────────────
-  const monthStart = `${month}-01`;
-  const inMonth = recent.filter((s) => s.businessDate && s.businessDate >= monthStart && s.businessDate <= today);
-  let firstHalf = 0;
-  let secondHalf = 0;
-  for (const item of inMonth) {
+  // ── Tips: 4 half-month periods ───────────────────────────────────────
+  const periodRanges = [...halfMonthRanges(prevMonth(month)), ...halfMonthRanges(month)];
+  const earliestNeeded = periodRanges[0]!.from;
+  const inRange = recent.filter((s) => s.businessDate && s.businessDate >= earliestNeeded && s.businessDate <= today);
+  const periodTotals = periodRanges.map(() => 0);
+  for (const item of inRange) {
     const full = await sessionStore.get(item.id);
     const businessDate = full?.meta.businessDate;
     if (!full || !businessDate) continue;
@@ -63,18 +86,14 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     const tips = full.justification.entries
       .filter((e) => e.remark === 'Tips')
       .reduce((s, e) => s + e.amount, 0);
-    const day = Number(businessDate.slice(-2));
-    if (day <= 15) firstHalf += tips;
-    else secondHalf += tips;
+    const idx = periodRanges.findIndex((r) => businessDate >= r.from && businessDate <= r.to);
+    if (idx !== -1) periodTotals[idx]! += tips;
   }
-  const daysThisMonth = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
   const tipsMonth = {
     month,
-    total: firstHalf + secondHalf,
-    firstHalf,
-    secondHalf,
-    firstHalfRange: { from: `${month}-01`, to: `${month}-15` },
-    secondHalfRange: { from: `${month}-16`, to: `${month}-${String(daysThisMonth).padStart(2, '0')}` },
+    // This month only — its own two halves, the last two entries in `periods`.
+    total: periodTotals[2]! + periodTotals[3]!,
+    periods: periodRanges.map((range, i): DashboardTipsPeriodDTO => ({ range, total: periodTotals[i]! })),
   };
 
   // ── Bills-on-Hold aging ──────────────────────────────────────────────
@@ -87,8 +106,13 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
     advanceStore.list(outlet),
     advanceStore.listApplications(outlet),
   ]);
+  // `status !== 'closed'`, not `=== 'open'` — defensive against a
+  // pre-existing row whose stored JSON predates that field, matching
+  // `eligibleAdvances()`'s own filter. Also excludes an advance that's
+  // fully applied (balance exhausted) but never explicitly closed — it has
+  // nothing left owing, so it doesn't belong on an "open advances" card.
   const openAdvancesList = advances
-    .filter((a) => a.status === 'open')
+    .filter((a) => a.status !== 'closed' && !isAdvanceExhausted(a, applications))
     .map((a) => ({ advance: a, balance: advanceBalance(a, applications) }))
     .sort((a, b) => a.advance.eventDate.localeCompare(b.advance.eventDate));
   const openAdvances = {

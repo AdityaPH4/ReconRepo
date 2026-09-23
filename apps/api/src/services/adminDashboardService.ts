@@ -7,7 +7,7 @@
  * dashboard's own Tips panel ("just show the current window").
  */
 
-import { OUTLET_CODES, OUTLET_NAMES, REMARKS_ALL, advanceBalance } from '@toit/recon-core';
+import { OUTLET_CODES, OUTLET_NAMES, REMARKS_ALL, advanceBalance, isAdvanceExhausted } from '@toit/recon-core';
 import type { Advance, AdvanceApplication, JustificationEntry } from '@toit/recon-core';
 import type {
   AdminAdvancesSummaryDTO,
@@ -129,7 +129,13 @@ function justificationText(e: JustificationEntry, session: SessionDTO, allAdvanc
 }
 
 function openAdvancesByOutlet(advances: readonly Advance[], applications: readonly AdvanceApplication[]): AdminAdvancesSummaryDTO {
-  const open = advances.filter((a) => a.status === 'open').map((a) => ({ advance: a, balance: advanceBalance(a, applications) }));
+  // `status !== 'closed'`, not `=== 'open'` — defensive against a
+  // pre-existing row whose stored JSON predates that field. Also excludes
+  // an advance that's fully applied (balance exhausted) but never
+  // explicitly closed — matches the GM dashboard's own filter.
+  const open = advances
+    .filter((a) => a.status !== 'closed' && !isAdvanceExhausted(a, applications))
+    .map((a) => ({ advance: a, balance: advanceBalance(a, applications) }));
   const byOutlet: AdminOutletAdvanceSummaryDTO[] = OUTLET_CODES.map((outlet) => {
     const forOutlet = open.filter((a) => a.advance.outlet === outlet);
     return {

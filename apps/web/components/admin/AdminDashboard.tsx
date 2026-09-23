@@ -25,18 +25,22 @@ function monthLabel(month: string): string {
 }
 
 const BOH_BUCKET_LABEL: Record<BohAgingBucket, string> = {
-  '0-7': '0-7 days',
-  '8-15': '8-15 days',
-  '16-30': '16-30 days',
-  '30+': '30+ days',
+  '1': '1 day',
+  '2': '2 days',
+  '3': '3 days',
+  '4': '4 days',
+  '5': '5 days',
+  '5+': '5+ days',
 };
 
 /** Same green/amber/red urgency logic as the GM dashboard's own BOH card. */
 const BOH_BUCKET_TAG: Record<BohAgingBucket, string> = {
-  '0-7': 'tag-ok',
-  '8-15': 'tag-warn',
-  '16-30': 'tag-warn',
-  '30+': 'tag-err',
+  '1': 'tag-ok',
+  '2': 'tag-ok',
+  '3': 'tag-warn',
+  '4': 'tag-warn',
+  '5': 'tag-warn',
+  '5+': 'tag-err',
 };
 
 /** Stat-card icons — only the remarks actually shown here (see `HIDDEN_REMARKS` below for why the other 3 are excluded). */

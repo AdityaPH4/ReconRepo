@@ -583,19 +583,21 @@ export interface DashboardDateRangeDTO {
   to: string;
 }
 
-export interface DashboardTipsMonthDTO {
-  /** `yyyy-mm`. */
-  month: string;
+/** One half-month's own Tips total, with the date range it covers. */
+export interface DashboardTipsPeriodDTO {
+  range: DashboardDateRangeDTO;
   total: number;
-  /** 1st–15th. */
-  firstHalf: number;
-  /** 16th–end of month. */
-  secondHalf: number;
-  firstHalfRange: DashboardDateRangeDTO;
-  secondHalfRange: DashboardDateRangeDTO;
 }
 
-export type BohAgingBucket = '0-7' | '8-15' | '16-30' | '30+';
+export interface DashboardTipsMonthDTO {
+  /** `yyyy-mm` — the current month; `total` covers just this month (its own two halves, `periods[2]` + `periods[3]`). */
+  month: string;
+  total: number;
+  /** Exactly 4 half-month periods, chronological: previous month's 1st half, previous month's 2nd half, this month's 1st half, this month's 2nd half — lets a GM compare against last month. */
+  periods: DashboardTipsPeriodDTO[];
+}
+
+export type BohAgingBucket = '1' | '2' | '3' | '4' | '5' | '5+';
 
 export interface DashboardBohAgingRowDTO {
   bucket: BohAgingBucket;

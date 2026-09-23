@@ -6,7 +6,7 @@
  * outlet's own submissions calendar.
  */
 
-import type { BohAgingBucket, DashboardBohAgingRowDTO, DashboardDateRangeDTO, DashboardDTO } from '@toit/contracts';
+import type { BohAgingBucket, DashboardBohAgingRowDTO, DashboardDTO, DashboardTipsPeriodDTO } from '@toit/contracts';
 import { fmt, fmtDate, fmtEventDate } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
@@ -27,7 +27,7 @@ function monthLabel(month: string): string {
   });
 }
 
-function halfMonthLabel(range: DashboardDateRangeDTO): string {
+function halfMonthLabel(range: DashboardTipsPeriodDTO['range']): string {
   const from = new Date(`${range.from}T00:00:00Z`);
   const to = new Date(`${range.to}T00:00:00Z`);
   const monthShort = to.toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' });
@@ -35,18 +35,22 @@ function halfMonthLabel(range: DashboardDateRangeDTO): string {
 }
 
 const BOH_BUCKET_LABEL: Record<BohAgingBucket, string> = {
-  '0-7': '0-7 days',
-  '8-15': '8-15 days',
-  '16-30': '16-30 days',
-  '30+': '30+ days',
+  '1': '1 day',
+  '2': '2 days',
+  '3': '3 days',
+  '4': '4 days',
+  '5': '5 days',
+  '5+': '5+ days',
 };
 
 /** Same green/amber/red logic as everywhere else a magnitude implies urgency. */
 const BOH_BUCKET_TAG: Record<BohAgingBucket, string> = {
-  '0-7': 'tag-ok',
-  '8-15': 'tag-warn',
-  '16-30': 'tag-warn',
-  '30+': 'tag-err',
+  '1': 'tag-ok',
+  '2': 'tag-ok',
+  '3': 'tag-warn',
+  '4': 'tag-warn',
+  '5': 'tag-warn',
+  '5+': 'tag-err',
 };
 
 function csvCell(value: string | number): string {
@@ -165,27 +169,42 @@ export function Dashboard({ onLoad }: { onLoad?: (dashboard: DashboardDTO) => vo
             <div className="h-2 rounded-full bg-line overflow-hidden flex mb-4">
               {tipsMonth.total > 0 && (
                 <>
-                  <div className="h-full bg-accent" style={{ width: `${(tipsMonth.firstHalf / tipsMonth.total) * 100}%` }} />
-                  <div className="h-full bg-warn" style={{ width: `${(tipsMonth.secondHalf / tipsMonth.total) * 100}%` }} />
+                  <div
+                    className="h-full bg-accent"
+                    style={{ width: `${(tipsMonth.periods[2]!.total / tipsMonth.total) * 100}%` }}
+                  />
+                  <div
+                    className="h-full bg-warn"
+                    style={{ width: `${(tipsMonth.periods[3]!.total / tipsMonth.total) * 100}%` }}
+                  />
                 </>
               )}
             </div>
 
+            <p className="text-tiny text-ink-3 font-semibold uppercase tracking-wide mb-1.5">Last month</p>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              {tipsMonth.periods.slice(0, 2).map((p, i) => (
+                <div key={p.range.from} className="pick-card bg-sunken p-3">
+                  <p className="text-tiny text-ink-3 inline-flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${i === 0 ? 'bg-accent' : 'bg-warn'}`} />
+                    {halfMonthLabel(p.range)}
+                  </p>
+                  <p className="font-semibold text-body mt-1">{fmt(p.total)}</p>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-tiny text-ink-3 font-semibold uppercase tracking-wide mb-1.5">This month</p>
             <div className="grid grid-cols-2 gap-3">
-              <div className="pick-card bg-sunken p-3">
-                <p className="text-tiny text-ink-3 inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
-                  {halfMonthLabel(tipsMonth.firstHalfRange)}
-                </p>
-                <p className="font-semibold text-body mt-1">{fmt(tipsMonth.firstHalf)}</p>
-              </div>
-              <div className="pick-card bg-sunken p-3">
-                <p className="text-tiny text-ink-3 inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-warn shrink-0" />
-                  {halfMonthLabel(tipsMonth.secondHalfRange)}
-                </p>
-                <p className="font-semibold text-body mt-1">{fmt(tipsMonth.secondHalf)}</p>
-              </div>
+              {tipsMonth.periods.slice(2, 4).map((p, i) => (
+                <div key={p.range.from} className="pick-card bg-sunken p-3">
+                  <p className="text-tiny text-ink-3 inline-flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${i === 0 ? 'bg-accent' : 'bg-warn'}`} />
+                    {halfMonthLabel(p.range)}
+                  </p>
+                  <p className="font-semibold text-body mt-1">{fmt(p.total)}</p>
+                </div>
+              ))}
             </div>
             {tipsMonth.total === 0 && (
               <p className="text-tiny text-ink-3 mt-3 flex items-start gap-1.5">
