@@ -1,10 +1,16 @@
 /**
  * Admin dashboard — cross-outlet Bills-on-hold and Open-advances exposure,
- * submission timeliness, and a Justifications review feed. Mounted at
+ * submission timeliness, and a Justifications review table. Mounted at
  * `/api/admin/dashboard`, admin-only.
  *
  * No month picker yet — always the current calendar month, matching the GM
  * dashboard's own Tips panel ("just show the current window").
+ *
+ * Justifications: outlet × remark, fixed to the last 7 calendar days
+ * (`JUSTIFICATIONS_WINDOW_DAYS`) — the previous all-time, cross-outlet-
+ * merged count was undated and unattributable to any outlet, which made it
+ * useless for spotting what actually happened recently. Each cell keeps its
+ * own entries (not just a count), since "what happened" is the point.
  */
 
 import { OUTLET_CODES, OUTLET_NAMES, REMARKS_ALL, advanceBalance, isAdvanceExhausted, todayIsoIST } from '@toit/recon-core';
@@ -14,7 +20,8 @@ import type {
   AdminBohSummaryDTO,
   AdminCommentDTO,
   AdminDashboardDTO,
-  AdminJustificationCountDTO,
+  AdminJustificationRowDTO,
+  AdminJustificationsTableDTO,
   AdminOutletAdvanceSummaryDTO,
   AdminOutletBohSummaryDTO,
   OutletSubmissionsDTO,
@@ -27,6 +34,15 @@ import { buildOutletSubmissionDays } from './submissionCalendar.js';
 
 /** Every distinct `Remark` value — `REMARKS_ALL` itself repeats 'Other' (shared by the excess and shortage vocabularies), so this dedupes; 'Paid In'/'Paid Out'/'TDS Deducted' aren't in that array at all (see `Remark`'s own type definition). */
 const ALL_REMARKS: readonly string[] = [...new Set([...REMARKS_ALL, 'Paid In', 'Paid Out', 'TDS Deducted'])];
+
+/** How many calendar days the Justifications table covers, including today. */
+const JUSTIFICATIONS_WINDOW_DAYS = 7;
+
+function addDaysIso(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
 /** Inverts the `GM_OUTLETS` allowlist (`email -> outlet`) into `outlet -> email[]` — never exposed via any API until now. */
 function gmEmailsByOutlet(): Record<string, string[]> {
@@ -153,6 +169,12 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
   const today = todayIsoIST();
   const month = today.slice(0, 7);
   const gmEmails = gmEmailsByOutlet();
+  // Inclusive bounds — today and the 6 days before it, a true 7-day window
+  // (not the report-access gate's own 8-day "age <= 7" convention, which
+  // answers a different question: this is a fixed period to summarize, not
+  // an aging cutoff).
+  const windowStart = addDaysIso(today, -(JUSTIFICATIONS_WINDOW_DAYS - 1));
+  const windowEnd = today;
 
   // Fetched once, up front — every outlet's Justifications walk needs this
   // for "Advance Applied" text (the advance it references is usually from
@@ -164,7 +186,7 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
 
   const submissions: OutletSubmissionsDTO[] = [];
   const allComments: AdminCommentDTO[] = [];
-  const remarkCounts = new Map<string, { count: number; amount: number }>(ALL_REMARKS.map((r) => [r, { count: 0, amount: 0 }]));
+  const justificationRows: AdminJustificationRowDTO[] = [];
 
   const bohByOutlet: AdminOutletBohSummaryDTO[] = [];
   let bohCountTotal = 0;
@@ -194,20 +216,27 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
     bohCountTotal += bohTotal.count;
     bohAmountTotal += bohTotal.amount;
 
-    // ── Justifications — bounded to the 60 most recent sessions per ──
-    // outlet, "recent" not exhaustive.
-    for (const item of sessions.slice(0, 60)) {
+    // ── Justifications — this outlet, last 7 days by business date ───
+    // (falling back to the session's own creation day when the Payment
+    // Report had no parseable date, same tolerance `reportAccess.ts` uses).
+    const cells = new Map<string, { count: number; amount: number; entries: AdminCommentDTO[] }>(
+      ALL_REMARKS.map((r) => [r, { count: 0, amount: 0, entries: [] }]),
+    );
+    const inWindow = sessions.filter((s) => {
+      const bd = s.businessDate ?? s.createdAt.slice(0, 10);
+      return bd >= windowStart && bd <= windowEnd;
+    });
+    for (const item of inWindow) {
       const full = await store.get(item.id);
       if (!full) continue;
       for (const e of full.justification.entries) {
-        const counts = remarkCounts.get(e.remark);
-        if (counts) {
-          counts.count += 1;
-          counts.amount += e.amount;
-        }
+        const cell = cells.get(e.remark);
+        if (!cell) continue;
+        cell.count += 1;
+        cell.amount += e.amount;
         const text = justificationText(e, full, allAdvances);
         if (!text.trim()) continue; // nothing to review
-        allComments.push({
+        const comment: AdminCommentDTO = {
           id: e.id,
           sessionId: full.meta.id,
           outlet,
@@ -218,9 +247,17 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
           text,
           createdAt: e.createdAt,
           createdBy: full.meta.createdBy,
-        });
+        };
+        cell.entries.push(comment);
+        allComments.push(comment);
       }
     }
+    for (const cell of cells.values()) cell.entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    justificationRows.push({
+      outlet,
+      outletName: OUTLET_NAMES[outlet],
+      cells: Object.fromEntries(cells),
+    });
   }
 
   allComments.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -228,10 +265,12 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
   const boh: AdminBohSummaryDTO = { count: bohCountTotal, amount: bohAmountTotal, byOutlet: bohByOutlet };
   const advances = openAdvancesByOutlet(allAdvances, allApplications);
 
-  const justificationCounts: AdminJustificationCountDTO[] = ALL_REMARKS.map((remark) => ({
-    remark,
-    ...remarkCounts.get(remark)!,
-  }));
+  const justifications: AdminJustificationsTableDTO = {
+    windowStart,
+    windowEnd,
+    remarks: ALL_REMARKS as string[],
+    rows: justificationRows,
+  };
 
-  return { month, submissions, boh, advances, justificationCounts, recentComments: allComments.slice(0, 50) };
+  return { month, submissions, boh, advances, justifications, recentComments: allComments.slice(0, 50) };
 }

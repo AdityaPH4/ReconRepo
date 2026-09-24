@@ -696,13 +696,6 @@ export interface AdminAdvancesSummaryDTO {
   byOutlet: AdminOutletAdvanceSummaryDTO[];
 }
 
-/** Count + total amount for one remark value, across every outlet — the Justifications panel's summary chips. */
-export interface AdminJustificationCountDTO {
-  remark: string;
-  count: number;
-  amount: number;
-}
-
 /** One justification entry surfaced for admin review — a GM's written explanation for a variance. */
 export interface AdminCommentDTO {
   id: string;
@@ -719,14 +712,39 @@ export interface AdminCommentDTO {
   createdBy: string;
 }
 
+/** One outlet × remark cell in the Justifications table. */
+export interface AdminJustificationCellDTO {
+  count: number;
+  amount: number;
+  /** The actual entries behind this cell, most recent first — "what happened", not just a number. */
+  entries: AdminCommentDTO[];
+}
+
+/** One outlet's row in the Justifications table — every remark represented, including zero-count ones. */
+export interface AdminJustificationRowDTO {
+  outlet: OutletCode;
+  outletName: string;
+  cells: Record<string, AdminJustificationCellDTO>;
+}
+
+/** Outlet × remark justification activity, scoped to a fixed recent window (not all-time) — see `buildAdminDashboard`. */
+export interface AdminJustificationsTableDTO {
+  /** Inclusive bounds, `yyyy-mm-dd` — the last 7 calendar days, including today. */
+  windowStart: string;
+  windowEnd: string;
+  /** Column order — every remark value in this table; the frontend still decides which columns to actually show. */
+  remarks: string[];
+  rows: AdminJustificationRowDTO[];
+}
+
 export interface AdminDashboardDTO {
   /** `yyyy-mm`. */
   month: string;
   submissions: OutletSubmissionsDTO[];
   boh: AdminBohSummaryDTO;
   advances: AdminAdvancesSummaryDTO;
-  /** Every `Remark` value, including zero-count ones — the full vocabulary is always represented. */
-  justificationCounts: AdminJustificationCountDTO[];
+  /** Last-7-days justification activity, outlet × remark. */
+  justifications: AdminJustificationsTableDTO;
   recentComments: AdminCommentDTO[];
 }
 

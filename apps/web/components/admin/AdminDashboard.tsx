@@ -7,8 +7,14 @@
  * page.
  */
 
-import type { AdminDashboardDTO, AdminOutletBohSummaryDTO, BohAgingBucket } from '@toit/contracts';
-import { fmt, fmtDate } from '@toit/recon-core/display';
+import type {
+  AdminCommentDTO,
+  AdminDashboardDTO,
+  AdminJustificationCellDTO,
+  AdminOutletBohSummaryDTO,
+  BohAgingBucket,
+} from '@toit/contracts';
+import { fmt, fmtDate, fmtEventDate } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ModalShell } from '@/components/justification/ModalShell';
@@ -57,11 +63,18 @@ const REMARK_ICON: Record<string, string> = {
 /** These three remarks' detail already lives elsewhere the admin would actually look (the Advance Closure module, the BOH card's own click-through) — kept out of this panel per explicit request. */
 const HIDDEN_REMARKS = new Set(['Advance Received', 'Advance Applied', 'Bill on Hold Cleared']);
 
+interface SelectedJustificationCell {
+  outletName: string;
+  remark: string;
+  cell: AdminJustificationCellDTO;
+}
+
 export function AdminDashboard() {
   const user = useCurrentUser();
   const [dashboard, setDashboard] = useState<AdminDashboardDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedBohOutlet, setSelectedBohOutlet] = useState<AdminOutletBohSummaryDTO | null>(null);
+  const [selectedCell, setSelectedCell] = useState<SelectedJustificationCell | null>(null);
 
   useEffect(() => {
     if (user.role !== 'admin') return;
@@ -82,7 +95,7 @@ export function AdminDashboard() {
     );
   }
 
-  const justificationChips = dashboard?.justificationCounts.filter((jc) => !HIDDEN_REMARKS.has(jc.remark)) ?? [];
+  const justificationColumns = dashboard?.justifications.remarks.filter((r) => !HIDDEN_REMARKS.has(r)) ?? [];
 
   return (
     <main className="app-main">
@@ -204,18 +217,51 @@ export function AdminDashboard() {
           </section>
 
           <section className="mt-6">
-            <h2 className="text-lede font-semibold mb-3">Justifications</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {justificationChips.map((jc) => (
-                <div key={jc.remark} className={`pick-card p-3 ${jc.count === 0 ? 'opacity-50' : 'bg-sunken'}`}>
-                  <div className="flex items-center gap-1.5 text-tiny text-ink-3">
-                    <span aria-hidden>{REMARK_ICON[jc.remark] ?? '•'}</span>
-                    <span className="truncate">{jc.remark}</span>
-                  </div>
-                  <div className="font-semibold mt-1">{jc.count}</div>
-                  <div className="text-tiny text-ink-3">{fmt(jc.amount)}</div>
-                </div>
-              ))}
+            <h2 className="text-lede font-semibold mb-1">Justifications</h2>
+            <p className="text-tiny text-ink-3 mb-3">
+              Last 7 days — {fmtEventDate(dashboard.justifications.windowStart)} to{' '}
+              {fmtEventDate(dashboard.justifications.windowEnd)}
+            </p>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left!">Outlet</th>
+                    {justificationColumns.map((remark) => (
+                      <th key={remark} className="num">
+                        <span aria-hidden>{REMARK_ICON[remark] ?? '•'}</span> {remark}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.justifications.rows.map((row) => (
+                    <tr key={row.outlet}>
+                      <td className="text-left!">{row.outletName}</td>
+                      {justificationColumns.map((remark) => {
+                        const cell = row.cells[remark];
+                        const hasData = Boolean(cell && cell.count > 0);
+                        return (
+                          <td
+                            key={remark}
+                            className={hasData ? 'num cursor-pointer' : 'num'}
+                            onClick={() => hasData && setSelectedCell({ outletName: row.outletName, remark, cell: cell! })}
+                          >
+                            {hasData ? (
+                              <>
+                                <div className="font-semibold">{cell!.count}</div>
+                                <div className="text-tiny text-ink-3">{fmt(cell!.amount)}</div>
+                              </>
+                            ) : (
+                              <span className="text-ink-3">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -247,6 +293,35 @@ export function AdminDashboard() {
                   {e.phone && <> · {e.phone}</>}
                 </div>
                 {e.notes && <div className="text-tiny text-ink-3 mt-1">{e.notes}</div>}
+              </div>
+            ))}
+          </div>
+        </ModalShell>
+      )}
+
+      {selectedCell && (
+        <ModalShell
+          title={`${selectedCell.remark} — ${selectedCell.outletName} (${selectedCell.cell.count})`}
+          onClose={() => setSelectedCell(null)}
+          footer={
+            <button type="button" className="btn" onClick={() => setSelectedCell(null)}>
+              Close
+            </button>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            {selectedCell.cell.entries.map((e: AdminCommentDTO) => (
+              <div key={e.id} className="pick-card p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold">{e.text || '(no detail recorded)'}</span>
+                  <span className={`font-semibold ${e.direction === 'excess' ? 'text-ok' : 'text-err'}`}>
+                    {e.direction === 'excess' ? '+' : '-'}
+                    {fmt(e.amount)}
+                  </span>
+                </div>
+                <div className="text-tiny text-ink-3 mt-1">
+                  {e.businessDate ? fmtEventDate(e.businessDate) : '—'} · {e.createdBy}
+                </div>
               </div>
             ))}
           </div>
