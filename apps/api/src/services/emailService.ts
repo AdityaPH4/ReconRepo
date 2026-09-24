@@ -1,9 +1,11 @@
 /**
  * Outbound email — currently just the submitted-session report, sent to the
- * accounts team (`config.email.bgkEmails`). Gmail/Workspace SMTP via
- * `nodemailer`, chosen over SES for this: free at this volume (a handful of
- * emails a day) and works the moment an App Password exists, with no AWS
- * sandbox/production-access approval step in the way.
+ * accounts team (`config.email.bgkEmails`). Plain SMTP via `nodemailer`
+ * (`config.email.smtpHost`/`smtpPort`, defaulting to Brevo's relay) rather
+ * than a specific provider's API — free at this volume (a handful of emails
+ * a day) and, unlike Gmail/Workspace, doesn't depend on an app-password
+ * setting a Workspace admin might have disabled, and unlike SES, doesn't
+ * need a sandbox/production-access approval step.
  */
 
 import nodemailer, { type Transporter } from 'nodemailer';
@@ -14,7 +16,11 @@ let transporter: Transporter | null = null;
 function getTransporter(): Transporter {
   if (!transporter) {
     transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: config.email.smtpHost,
+      port: config.email.smtpPort,
+      // 465 is implicit TLS; every other port (587 — Brevo's documented
+      // default, 25, ...) starts plaintext and upgrades via STARTTLS.
+      secure: config.email.smtpPort === 465,
       auth: { user: config.email.smtpUser, pass: config.email.smtpPassword },
     });
   }
@@ -44,7 +50,7 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
   }
   try {
     await getTransporter().sendMail({
-      from: `"${config.email.fromName}" <${config.email.smtpUser}>`,
+      from: `"${config.email.fromName}" <${config.email.fromEmail}>`,
       to: message.to.join(', '),
       subject: message.subject,
       html: message.html,

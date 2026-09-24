@@ -128,16 +128,23 @@ export const config = {
 
   /**
    * Outbound email — a submitted session's final report, sent to the
-   * accounts team. Gmail/Workspace SMTP (an App Password, not the account's
-   * real password — generated from that Google account's own "App
-   * Passwords" settings page). `enabled` is false with no credentials set,
-   * same "works with nothing configured, logs instead of failing" pattern
-   * as `auth.enabled` — so a clean local checkout never needs SMTP to run.
+   * accounts team. Plain SMTP, provider-agnostic — defaults to Brevo's relay
+   * (free tier, 300/day, no 2FA/app-password/admin-approval dance), but any
+   * SMTP relay works by overriding `SMTP_HOST`/`SMTP_PORT`. `SMTP_USER`/
+   * `SMTP_PASSWORD` authenticate the connection; `EMAIL_FROM` is the
+   * separately-verified sender address a relay actually sends as (falls
+   * back to `SMTP_USER` for a provider — Gmail — where they're the same
+   * account). `enabled` is false with no credentials set, same "works with
+   * nothing configured, logs instead of failing" pattern as `auth.enabled`
+   * — so a clean local checkout never needs SMTP to run.
    */
   email: {
     enabled: Boolean(process.env.SMTP_USER && process.env.SMTP_PASSWORD),
+    smtpHost: str('SMTP_HOST', 'smtp-relay.brevo.com'),
+    smtpPort: int('SMTP_PORT', 587),
     smtpUser: str('SMTP_USER', ''),
     smtpPassword: str('SMTP_PASSWORD', ''),
+    fromEmail: str('EMAIL_FROM', str('SMTP_USER', '')),
     fromName: str('EMAIL_FROM_NAME', 'Toit Recon'),
     /** Case-insensitive; the accounts team's distribution list. */
     bgkEmails: parseEmailList('BGK_EMAILS'),
