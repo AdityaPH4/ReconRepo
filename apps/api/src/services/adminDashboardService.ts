@@ -219,8 +219,8 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
     // ── Justifications — this outlet, last 7 days by business date ───
     // (falling back to the session's own creation day when the Payment
     // Report had no parseable date, same tolerance `reportAccess.ts` uses).
-    const cells = new Map<string, { count: number; amount: number; entries: AdminCommentDTO[] }>(
-      ALL_REMARKS.map((r) => [r, { count: 0, amount: 0, entries: [] }]),
+    const cells = new Map<string, { count: number; netAmount: number; entries: AdminCommentDTO[] }>(
+      ALL_REMARKS.map((r) => [r, { count: 0, netAmount: 0, entries: [] }]),
     );
     const inWindow = sessions.filter((s) => {
       const bd = s.businessDate ?? s.createdAt.slice(0, 10);
@@ -233,7 +233,7 @@ export async function buildAdminDashboard(): Promise<AdminDashboardDTO> {
         const cell = cells.get(e.remark);
         if (!cell) continue;
         cell.count += 1;
-        cell.amount += e.amount;
+        cell.netAmount += e.direction === 'excess' ? e.amount : -e.amount;
         const text = justificationText(e, full, allAdvances);
         if (!text.trim()) continue; // nothing to review
         const comment: AdminCommentDTO = {

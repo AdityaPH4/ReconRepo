@@ -250,7 +250,10 @@ export function AdminDashboard() {
                             {hasData ? (
                               <>
                                 <div className="font-semibold">{cell!.count}</div>
-                                <div className="text-tiny text-ink-3">{fmt(cell!.amount)}</div>
+                                <div className={`text-tiny font-semibold ${cell!.netAmount >= 0 ? 'text-ok' : 'text-err'}`}>
+                                  {cell!.netAmount > 0 ? '+' : ''}
+                                  {fmt(cell!.netAmount)}
+                                </div>
                               </>
                             ) : (
                               <span className="text-ink-3">—</span>

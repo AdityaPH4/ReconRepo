@@ -724,7 +724,16 @@ export interface AdminCommentDTO {
 /** One outlet × remark cell in the Justifications table. */
 export interface AdminJustificationCellDTO {
   count: number;
-  amount: number;
+  /**
+   * Signed net total — positive when this cell's entries are net excess,
+   * negative when net shortage (each entry's own `amount` is a positive
+   * magnitude; this sums `direction === 'excess' ? +amount : -amount`, same
+   * convention as `residual.ts`'s `diff`). Almost every remark shown here is
+   * one direction only, so this is just that direction's sign — except
+   * 'Other', which appears in both `REMARKS_EXCESS` and `REMARKS_SHORTAGE`
+   * and can genuinely net out from a mix of both within the window.
+   */
+  netAmount: number;
   /** The actual entries behind this cell, most recent first — "what happened", not just a number. */
   entries: AdminCommentDTO[];
 }
