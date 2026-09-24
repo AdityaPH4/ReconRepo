@@ -22,6 +22,7 @@ import multer from 'multer';
 import { config } from '../config.js';
 import { outletScope } from '../middleware/auth.js';
 import { assertReconAllowed } from '../services/approvalService.js';
+import { sendEmail } from '../services/emailService.js';
 import { buildExplanationItems, computeSubmitGate } from '../services/justificationService.js';
 import {
   BadRequestError,
@@ -424,6 +425,18 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
     // a prior submitted session for this same outlet+date (an approved
     // re-run) — this newly-submitted one is now the definitive record.
     await supersedeSessions(session.meta.outlet, session.meta.businessDate, session.meta.id, ['draft', 'submitted']);
+
+    // Best-effort — awaited so a delivery failure is logged before the
+    // response goes out, but `sendEmail` never throws, so it can never turn
+    // a successful submit into a failed one.
+    if (saved.snapshot) {
+      await sendEmail({
+        to: [...config.email.bgkEmails],
+        subject: `Reconciliation submitted — ${outletName(saved.meta.outlet)} — ${saved.meta.businessDate ?? 'no business date'}`,
+        html: buildReportHtml(saved.snapshot as never),
+      });
+    }
+
     res.json(saved);
   } catch (err) {
     next(err);

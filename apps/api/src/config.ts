@@ -30,8 +30,8 @@ function int(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** `ADMIN_EMAILS=alice@toit.in,bob@toit.in` → a lowercased lookup set. */
-function parseAdminEmails(name: string): Set<string> {
+/** `NAME=alice@toit.in,bob@toit.in` → a lowercased lookup set. Shared by `ADMIN_EMAILS` (membership checks) and `BGK_EMAILS` (a send-to list). */
+function parseEmailList(name: string): Set<string> {
   const v = process.env[name];
   if (!v) return new Set();
   return new Set(
@@ -112,7 +112,7 @@ export const config = {
       outlet: null,
     },
     /** Case-insensitive; role is resolved once at Google sign-in and baked into that session's bearer token. */
-    adminEmails: parseAdminEmails('ADMIN_EMAILS'),
+    adminEmails: parseEmailList('ADMIN_EMAILS'),
     gmOutlets: parseGmOutlets('GM_OUTLETS'),
   },
 
@@ -125,6 +125,23 @@ export const config = {
 
   /** Where the browser lands after a successful Google sign-in. */
   webAppUrl: str('WEB_APP_URL', 'http://localhost:3000'),
+
+  /**
+   * Outbound email — a submitted session's final report, sent to the
+   * accounts team. Gmail/Workspace SMTP (an App Password, not the account's
+   * real password — generated from that Google account's own "App
+   * Passwords" settings page). `enabled` is false with no credentials set,
+   * same "works with nothing configured, logs instead of failing" pattern
+   * as `auth.enabled` — so a clean local checkout never needs SMTP to run.
+   */
+  email: {
+    enabled: Boolean(process.env.SMTP_USER && process.env.SMTP_PASSWORD),
+    smtpUser: str('SMTP_USER', ''),
+    smtpPassword: str('SMTP_PASSWORD', ''),
+    fromName: str('EMAIL_FROM_NAME', 'Toit Recon'),
+    /** Case-insensitive; the accounts team's distribution list. */
+    bgkEmails: parseEmailList('BGK_EMAILS'),
+  },
 } as const;
 
 /** One-line summary of what this process is actually wired to, logged at boot. */
@@ -134,6 +151,7 @@ export function describeConfig(): string {
     `objects=${config.objectStore.driver}`,
     `sessions=${config.sessionStore.driver}`,
     `auth=${config.auth.enabled ? 'credentials' : 'DEV STUB'}`,
+    `email=${config.email.enabled ? `${config.email.bgkEmails.size} BGK recipient(s)` : 'DISABLED'}`,
   ];
   return parts.join('  ');
 }
