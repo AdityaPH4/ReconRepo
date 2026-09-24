@@ -41,16 +41,21 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
   // directly (see module doc comment above).
   const effectiveSource = request.lockedSource ?? 'MPR';
 
-  // A bill cleared through HDFC-UPI, MPR, or Pinelabs needs the same
-  // 12-digit RRN discipline as any other justification for that source,
-  // re-validated server-side in `clearBoh()` — legacy never asked for one
-  // here, but that just meant a cleared bill couldn't be tied back to the
-  // bank/terminal record that actually paid it. MPR and Pinelabs
-  // additionally need the date the transaction actually shows up in the
-  // bank/Pinelabs settlement (MPR) report, since that can lag the recon's
-  // own business date. `lockedSource` forces single selection (see `toggle`
-  // below), so one field per modal instance is enough.
-  const rrnRequired = effectiveSource === 'HDFC Static UPI' || effectiveSource === 'MPR' || effectiveSource === 'Pinelabs';
+  // A bill cleared through HDFC-UPI, the aggregate Static UPI tab (Kotak, or
+  // HDFC absent a statement), MPR, or Pinelabs needs the same 12-digit RRN
+  // discipline as any other justification for that source, re-validated
+  // server-side in `clearBoh()` — legacy never asked for one here, but that
+  // just meant a cleared bill couldn't be tied back to the bank/terminal
+  // record that actually paid it. MPR and Pinelabs additionally need the
+  // date the transaction actually shows up in the bank/Pinelabs settlement
+  // (MPR) report, since that can lag the recon's own business date.
+  // `lockedSource` forces single selection (see `toggle` below), so one
+  // field per modal instance is enough.
+  const rrnRequired =
+    effectiveSource === 'HDFC Static UPI' ||
+    effectiveSource === 'Static UPI' ||
+    effectiveSource === 'MPR' ||
+    effectiveSource === 'Pinelabs';
   const needsMprDate = effectiveSource === 'MPR' || effectiveSource === 'Pinelabs';
 
   // A row-level HDFC-UPI item already carries its own RRN — an HDFC UPI

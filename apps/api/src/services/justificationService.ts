@@ -404,14 +404,20 @@ export function clearBoh(
   if (!entry && !staged) throw new JustificationError('Bills-on-hold entry not found.');
   if (entry && entry.status !== 'open') throw new JustificationError('This entry is already cleared.');
 
-  // A BOH clearance sourced from HDFC-UPI, MPR, or Pinelabs needs the same
-  // 12-digit RRN discipline as any other justification for that source —
-  // legacy never asked for one here, but that just meant a cleared bill
-  // couldn't be tied back to the bank/terminal record that actually paid it.
-  // MPR and Pinelabs additionally need the date the transaction actually
-  // shows up in the bank/Pinelabs settlement (MPR) report, since that can
-  // lag the recon's own business date by a day or more.
-  const needsRrn = req.clearSource === 'HDFC Static UPI' || req.clearSource === 'MPR' || req.clearSource === 'Pinelabs';
+  // A BOH clearance sourced from HDFC-UPI, the aggregate Static UPI tab
+  // (Kotak, or HDFC absent a statement — see `AggregateJustificationPanel`'s
+  // own doc comment), MPR, or Pinelabs needs the same 12-digit RRN
+  // discipline as any other justification for that source — legacy never
+  // asked for one here, but that just meant a cleared bill couldn't be tied
+  // back to the bank/terminal record that actually paid it. MPR and
+  // Pinelabs additionally need the date the transaction actually shows up
+  // in the bank/Pinelabs settlement (MPR) report, since that can lag the
+  // recon's own business date by a day or more.
+  const needsRrn =
+    req.clearSource === 'HDFC Static UPI' ||
+    req.clearSource === 'Static UPI' ||
+    req.clearSource === 'MPR' ||
+    req.clearSource === 'Pinelabs';
   const needsMprDate = req.clearSource === 'MPR' || req.clearSource === 'Pinelabs';
   if (needsRrn) {
     if (!req.rrn || !/^\d{12}$/.test(req.rrn)) {

@@ -417,7 +417,7 @@ export interface ClearBohRequest {
   targetKey: string | null;
   bohEntryId: string;
   clearSource: string;
-  /** Required (12-digit) when `clearSource` is `'HDFC Static UPI'`, `'MPR'`, or `'Pinelabs'`; ignored otherwise. */
+  /** Required (12-digit) when `clearSource` is `'HDFC Static UPI'`, `'Static UPI'`, `'MPR'`, or `'Pinelabs'`; ignored otherwise. */
   rrn?: string | null;
   /** Required (ISO `yyyy-mm-dd`) when `clearSource` is `'MPR'` or `'Pinelabs'`; ignored otherwise. */
   mprDate?: string | null;
