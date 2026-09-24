@@ -27,6 +27,7 @@ import {
   parseHdfcStatement,
   parsePaymentReport,
   parsePaymentSummary,
+  parsePRDate,
   parseSaleSummaryDrawerSection,
   parseSaleSummarySalesSection,
   parseSaleSummaryTaxesSection,
@@ -231,11 +232,37 @@ describe('business window', () => {
   });
 });
 
+describe('parsePRDate()', () => {
+  it('reads dd-Mon-yyyy (the original, most common shape)', () => {
+    assert.deepEqual(parsePRDate('23-Sep-2026 20:14:03'), { y: 2026, m: 8, d: 23 });
+  });
+
+  it('reads M/D/yyyy H:MM, no leading zeros or seconds — a real confirmed Toit Bagmane export shape', () => {
+    // The exact row shape that motivated this: "9/23/2026 0:04" — single-
+    // digit month AND hour, day of month unambiguously >12.
+    assert.deepEqual(parsePRDate('9/23/2026 12:34'), { y: 2026, m: 8, d: 23 });
+    assert.deepEqual(parsePRDate('9/23/2026 0:04'), { y: 2026, m: 8, d: 23 });
+  });
+
+  it('rejects an out-of-range month/day in the slash form rather than guessing', () => {
+    assert.equal(parsePRDate('13/40/2026 12:00'), null);
+  });
+
+  it('returns null for garbage or an empty value', () => {
+    assert.equal(parsePRDate('not a date'), null);
+    assert.equal(parsePRDate(''), null);
+    assert.equal(parsePRDate(null), null);
+    assert.equal(parsePRDate(undefined), null);
+  });
+});
+
 describe('fmtDate()', () => {
-  it('normalises both source formats to dd/mm/yy 12-hour', () => {
+  it('normalises all three source formats to dd/mm/yy 12-hour', () => {
     assert.equal(fmtDate('01/08/2026 09:14:03 PM'), '01/08/26 09:14:03 PM');
     assert.equal(fmtDate('01-Aug-2026 21:14:03'), '01/08/26 09:14:03 PM');
     assert.equal(fmtDate('01-Aug-2026 00:05:00'), '01/08/26 12:05:00 AM');
+    assert.equal(fmtDate('9/23/2026 12:34'), '23/09/26 12:34:00 PM');
+    assert.equal(fmtDate('9/23/2026 0:04'), '23/09/26 12:04:00 AM');
   });
 
   it('passes through anything it does not recognise', () => {
@@ -291,6 +318,26 @@ describe('parsePaymentReport()', () => {
     assert.ok(rows.every((r) => r.paymentName.trim() !== ''), 'no phantom blank-payment-name row');
     assert.ok(!rows.some((r) => r.orderNo === 'Toit Bangalore'), 'subtotal line excluded');
     assert.ok(!rows.some((r) => r.orderNo === 'Grand Total'), 'Grand Total line excluded');
+  });
+
+  it('reads the business date from a report using the alternate M/D/yyyy H:MM export shape (real Toit Bagmane sample)', () => {
+    const csvAltDateFormat = [
+      'Payment Report,Toit(Toit Bangalore - Mahadevapura),From : 23/09/2026  To : 23/09/2026,Generated On : 24-Sep-2026 12:07 PM,,,,,,,,,,,',
+      'Order No,Vendor ID,Transaction Date,Customer Name,Employee Name,Payment Type,Payment Name,Reason,Comment,Card Number,Auth Code,Amount,Tips,Bank Name,Retrieval Ref. No',
+      ',,,,,,,,,,,,,,',
+      'Toit Bangalore - Mahadevapura,,,,,,,,,,,"1,047,789.97",0,,',
+      "11044670,,9/23/2026 12:34,Walk-in,Arjun BAGT,PINELABS-APOS,Pinelabs APOS,,,'cici','753505',269,0,HDFC UPI,626677739313",
+      // A row past physical midnight, still labelled with the same business
+      // date — the actual file this was confirmed against does this too.
+      "11044916,,9/23/2026 0:04,Walk-in,Ningamwon Vakhong,PINELABS-APOS,Pinelabs APOS,,,'8979','052755',\"1,505.00\",0,KOTAKATOS BANK,626618291089",
+      ',,,,,,,,,,,,,,',
+      'Grand Total,,,,,,,,,,,"1,047,789.97",0,,',
+    ].join('\n');
+
+    const { rows, bizDate } = parsePaymentReport(csvAltDateFormat);
+    assert.equal(rows.length, 2);
+    assert.deepEqual(bizDate, { y: 2026, m: 8, d: 23 });
+    assert.equal(civilToISO(bizDate!), '2026-09-23');
   });
 });
 

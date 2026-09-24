@@ -48,8 +48,18 @@ const MON: Record<string, number> = {
 const MON_NUM = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 
 /**
- * Parses the business date from a Payment Report date cell
- * (`dd-Mon-yyyy`, optionally followed by a time which is ignored here).
+ * Parses the business date from a Payment Report date cell. Two confirmed
+ * real export shapes:
+ *  - `dd-Mon-yyyy`, optionally followed by a time (the original, most common
+ *    shape this was built against) — e.g. `23-Sep-2026 20:14:03`.
+ *  - `M/D/yyyy H:MM`, no leading zeros, no seconds, 24-hour — e.g.
+ *    `9/23/2026 0:04`. Confirmed against a real Toit Bagmane export whose
+ *    "Transaction Date" column uses this instead, unlike every other sample
+ *    seen so far. Assumed month-first (US order): unambiguous whenever
+ *    either half is >12, which every real row of this shape seen so far is;
+ *    a file where every single transaction happens on a day-of-month <=12
+ *    would be genuinely ambiguous, but there's no way to tell from the
+ *    string alone, and no such file has actually shown up yet.
  *
  * Note: the legacy lookup was case-sensitive with an `?? 0` fallback, so a
  * cell reading `01-AUG-2026` would have resolved to *January*. The lookup here
@@ -58,11 +68,25 @@ const MON_NUM = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11
  * identical; for other casings it is correct instead of silently wrong.
  */
 export function parsePRDate(s: string | null | undefined): CivilDate | null {
-  const m = s && String(s).match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);
-  if (!m) return null;
-  const monthIndex = MON[m[2]!.toLowerCase()];
-  if (monthIndex === undefined) return null;
-  return { y: +m[3]!, m: monthIndex, d: +m[1]! };
+  if (!s) return null;
+  const str = String(s);
+
+  const dashForm = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{4})/);
+  if (dashForm) {
+    const monthIndex = MON[dashForm[2]!.toLowerCase()];
+    if (monthIndex === undefined) return null;
+    return { y: +dashForm[3]!, m: monthIndex, d: +dashForm[1]! };
+  }
+
+  const slashForm = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if (slashForm) {
+    const month = +slashForm[1]!;
+    const day = +slashForm[2]!;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return { y: +slashForm[3]!, m: month - 1, d: day };
+  }
+
+  return null;
 }
 
 /**
@@ -166,9 +190,11 @@ export function fmtCivil(bd: CivilDate): string {
 }
 
 /**
- * Normalises either source date format to `dd/mm/yy hh:mm:ss AM/PM` for display.
- * Handles the ZIP format (already 12-hour) and the PR format (24-hour);
- * anything else is returned unchanged.
+ * Normalises any of three source date formats to `dd/mm/yy hh:mm:ss AM/PM`
+ * for display. Handles the ZIP format (already 12-hour), the PR format
+ * (24-hour, `dd-Mon-yyyy`), and the alternate PR format (24-hour,
+ * `M/D/yyyy H:MM`, no leading zeros or seconds — see `parsePRDate`'s own doc
+ * comment for where this was confirmed); anything else is returned unchanged.
  */
 export function fmtDate(raw: string | null | undefined): string {
   if (!raw) return '—';
@@ -192,6 +218,17 @@ export function fmtDate(raw: string | null | undefined): string {
     if (h === 0) h = 12;
     else if (h > 12) h -= 12;
     return `${d!.padStart(2, '0')}/${moNum}/${yr!.slice(2)} ${String(h).padStart(2, '0')}:${mm}:${ss} ${ap}`;
+  }
+
+  // PR (alternate export): M/D/yyyy H:MM (24-hour, no seconds)
+  const m3 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
+  if (m3) {
+    const [, mo, d, yr, hh, mm] = m3;
+    let h = parseInt(hh!, 10);
+    const ap = h >= 12 ? 'PM' : 'AM';
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return `${d!.padStart(2, '0')}/${mo!.padStart(2, '0')}/${yr!.slice(2)} ${String(h).padStart(2, '0')}:${mm}:00 ${ap}`;
   }
 
   return s;
