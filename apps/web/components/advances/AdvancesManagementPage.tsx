@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from 'react';
 import type { AdvanceWithBalanceDTO } from '@toit/contracts';
-import { OUTLET_CODES, OUTLET_NAMES, type OutletCode, fmt, fmtEventDate } from '@toit/recon-core/display';
+import { OUTLET_CODES, OUTLET_NAMES, type OutletCode, fmt, fmtEventDate, isMaterial } from '@toit/recon-core/display';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ApiError, closeAdvance, listAdvances } from '@/lib/api';
 
@@ -74,7 +74,11 @@ export function AdvancesManagementPage() {
     );
   }
 
-  const open = (rows ?? []).filter((r) => r.advance.status !== 'closed');
+  // A balance of ~0 needs no closure — it was fully applied through normal
+  // recon, nothing is left to dispose of. `status !== 'closed'` alone
+  // doesn't check that, so a naturally-exhausted advance would otherwise
+  // sit here forever with a "Close" button that has nothing to do.
+  const open = (rows ?? []).filter((r) => r.advance.status !== 'closed' && isMaterial(r.balance));
   const closed = (rows ?? [])
     .filter((r) => r.advance.status === 'closed')
     .sort((a, b) => (b.advance.closedAt ?? '').localeCompare(a.advance.closedAt ?? ''));

@@ -92,7 +92,7 @@ export function UploadPanel({
       : 'Sales Summary optional — proceed without it.'
     : 'Still needed: ' + missing.join(', ');
 
-  const requiredPills = (['pr', 'zip', 'sum'] as const).filter((r) => files[r]);
+  const requiredPills = (['pr', 'zip', 'sum', 'hdfc_link'] as const).filter((r) => files[r]);
 
   return (
     <div className="card mb-6">
@@ -124,7 +124,7 @@ export function UploadPanel({
           ref={mainInput}
           type="file"
           multiple
-          accept=".csv,.zip"
+          accept=".csv,.zip,.xlsx"
           className={HIDDEN_INPUT}
           onChange={(e) => {
             accept(e.target.files);
@@ -151,7 +151,8 @@ export function UploadPanel({
           <div className="dropzone-sub mt-2">
             <span className="faux-btn">📁 Browse files</span>
             <span className="ml-2">
-              Payment Report (CSV) · All Transactions (ZIP) · Sales Summary (CSV)
+              Payment Report (CSV) · All Transactions (ZIP) · Sales Summary (CSV) · HDFC Payment Link Statement
+              (optional — kept with the session for reference; not yet used in the reconciliation itself)
             </span>
           </div>
         </div>

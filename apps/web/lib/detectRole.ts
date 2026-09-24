@@ -14,7 +14,13 @@ export function detectRole(name: string): UploadRole | null {
 
   if (l.endsWith('.zip')) return 'zip';
 
-  // The optional HDFC statement is the only .xlsx the flow accepts.
+  // Checked before the blanket ".xlsx -> hdfc" rule below, since a Payment
+  // Link statement could plausibly also export as .xlsx — "link" in the
+  // name is the more specific match, same reasoning as summary-before-PR
+  // just below.
+  if (l.includes('link')) return 'hdfc_link';
+
+  // The optional HDFC (Static UPI) statement is otherwise the only .xlsx the flow accepts.
   if (l.endsWith('.xlsx')) return 'hdfc';
 
   // Sales Summary (or a native Drawer Summary Report) first — it is the more specific match.
@@ -39,6 +45,7 @@ export const ROLE_LABELS: Record<UploadRole, string> = {
   zip: 'All Transactions',
   sum: 'Sales Summary',
   hdfc: 'HDFC UPI Statement',
+  hdfc_link: 'HDFC Payment Link Statement',
 };
 
 export const ROLE_ICONS: Record<UploadRole, string> = {
@@ -46,4 +53,5 @@ export const ROLE_ICONS: Record<UploadRole, string> = {
   zip: '🗜',
   sum: '📊',
   hdfc: '📶',
+  hdfc_link: '🔗',
 };

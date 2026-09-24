@@ -60,6 +60,7 @@ export function ReconciliationApp() {
         zip: files.zip,
         sum: files.sum,
         hdfc: files.hdfc,
+        hdfc_link: files.hdfc_link,
         outlet,
       });
       setSession(dto);

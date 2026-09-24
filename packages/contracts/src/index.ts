@@ -60,8 +60,17 @@ export type Jsonified<T> = T extends Date
 
 // ── Uploads ───────────────────────────────────────────────────────────────
 
-/** The optional fourth upload sits outside the three required roles. */
-export type UploadRole = FileRole | 'hdfc';
+/**
+ * The optional uploads sit outside the three required roles.
+ * `hdfc` = HDFC Static UPI statement (parsed — enables transaction-level
+ * reconciliation; see `parseHdfcStatement`).
+ * `hdfc_link` = HDFC Payment Link statement — stored alongside the other raw
+ * files, same as `sum`/`hdfc`, but not parsed or reconciled against yet;
+ * there is no confirmed real export format to build a reader against. A
+ * separate upload from `hdfc` on purpose — Static UPI and Payment Link are
+ * different HDFC products with (presumably) different statement formats.
+ */
+export type UploadRole = FileRole | 'hdfc' | 'hdfc_link';
 
 /** One raw file as stored, byte-for-byte, in object storage. */
 export interface UploadedFileDTO {

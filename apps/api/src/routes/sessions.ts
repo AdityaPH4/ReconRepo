@@ -48,7 +48,7 @@ import {
  */
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: config.maxUploadBytes, files: 4 },
+  limits: { fileSize: config.maxUploadBytes, files: 5 },
 });
 
 const UPLOAD_FIELDS = [
@@ -56,6 +56,11 @@ const UPLOAD_FIELDS = [
   { name: 'zip', maxCount: 1 },
   { name: 'sum', maxCount: 1 },
   { name: 'hdfc', maxCount: 1 },
+  // Stored alongside the other raw files, same as `sum`/`hdfc` — not parsed
+  // or reconciled against yet (no confirmed HDFC Payment Link statement
+  // format to build a reader against). Purely a record-keeping upload for
+  // now; see the doc comment on `UploadRole` in @toit/contracts.
+  { name: 'hdfc_link', maxCount: 1 },
 ] as const;
 
 type UploadedFiles = Record<string, Express.Multer.File[] | undefined>;
@@ -74,9 +79,10 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
     const zip = firstFile(files, 'zip');
     const sum = firstFile(files, 'sum');
     const hdfc = firstFile(files, 'hdfc');
+    const hdfc_link = firstFile(files, 'hdfc_link');
 
     // Mirrors the legacy guard: the Payment Report and the ZIP are both
-    // mandatory; the summary and HDFC statement are optional.
+    // mandatory; the summary and HDFC statement(s) are optional.
     const missing: string[] = [];
     if (!pr) missing.push('Payment Report (pr)');
     if (!zip) missing.push('All Transactions ZIP (zip)');
@@ -119,7 +125,7 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
     const objects = getObjectStore();
     const stored: UploadedFileDTO[] = [];
 
-    for (const [role, file] of Object.entries({ pr, zip, sum, hdfc })) {
+    for (const [role, file] of Object.entries({ pr, zip, sum, hdfc, hdfc_link })) {
       if (!file) continue;
       const key = buildStorageKey(sessionId, role as UploadRole, file.originalname);
       await objects.put({
