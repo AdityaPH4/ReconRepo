@@ -146,13 +146,22 @@ export async function parseTransactionsZip(
  * "Batch Settle Check": every row with `Txn Status = Success` must also carry
  * `Batch Status = Settled` — a Success row Pinelabs hasn't finished settling
  * yet means any figure built from it (terminal totals, RRN matching) isn't
- * final. Checked across `inside` *and* `filtered` — an unsettled row is the
- * same underlying problem (the report was pulled before the batch finished
- * settling) whether or not the window/Paper-POS filters would also have
- * excluded that particular row from today's reconciliation math.
+ * final for *this* business date.
+ *
+ * Scoped to `inside` plus whichever `filtered` rows were excluded for a
+ * reason other than the business window — a Paper-POS row is still the
+ * same business date's real money, just excluded from the electronic-
+ * settlement math, so a genuine settle problem there is still worth
+ * surfacing before submitting. A row excluded for being *outside the
+ * business window* is a different story: it belongs to some other date
+ * entirely (a different day's stray row in the same ZIP, or the ~07:00
+ * carry-over edge), so whether it happens to be settled has nothing to do
+ * with whether today's upload is safe to reconcile — that date isn't being
+ * reconciled right now, and will get this same check on its own day.
  */
 export function findUnsettledSuccessRows(inside: readonly ZipRow[], filtered: readonly ZipRow[]): ZipRow[] {
-  return [...inside, ...filtered].filter(
+  const inScopeFiltered = filtered.filter((r) => r._fReason !== 'Outside business window');
+  return [...inside, ...inScopeFiltered].filter(
     (r) => r.txnStatus.toLowerCase() === 'success' && r.batchStatus.trim().toLowerCase() !== 'settled',
   );
 }

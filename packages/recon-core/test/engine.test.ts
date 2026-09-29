@@ -403,10 +403,11 @@ describe('findUnsettledSuccessRows() — Batch Settle Check', () => {
     assert.equal(unsettled[0]!.batchStatus, 'Pending');
   });
 
-  it('still flags an unsettled row even when Paper-POS/window filtering excluded it from `inside`', async () => {
+  it('still flags an unsettled Paper-POS row even though it is excluded from `inside`', async () => {
     const win = buildWin({ y: 2026, m: 7, d: 1 });
-    // Paper POS *and* unsettled — a row can be excluded from reconciliation
-    // math for one reason while still surfacing a genuine settle problem.
+    // Paper POS *and* unsettled — excluded from the electronic-settlement
+    // math, but it's still the same business date's real money, so a
+    // genuine settle problem there is still worth surfacing.
     const csv =
       ZIP_CSV +
       '\nPINELABS,PAPER POS,UnsettledPaper,VISA,555.00,0,01/08/2026 10:35:00 PM,Pending,Success,100000000095,02/08/2026,B14,INV14,A14,Sale,South,Toit- Bangalore,T1,M1,PAPER POS';
@@ -414,6 +415,22 @@ describe('findUnsettledSuccessRows() — Batch Settle Check', () => {
     assert.equal(inside.some((r) => r.rrn === '100000000095'), false);
     const unsettled = findUnsettledSuccessRows(inside, filtered);
     assert.ok(unsettled.some((r) => r.rrn === '100000000095'));
+  });
+
+  it('does NOT flag an unsettled row that falls outside the business window — a different date entirely, not part of this reconciliation', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    // 09:00 the next morning is past the window's 07:00 cutoff — this row
+    // belongs to some other business date, so whether it happens to be
+    // settled has nothing to do with whether *this* upload is safe.
+    const csv =
+      ZIP_CSV +
+      '\nPINELABS,CARD,UnsettledNextDay,VISA,666.00,0,02/08/2026 09:00:00 AM,Pending,Success,100000000094,03/08/2026,B15,INV15,A15,Sale,South,Toit- Bangalore,T1,M1,APOS';
+    const { inside, filtered } = await parseTransactionsZip(await makeZip(csv), win);
+    const outOfWindowRow = filtered.find((r) => r.rrn === '100000000094');
+    assert.equal(outOfWindowRow?._fReason, 'Outside business window');
+    assert.equal(outOfWindowRow?.batchStatus, 'Pending'); // genuinely unsettled, by construction
+    const unsettled = findUnsettledSuccessRows(inside, filtered);
+    assert.equal(unsettled.some((r) => r.rrn === '100000000094'), false);
   });
 
   it('does not flag a row excluded for being non-successful, even if also unsettled', async () => {
