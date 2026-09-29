@@ -167,6 +167,23 @@ export function civilToISO(bd: CivilDate): string {
 }
 
 /**
+ * Inverse of `civilToISO` — `yyyy-mm-dd` → `CivilDate`, or `null` if not
+ * that exact shape or the month/day is out of range. Used only for a
+ * manually entered business-date fallback (a zero-transaction Payment
+ * Report has no date of its own to read) — a real file's own date always
+ * comes from `parsePRDate`, never this.
+ */
+export function isoToCivil(iso: string): CivilDate | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const y = +m[1]!;
+  const mo = +m[2]!;
+  const d = +m[3]!;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return { y, m: mo - 1, d };
+}
+
+/**
  * "Today" as `yyyy-mm-dd`, read in IST — not `new Date().toISOString().slice(0, 10)`,
  * which is always UTC and so is a full calendar day *behind* the true IST date
  * for 5h30m every night (UTC 18:30–23:59 = IST 00:00–05:29, already tomorrow

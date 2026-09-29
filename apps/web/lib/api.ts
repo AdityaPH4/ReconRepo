@@ -81,6 +81,8 @@ export interface RunFiles {
   hdfc_link?: File | undefined;
   /** Admin-only manual outlet pick — wins over whatever the ZIP's terminal store name would otherwise detect. Ignored by the API for a GM (who has exactly one outlet already). */
   outlet?: OutletCode | undefined;
+  /** Fallback business date (`yyyy-mm-dd`) for a zero-transaction upload where the Payment Report has no rows to read a date from. Ignored by the API whenever the file itself yields a date. Available to GM and admin alike (unlike `outlet`), since a closed-outlet day is a GM's own call. */
+  businessDateOverride?: string | undefined;
 }
 
 /** Uploads the source files and runs a reconciliation. */
@@ -92,6 +94,7 @@ export async function createSession(files: RunFiles): Promise<SessionDTO> {
   if (files.hdfc) fd.append('hdfc', files.hdfc);
   if (files.hdfc_link) fd.append('hdfc_link', files.hdfc_link);
   if (files.outlet) fd.append('outlet', files.outlet);
+  if (files.businessDateOverride) fd.append('businessDateOverride', files.businessDateOverride);
 
   const res = await fetch(`${API_BASE}/api/sessions`, { method: 'POST', body: fd, headers: authHeaders() });
   return unwrap<SessionDTO>(res);

@@ -27,6 +27,7 @@ import {
   grandTotals,
   HdfcStatementFormatError,
   isMaterial,
+  isoToCivil,
   money,
   OUTLET_NAMES,
   parseHdfcStatement,
@@ -68,6 +69,27 @@ export interface RunInputFiles {
   hdfc?: { buffer: Buffer; originalName: string };
   /** Admin-only manual outlet pick (see `routes/sessions.ts`) — wins over whatever the ZIP's terminal store name would otherwise detect. */
   outletOverride?: OutletCode;
+  /**
+   * The requesting GM's own assigned outlet (`req.user.outlet`). When set,
+   * it wins unconditionally over ZIP-based detection and over
+   * `outletOverride` (which a GM's own request never carries anyway, per
+   * the route's admin-only gate) — a GM already has exactly one outlet, so
+   * there is nothing to detect or override. `undefined` for an admin
+   * request, which falls through to the existing detect/override/fallback
+   * logic unchanged.
+   */
+  gmOutlet?: OutletCode;
+  /**
+   * GM-facing fallback (`yyyy-mm-dd`) for a zero-transaction upload, where
+   * the Payment Report has no rows to read a date from. Only takes effect
+   * when the file itself yields no date — it never overrides a
+   * successfully file-derived one, so an ordinary upload can carry a
+   * stale/irrelevant value here with no effect. Unlike `outletOverride`,
+   * not admin-only: a closed-outlet day is a GM's own call to make, and the
+   * resulting date is still fully subject to `assertNoDateGap` in
+   * `routes/sessions.ts`, exactly like a file-derived date.
+   */
+  businessDateOverride?: string;
 }
 
 export interface RunOutcome {
@@ -98,8 +120,9 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
   // 1–2. Payment Report drives the business date, and the date drives the window.
   const { rows: prData, bizDate } = parsePaymentReport(files.pr.buffer.toString('utf8'));
   if (!prData.length) {
-    throw new BadRequestError(
-      'No transaction rows found in the Payment Report. Check the file is the POS Payment Report export.',
+    warnings.push(
+      'No transaction rows found in the Payment Report — treating this as a zero-transaction/closed day. ' +
+        'If this outlet was not actually closed, check this is the correct POS Payment Report export before submitting.',
     );
   }
   // An unrecognized payment name used to fall silently into `tab: 'other'`,
@@ -121,18 +144,37 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
       `Unrecognized payment method(s) in the Payment Report: ${unrecognizedNames.join(', ')}. Add support for them or check for a typo before re-uploading.`,
     );
   }
+  let effectiveBizDate = bizDate;
   if (!bizDate) {
-    warnings.push(
-      'No business date could be read from the Payment Report, so no time window was applied — every terminal row was included.',
-    );
+    // Zero PR rows (or, rarer, rows present but every date cell
+    // unparseable) both share the same defect: no business date to key
+    // the session, the sequence gate, or the snapshot on. A manual
+    // override is the only fallback — there is nowhere else in the file
+    // to read a date from.
+    const override = files.businessDateOverride ? isoToCivil(files.businessDateOverride) : null;
+    if (files.businessDateOverride && !override) {
+      throw new BadRequestError(`Invalid business date "${files.businessDateOverride}" — expected yyyy-mm-dd.`);
+    }
+    if (override) {
+      effectiveBizDate = override;
+      warnings.push(
+        `No business date could be read from the Payment Report (0 transaction rows) — using the manually entered business date ${files.businessDateOverride} instead. Verify this is correct before submitting.`,
+      );
+    } else {
+      throw new BusinessDateRequiredError(
+        'Could not determine a business date — the Payment Report has no rows to read one from. ' +
+          'If this is a zero-transaction/closed day, enter the business date manually and try again.',
+      );
+    }
   }
-  const win = bizDate ? buildWin(bizDate) : null;
+  const win = buildWin(effectiveBizDate!);
 
   // 3. Terminal rows, filtered through the window.
   const { inside, filtered } = await parseTransactionsZip(files.zip.buffer, win);
   if (!inside.length && !filtered.length) {
-    throw new BadRequestError(
-      'No transaction rows found inside the ZIP. Check it contains the Pinelabs All Transactions CSV.',
+    warnings.push(
+      'No transaction rows found inside the ZIP — treating this as a zero-transaction/closed day. ' +
+        'If this outlet was not actually closed, check this is the correct Pinelabs All Transactions export before submitting.',
     );
   }
 
@@ -149,20 +191,34 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
 
   // 4. Outlet, before reconcile() — it filters the HDFC statement by outlet.
   const detectedOutlet = detectOutletFromZip(inside);
-  const outlet = files.outletOverride ?? detectedOutlet ?? FALLBACK_OUTLET;
-  if (files.outletOverride) {
-    if (detectedOutlet && detectedOutlet !== files.outletOverride) {
+  let outlet: OutletCode;
+  if (files.gmOutlet) {
+    // A GM already has exactly one outlet — never let file-based detection
+    // override it, and never silently fall back to FALLBACK_OUTLET for
+    // them (which is exactly what a zero-transaction ZIP, with no store
+    // name to detect from, would otherwise trigger).
+    outlet = files.gmOutlet;
+    if (detectedOutlet && detectedOutlet !== outlet) {
       warnings.push(
-        `Outlet manually set to ${outlet} — the terminal store name in this ZIP suggested ${detectedOutlet} instead. Verify this is correct before submitting.`,
+        `This file's terminal store name looks like it might belong to ${outletName(detectedOutlet)}, not your outlet (${outletName(outlet)}) — double-check you selected the right file before submitting.`,
       );
     }
-  } else if (!detectedOutlet) {
-    const stores = [...new Set(inside.map((r) => r.store).filter(Boolean))];
-    warnings.push(
-      `Outlet could not be determined from the terminal store name${
-        stores.length ? ` (saw: ${stores.join(', ')})` : ''
-      } — defaulted to ${outlet}. Verify before submitting.`,
-    );
+  } else {
+    outlet = files.outletOverride ?? detectedOutlet ?? FALLBACK_OUTLET;
+    if (files.outletOverride) {
+      if (detectedOutlet && detectedOutlet !== files.outletOverride) {
+        warnings.push(
+          `Outlet manually set to ${outlet} — the terminal store name in this ZIP suggested ${detectedOutlet} instead. Verify this is correct before submitting.`,
+        );
+      }
+    } else if (!detectedOutlet) {
+      const stores = [...new Set(inside.map((r) => r.store).filter(Boolean))];
+      warnings.push(
+        `Outlet could not be determined from the terminal store name${
+          stores.length ? ` (saw: ${stores.join(', ')})` : ''
+        } — defaulted to ${outlet}. Verify before submitting.`,
+      );
+    }
   }
 
   // 5. Optional inputs.
@@ -247,7 +303,7 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
     result,
     outlet,
     win,
-    businessDate: bizDate ? civilToISO(bizDate) : null,
+    businessDate: civilToISO(effectiveBizDate!),
     frs: { rows: frsRows, grandPR, grandSum, grandDiff },
     counts: buildCounts(result),
     totals: buildTotals(result, prData, inside, summaryData),
@@ -449,5 +505,20 @@ export class BadRequestError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'BadRequestError';
+  }
+}
+
+/**
+ * Thrown when neither the Payment Report nor a manual override yields a
+ * business date — nothing to key the session, the sequence gate, or the
+ * snapshot on. Dedicated class (rather than folding into `BadRequestError`)
+ * so the frontend can offer the date-entry field via `code:
+ * 'BUSINESS_DATE_REQUIRED'` instead of string-matching the message.
+ */
+export class BusinessDateRequiredError extends Error {
+  readonly status = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = 'BusinessDateRequiredError';
   }
 }

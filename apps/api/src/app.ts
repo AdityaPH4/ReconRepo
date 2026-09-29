@@ -19,7 +19,7 @@ import { mprSessionsRouter } from './routes/mprSessions.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { tdsRouter } from './routes/tds.js';
 import { ApprovalRequiredError } from './services/approvalService.js';
-import { BadRequestError } from './services/reconService.js';
+import { BadRequestError, BusinessDateRequiredError } from './services/reconService.js';
 
 export const app = express();
 
@@ -64,6 +64,10 @@ app.use((_req, res) => {
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof BadRequestError) {
     res.status(400).json({ error: err.message } satisfies ApiErrorDTO);
+    return;
+  }
+  if (err instanceof BusinessDateRequiredError) {
+    res.status(400).json({ error: err.message, code: 'BUSINESS_DATE_REQUIRED' } satisfies ApiErrorDTO);
     return;
   }
   if (err instanceof ApprovalRequiredError) {

@@ -35,6 +35,13 @@ export function ReconciliationApp() {
   // an admin) — left as-is across a Clear, since it's a sticky testing
   // setting, not part of the file selection it sits next to.
   const [outlet, setOutlet] = useState<OutletCode | undefined>(undefined);
+  // Fallback business date for a zero-transaction upload — pre-filled from
+  // the dashboard's own `nextReconDate` once it loads (see `onLoad` below),
+  // but never clobbered afterward so a GM's own edit (e.g. backfilling an
+  // older date) sticks. Left as-is across a Clear, same reasoning as
+  // `outlet` above — it's inert on any file that already carries its own
+  // date, so staleness after a Clear is harmless.
+  const [businessDateOverride, setBusinessDateOverride] = useState<string | undefined>(undefined);
 
   async function run() {
     if (!files.pr || !files.zip) return;
@@ -62,6 +69,7 @@ export function ReconciliationApp() {
         hdfc: files.hdfc,
         hdfc_link: files.hdfc_link,
         outlet,
+        businessDateOverride,
       });
       setSession(dto);
     } catch (err) {
@@ -111,7 +119,12 @@ export function ReconciliationApp() {
         <SessionWorkspace session={session} onNewUpload={reset} />
       ) : (
         <main className="app-main">
-          <Dashboard onLoad={setDashboard} />
+          <Dashboard
+            onLoad={(d) => {
+              setDashboard(d);
+              setBusinessDateOverride((prev) => prev ?? d.nextReconDate ?? d.today);
+            }}
+          />
           <UploadPanel
             files={files}
             onFilesChange={setFiles}
@@ -127,6 +140,9 @@ export function ReconciliationApp() {
             onRequestApproval={askForApproval}
             outlet={outlet}
             onOutletChange={setOutlet}
+            businessDateOverride={businessDateOverride}
+            onBusinessDateOverrideChange={setBusinessDateOverride}
+            suggestedBusinessDate={dashboard?.nextReconDate ?? dashboard?.today ?? null}
           />
           <PastSessionsList />
         </main>
