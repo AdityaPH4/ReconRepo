@@ -82,5 +82,18 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
       if (!rowCount) throw new Error(`Session not found: ${id}`);
       return session;
     },
+
+    async listPendingMpr() {
+      // `mprIncludedInSessionId` lives inside the JSONB blob, same reach-in
+      // pattern `businessDate` already uses above — no dedicated column, not
+      // a hot path. Oldest business dates first, so an automated run folds
+      // in older un-ingested snapshots before newer ones.
+      const { rows } = await pool.query<{ data: SessionDTO }>(
+        `SELECT data FROM recon.sessions
+         WHERE status = 'submitted' AND (data->'meta'->>'mprIncludedInSessionId') IS NULL
+         ORDER BY created_at ASC`,
+      );
+      return rows.map((r) => r.data);
+    },
   };
 }

@@ -57,5 +57,11 @@ export function createMemorySessionStore(): SessionStore {
       sessions.set(id, session);
       return session;
     },
+
+    async listPendingMpr() {
+      return [...sessions.values()]
+        .filter((s) => s.meta.status === 'submitted' && !s.meta.mprIncludedInSessionId)
+        .sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
+    },
   };
 }

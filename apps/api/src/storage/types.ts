@@ -70,6 +70,13 @@ export interface SessionStore {
   list(query: SessionQuery): Promise<SessionListItemDTO[]>;
   /** Replaces the stored session. Used by draft edits and by submit. */
   update(id: string, session: SessionDTO): Promise<SessionDTO>;
+  /**
+   * Every `submitted` session not yet folded into a completed automated MPR
+   * run (`meta.mprIncludedInSessionId` unset) — the automated MPR ingest
+   * Lambda's input, not a UI-facing query. Returns full `SessionDTO`s
+   * (including `.snapshot`), unlike `list()`'s slim `SessionListItemDTO`.
+   */
+  listPendingMpr(): Promise<SessionDTO[]>;
 }
 
 // ── Advances repository — outlet-scoped cross-session store ──────────────

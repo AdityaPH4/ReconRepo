@@ -35,14 +35,25 @@ async function streamToBuffer(stream: unknown): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-export function createS3ObjectStore(cfg: S3ObjectStoreConfig): ObjectStore {
-  const client = new S3Client({
+/**
+ * Same region/endpoint/credentials construction `createS3ObjectStore` uses
+ * below — shared so the automated MPR ingestion Lambdas (`mailFetchService`
+ * Stage A, `mprIngestService` Stage B) can also be pointed at a local
+ * MinIO/R2-style endpoint for testing, exactly like every other S3 access
+ * in this app, rather than only ever working against real AWS S3.
+ */
+export function createRawS3Client(cfg: S3ObjectStoreConfig): S3Client {
+  return new S3Client({
     region: cfg.region,
     ...(cfg.endpoint ? { endpoint: cfg.endpoint, forcePathStyle: true } : {}),
     ...(cfg.accessKeyId && cfg.secretAccessKey
       ? { credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } }
       : {}),
   });
+}
+
+export function createS3ObjectStore(cfg: S3ObjectStoreConfig): ObjectStore {
+  const client = createRawS3Client(cfg);
 
   return {
     driver: 's3',
