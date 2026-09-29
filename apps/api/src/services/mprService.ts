@@ -32,6 +32,20 @@ export interface MprInputFile {
   originalName: string;
 }
 
+/**
+ * The automated-ingestion equivalent of `MprInputFile` for the JSON side —
+ * a Layer-1 `Snapshot` already in hand as an object (straight from
+ * `SessionDTO.snapshot`), not bytes that need `JSON.parse`ing back. Used
+ * only by the automated MPR ingest path; a manual file upload always goes
+ * through `MprInputFile` (it has no session id, only bytes).
+ */
+export interface MprSnapshotInput {
+  snapshot: unknown;
+  sourceSessionId: string;
+  /** Shows up as `filename` in `jsonFileMeta` — the same error-list/audit display a manual upload's filename already renders into. */
+  label: string;
+}
+
 export interface MprRunOutcome {
   result: MatchResult;
   jsonFiles: JsonSnapshotFileMetaDTO[];
@@ -47,7 +61,10 @@ interface UploadedSnapshot {
   upi?: { transactions?: unknown[]; justifications?: unknown[] };
 }
 
-export function runMprReconciliation(jsonFiles: MprInputFile[], mprFiles: MprInputFile[]): MprRunOutcome {
+export function runMprReconciliation(
+  jsonFiles: Array<MprInputFile | MprSnapshotInput>,
+  mprFiles: MprInputFile[],
+): MprRunOutcome {
   const sessions: TaggedLedgerRow[] = [];
   const upiPRRows: TaggedUpiTransaction[] = [];
   const upiJustifications: TaggedUpiJustification[] = [];
@@ -56,25 +73,35 @@ export function runMprReconciliation(jsonFiles: MprInputFile[], mprFiles: MprInp
   const outlets = new Set<string>();
 
   for (const f of jsonFiles) {
+    const isSnapshotInput = 'snapshot' in f;
+    const filename = isSnapshotInput ? f.label : f.originalName;
+    const sourceSessionId = isSnapshotInput ? f.sourceSessionId : null;
+
     let data: UploadedSnapshot;
-    try {
-      data = JSON.parse(f.buffer.toString('utf8'));
-    } catch (e) {
-      // Legacy: alert() + `continue` — skip just this file, keep going.
-      jsonFileMeta.push({
-        filename: f.originalName,
-        businessDate: null,
-        outlet: null,
-        error: `${f.originalName}: failed to parse — ${(e as Error).message}`,
-      });
-      continue;
+    if (isSnapshotInput) {
+      data = f.snapshot as UploadedSnapshot;
+    } else {
+      try {
+        data = JSON.parse(f.buffer.toString('utf8'));
+      } catch (e) {
+        // Legacy: alert() + `continue` — skip just this file, keep going.
+        jsonFileMeta.push({
+          filename,
+          businessDate: null,
+          outlet: null,
+          error: `${filename}: failed to parse — ${(e as Error).message}`,
+          sourceSessionId,
+        });
+        continue;
+      }
     }
     if (!data.settlementLedger) {
       jsonFileMeta.push({
-        filename: f.originalName,
+        filename,
         businessDate: data.meta?.businessDate ?? null,
         outlet: data.meta?.outlet ?? null,
-        error: `${f.originalName}: not a valid recon snapshot (missing settlementLedger)`,
+        error: `${filename}: not a valid recon snapshot (missing settlementLedger)`,
+        sourceSessionId,
       });
       continue;
     }
@@ -83,7 +110,7 @@ export function runMprReconciliation(jsonFiles: MprInputFile[], mprFiles: MprInp
     const outlet = data.meta?.outlet ?? null;
     businessDates.add(biz);
     if (outlet) outlets.add(outlet);
-    jsonFileMeta.push({ filename: f.originalName, businessDate: data.meta?.businessDate ?? null, outlet });
+    jsonFileMeta.push({ filename, businessDate: data.meta?.businessDate ?? null, outlet, sourceSessionId });
 
     for (const row of data.settlementLedger as Record<string, unknown>[]) {
       sessions.push({ ...row, _businessDate: biz } as TaggedLedgerRow);
