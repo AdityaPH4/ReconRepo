@@ -125,6 +125,36 @@ export const config = {
 
   /** Where the browser lands after a successful Google sign-in. */
   webAppUrl: str('WEB_APP_URL', 'http://localhost:3000'),
+
+  /**
+   * Automated MPR (Layer 2) ingestion — Stage A (`mailFetchService.ts`)
+   * reads the dedicated bank/aggregator mailbox over IMAP; Stage B
+   * (`mprIngestService.ts`) reads what Stage A staged in S3 plus the
+   * pending Layer-1 snapshots from the database, and runs the same match
+   * engine the manual upload endpoint uses. Both are separate scheduled
+   * Lambdas (see `mailFetchLambda.ts`/`mprIngestLambda.ts`), not routes on
+   * this app — `config.objectStore.bucket`/`region` are reused for S3
+   * rather than duplicating them here.
+   */
+  mprMailbox: {
+    imapHost: str('IMAP_HOST', 'imap.gmail.com'),
+    imapPort: int('IMAP_PORT', 993),
+    imapUser: str('IMAP_USER', ''),
+    /** SSM Parameter Store parameter NAME holding the IMAP app password (production) — never the password itself; fetched at runtime by `mailFetchService.ts`, since this module's own config loading is synchronous and SSM access is not. */
+    imapAppPasswordParam: str('IMAP_APP_PASSWORD_PARAM', ''),
+    /** Local-dev-only escape hatch: the password directly, when there's no SSM to call. Takes precedence over `imapAppPasswordParam` when both are set. */
+    imapAppPasswordLocal: str('IMAP_APP_PASSWORD', ''),
+    /** Lowercased substrings matched against a message's `From` address — a plain filter, not `parseEmailList()`'s exact-address set, since a bank's real sender address varies (e.g. any `@kotak.com` address, not one fixed one). */
+    senderAllowlist: str('MPR_SENDER_ALLOWLIST', '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+    /** IMAP folder Stage A moves a handled message to — the dedup mechanism (a moved message can never be found again by Stage A's own `INBOX`-scoped search), not just a human-tidiness nicety. */
+    processedFolder: str('MPR_PROCESSED_FOLDER', 'MPR-Processed'),
+    /** S3 key prefixes within `objectStore.bucket` — Stage A writes under `pending`, Stage B relocates to `processed` once a file has been folded into a persisted MprSessionDTO. */
+    s3PendingPrefix: str('MPR_S3_PENDING_PREFIX', 'mpr-inbound/pending/'),
+    s3ProcessedPrefix: str('MPR_S3_PROCESSED_PREFIX', 'mpr-inbound/processed/'),
+  },
 } as const;
 
 /** One-line summary of what this process is actually wired to, logged at boot. */
@@ -134,6 +164,7 @@ export function describeConfig(): string {
     `objects=${config.objectStore.driver}`,
     `sessions=${config.sessionStore.driver}`,
     `auth=${config.auth.enabled ? 'credentials' : 'DEV STUB'}`,
+    `mprMailbox=${config.mprMailbox.imapUser || 'DISABLED'}`,
   ];
   return parts.join('  ');
 }

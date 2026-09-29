@@ -569,6 +569,8 @@ export interface JsonSnapshotFileMetaDTO {
   outlet: string | null;
   /** Set when this file was skipped (bad JSON / missing `settlementLedger`) — legacy's `alert()`-and-`continue`, surfaced as a warning instead of aborting the whole upload. */
   error?: string | null;
+  /** The Layer-1 `SessionDTO.meta.id` this snapshot came from — set only for the automated ingestion path, which has a session id in hand; `undefined`/absent for a manual file upload (a human-uploaded JSON file has no session id, only bytes). Purely for traceability/debugging — not the dedup mechanism (see `SessionMetaDTO.mprIncludedInSessionId`). */
+  sourceSessionId?: string | null;
 }
 
 export interface MprSessionMetaDTO {
