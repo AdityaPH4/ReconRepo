@@ -31,6 +31,11 @@ interface Props {
   /** Admin-only manual outlet pick — `undefined` means "auto-detect from the ZIP's terminal store name", the same as before this existed. Ignored (never rendered) for a GM, who has exactly one outlet already. */
   outlet?: OutletCode | undefined;
   onOutletChange?: (outlet: OutletCode | undefined) => void;
+  /** Fallback business date for a zero-transaction upload — visible to GM and admin alike, unlike `outlet`. `undefined`/empty means "read it from the file", the normal case for every real upload. */
+  businessDateOverride?: string | undefined;
+  onBusinessDateOverrideChange?: (v: string | undefined) => void;
+  /** Pre-fill suggestion — the outlet's next expected recon date, so the common case (confirming, not typing) needs one click. */
+  suggestedBusinessDate?: string | null;
 }
 
 /** Kept off-screen rather than `display:none` so labels and keyboard focus work. */
@@ -47,6 +52,9 @@ export function UploadPanel({
   onRequestApproval,
   outlet,
   onOutletChange,
+  businessDateOverride,
+  onBusinessDateOverrideChange,
+  suggestedBusinessDate,
 }: Props) {
   const user = useCurrentUser();
   const mainInput = useRef<HTMLInputElement>(null);
@@ -115,6 +123,25 @@ export function UploadPanel({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {onBusinessDateOverrideChange && (
+          <div className="mb-4">
+            <label className="field-label" htmlFor="upload-business-date-override">
+              Business date <span className="text-tiny text-ink-3">(only needed if this upload has no transactions)</span>
+            </label>
+            <input
+              id="upload-business-date-override"
+              type="date"
+              className="field-input"
+              value={businessDateOverride ?? suggestedBusinessDate ?? ''}
+              onChange={(e) => onBusinessDateOverrideChange(e.target.value || undefined)}
+            />
+            <p className="text-tiny text-ink-3 mt-1">
+              Leave this if the Payment Report has real transactions — the date is read from the file automatically.
+              Only needed for a zero-transaction/closed day, when the file has nothing to read a date from.
+            </p>
           </div>
         )}
 

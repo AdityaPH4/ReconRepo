@@ -763,8 +763,14 @@ export interface ApiErrorDTO {
   error: string;
   /** Field-level detail for validation failures. */
   details?: Record<string, string>;
-  /** Set only on the "already reconciled today" block, so the frontend can offer "Request approval" without string-matching `error`. */
-  code?: 'APPROVAL_REQUIRED';
+  /**
+   * Set on specific, machine-handleable error conditions so the frontend
+   * can react without string-matching `error`: `APPROVAL_REQUIRED` on the
+   * "already reconciled today" block; `BUSINESS_DATE_REQUIRED` when a
+   * zero-transaction Payment Report has no date of its own and no manual
+   * override was given either.
+   */
+  code?: 'APPROVAL_REQUIRED' | 'BUSINESS_DATE_REQUIRED';
   outlet?: OutletCode;
   businessDate?: string;
 }

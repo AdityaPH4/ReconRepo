@@ -102,12 +102,29 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       outletOverride = requestedOutlet as OutletCode;
     }
 
+    // A GM's outlet is never ambiguous — it's who they are, not something
+    // to detect from a file. `req.user.outlet` is non-null for every 'gm'
+    // role by construction (the `GM_OUTLETS` env mapping); the `??
+    // undefined` is a defensive no-op that just falls through to the
+    // existing detect/override path if that assumption is ever violated.
+    const gmOutlet = req.user.role === 'gm' ? (req.user.outlet ?? undefined) : undefined;
+
+    // GM-facing fallback for a zero-transaction upload — see
+    // `RunInputFiles.businessDateOverride`'s own doc comment. No role
+    // gate, unlike outlet: a closed-outlet day is a GM's own call.
+    const businessDateOverride =
+      typeof req.body.businessDateOverride === 'string' && req.body.businessDateOverride.trim()
+        ? req.body.businessDateOverride.trim()
+        : undefined;
+
     const outcome = await runReconciliation({
       pr: { buffer: pr!.buffer, originalName: pr!.originalname },
       zip: { buffer: zip!.buffer, originalName: zip!.originalname },
       ...(sum ? { sum: { buffer: sum.buffer, originalName: sum.originalname } } : {}),
       ...(hdfc ? { hdfc: { buffer: hdfc.buffer, originalName: hdfc.originalname } } : {}),
       ...(outletOverride ? { outletOverride } : {}),
+      ...(gmOutlet ? { gmOutlet } : {}),
+      ...(businessDateOverride ? { businessDateOverride } : {}),
     });
 
     // A GM must reconcile one calendar day at a time, in order, and can't

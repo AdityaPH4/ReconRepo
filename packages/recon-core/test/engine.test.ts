@@ -22,6 +22,7 @@ import {
   fmtDate,
   frsRowAmounts,
   grandTotals,
+  isoToCivil,
   istDate,
   money,
   parseHdfcStatement,
@@ -253,6 +254,25 @@ describe('parsePRDate()', () => {
     assert.equal(parsePRDate(''), null);
     assert.equal(parsePRDate(null), null);
     assert.equal(parsePRDate(undefined), null);
+  });
+});
+
+describe('isoToCivil() — the zero-transaction-day manual date override', () => {
+  it('is the exact inverse of civilToISO()', () => {
+    const bd = { y: 2026, m: 8, d: 23 };
+    assert.deepEqual(isoToCivil(civilToISO(bd)), bd);
+  });
+
+  it('rejects an out-of-range month/day', () => {
+    assert.equal(isoToCivil('2026-13-01'), null);
+    assert.equal(isoToCivil('2026-01-32'), null);
+  });
+
+  it('rejects anything not exactly yyyy-mm-dd', () => {
+    assert.equal(isoToCivil('23-09-2026'), null);
+    assert.equal(isoToCivil('2026-9-23'), null);
+    assert.equal(isoToCivil('not-a-date'), null);
+    assert.equal(isoToCivil(''), null);
   });
 });
 
