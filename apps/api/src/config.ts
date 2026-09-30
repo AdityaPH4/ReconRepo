@@ -144,11 +144,13 @@ export const config = {
     imapAppPasswordParam: str('IMAP_APP_PASSWORD_PARAM', ''),
     /** Local-dev-only escape hatch: the password directly, when there's no SSM to call. Takes precedence over `imapAppPasswordParam` when both are set. */
     imapAppPasswordLocal: str('IMAP_APP_PASSWORD', ''),
-    /** Lowercased substrings matched against a message's `From` address — a plain filter, not `parseEmailList()`'s exact-address set, since a bank's real sender address varies (e.g. any `@kotak.com` address, not one fixed one). */
+    /** Lowercased substrings matched against a message's `From` address — a plain filter, not `parseEmailList()`'s exact-address set, since a bank's real sender address varies (e.g. any `@kotak.com` address, not one fixed one). Also used as the actual IMAP SEARCH FROM criterion (one search per entry) — this mailbox is not necessarily dedicated/low-traffic (it may be a real, actively-used inbox with thousands of unrelated unread messages), so the server does the filtering; nothing downloads/parses a message that didn't already match at the IMAP level. */
     senderAllowlist: str('MPR_SENDER_ALLOWLIST', '')
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
+    /** How far back each sender's IMAP search looks (`SINCE`) — a defensive bound against ever re-scanning years of an actively-used mailbox's backlog, not the dedup mechanism (that's the processed-folder move). A genuinely slow-arriving bank file older than this would need a wider window or a manual check. */
+    searchWindowDays: int('MPR_SEARCH_WINDOW_DAYS', 30),
     /** IMAP folder Stage A moves a handled message to — the dedup mechanism (a moved message can never be found again by Stage A's own `INBOX`-scoped search), not just a human-tidiness nicety. */
     processedFolder: str('MPR_PROCESSED_FOLDER', 'MPR-Processed'),
     /** S3 key prefixes within `objectStore.bucket` — Stage A writes under `pending`, Stage B relocates to `processed` once a file has been folded into a persisted MprSessionDTO. */

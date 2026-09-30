@@ -1,15 +1,25 @@
 /**
  * Stage A of automated MPR (Layer 2) ingestion.
  *
- * Connects over IMAP to the dedicated bank/aggregator mailbox
- * (`config.mprMailbox`), finds unread messages from an allowlisted sender,
- * and uploads their `.csv`/`.xlsx`/`.xls` attachments to S3 for Stage B
+ * Connects over IMAP to the bank/aggregator mailbox (`config.mprMailbox`),
+ * finds unread messages from an allowlisted sender, and uploads their
+ * `.csv`/`.xlsx`/`.xls` attachments to S3 for Stage B
  * (`mprIngestService.ts`) to pick up on its own schedule. Deliberately does
  * NOT run in the same Lambda/VPC as the main API or Stage B — a VPC-attached
  * Lambda has no route to an external IMAP server without a NAT Gateway
  * (a real fixed monthly cost this design avoids), so this one runs outside
  * any VPC instead (see `mailFetchLambda.ts`), the same split already used
  * for `authLambda.ts` vs the main API Lambda.
+ *
+ * This mailbox is not assumed to be a fresh, dedicated, low-traffic inbox —
+ * in practice it can be a real, already-in-use address with thousands of
+ * unrelated unread messages (confirmed against the real `tech@ph4.in`
+ * account: 6,000+ total, 4,000+ unread, at the time this was built). So the
+ * IMAP SEARCH itself is scoped `FROM <allowed sender>` per allowlist entry
+ * — the server does the filtering; nothing not already matching a sender
+ * ever gets downloaded/parsed, regardless of how much unrelated traffic
+ * the mailbox otherwise carries. `MPR_SEARCH_WINDOW_DAYS` bounds each
+ * search to recent messages only, as a further defensive cap.
  *
  * "Already processed" tracking is the IMAP move itself, not a database
  * table: a handled message is moved out of `INBOX` into
@@ -65,6 +75,7 @@ function isAllowedSender(fromAddress: string | undefined): boolean {
 }
 
 export interface MailFetchResult {
+  /** Distinct candidate UIDs found across all per-sender IMAP searches — NOT the mailbox's total unseen count, which the sender-scoped search never even queries. */
   messagesScanned: number;
   messagesFromAllowedSenders: number;
   attachmentsUploaded: number;
@@ -73,6 +84,14 @@ export interface MailFetchResult {
 export async function runMailFetch(): Promise<MailFetchResult> {
   if (!config.mprMailbox.imapUser) {
     console.log('[mail-fetch] IMAP_USER not configured — skipping.');
+    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0 };
+  }
+  if (!config.mprMailbox.senderAllowlist.length) {
+    // No allowlist configured — searching with no `from` filter at all
+    // would mean pulling every unseen message in the mailbox, which is
+    // exactly the expensive, unbounded scan this design avoids. Refuse
+    // rather than silently doing that.
+    console.log('[mail-fetch] MPR_SENDER_ALLOWLIST is empty — refusing to scan the whole mailbox, skipping.');
     return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0 };
   }
 
@@ -86,9 +105,9 @@ export async function runMailFetch(): Promise<MailFetchResult> {
   });
   const s3 = createRawS3Client(config.objectStore);
 
-  let messagesScanned = 0;
   let messagesFromAllowedSenders = 0;
   let attachmentsUploaded = 0;
+  const candidateUids = new Set<number>();
 
   await client.connect();
   try {
@@ -100,16 +119,26 @@ export async function runMailFetch(): Promise<MailFetchResult> {
       // the common case on every run after the first.
     }
 
-    const uids = (await client.search({ seen: false }, { uid: true })) || [];
-    messagesScanned = uids.length;
+    const since = new Date(Date.now() - config.mprMailbox.searchWindowDays * 24 * 60 * 60 * 1000);
 
-    for (const uid of uids) {
+    // One IMAP SEARCH per allowlisted sender — the server filters by FROM
+    // and SINCE itself, so a busy shared mailbox's unrelated unread traffic
+    // is never downloaded or parsed at all, regardless of its volume.
+    for (const sender of config.mprMailbox.senderAllowlist) {
+      const uids = (await client.search({ seen: false, from: sender, since }, { uid: true })) || [];
+      for (const uid of uids) candidateUids.add(uid);
+    }
+
+    for (const uid of candidateUids) {
       const dl = await client.download(String(uid), undefined, { uid: true });
       if (!dl.content) continue; // message vanished mid-run (deleted elsewhere) — nothing to do
 
       const parsed = await simpleParser(dl.content);
       const fromAddress = parsed.from?.value[0]?.address;
-      if (!isAllowedSender(fromAddress)) continue; // not a bank/aggregator sender — leave it in INBOX untouched
+      // Belt-and-suspenders re-check against the same allowlist, in case
+      // IMAP's own FROM substring match ever disagrees with this one —
+      // cheap, and the download already happened either way.
+      if (!isAllowedSender(fromAddress)) continue;
 
       messagesFromAllowedSenders++;
       const attachments = parsed.attachments.filter((a) => ATTACHMENT_EXT.test(a.filename ?? ''));
@@ -138,8 +167,9 @@ export async function runMailFetch(): Promise<MailFetchResult> {
     await client.logout();
   }
 
+  const messagesScanned = candidateUids.size;
   console.log(
-    `[mail-fetch] scanned ${messagesScanned} unseen message(s), ${messagesFromAllowedSenders} from allowed senders, uploaded ${attachmentsUploaded} attachment(s)`,
+    `[mail-fetch] ${messagesScanned} candidate message(s) from allowlisted senders, ${messagesFromAllowedSenders} confirmed, uploaded ${attachmentsUploaded} attachment(s)`,
   );
   return { messagesScanned, messagesFromAllowedSenders, attachmentsUploaded };
 }
