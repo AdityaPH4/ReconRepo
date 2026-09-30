@@ -578,6 +578,25 @@ export interface MprOpenRowDTO {
   row: MprSettledRowDTO | MprPendingRowDTO | MprAmbiguousRowDTO | MprUnexpectedRowDTO | MprAmexResultDTO | MprUpiResultDTO;
 }
 
+/**
+ * A GM's own view of MPR status for their outlet (`GET
+ * /api/mpr-sessions/gm-status`) — MPR is now fully automated, so a GM never
+ * uploads/runs it directly; this is what replaces that screen for them.
+ * `ambiguous`/`unexpected` rows never appear in `openItems` — neither type
+ * carries a reliable outlet attribution (an ambiguous RRN collision or a
+ * completely unmatched bank credit could belong to any outlet), so those
+ * stay admin-only, handled cross-outlet via the existing open-items queue.
+ */
+export interface GmMprStatusDTO {
+  outlet: OutletCode;
+  /** Submitted sessions not yet included in any automated MPR run — either the bank file hasn't arrived yet, or the automation hasn't run since this was submitted. */
+  pendingSessions: Array<{ sessionId: string; businessDate: string | null; submittedAt: string | null }>;
+  /** This outlet's still-open rows across all past MPR runs, most recent first. */
+  openItems: MprOpenRowDTO[];
+  /** How many of this outlet's rows, across all runs, are already settled/resolved. */
+  settledCount: number;
+}
+
 export interface ParsedMprFileMetaDTO {
   filename: string;
   detected: MprAdapterKey | 'UNKNOWN';

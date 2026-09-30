@@ -8,12 +8,15 @@
 
 import type { MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
 import { useEffect, useState } from 'react';
+import { useCurrentUser } from '@/components/auth/AuthProvider';
+import { GmMprDashboard } from '@/components/mpr/GmMprDashboard';
 import { MprHeader } from '@/components/mpr/MprHeader';
 import { MprUploadPanel, type MprSelectedFiles } from '@/components/mpr/MprUploadPanel';
 import { MprWorkspace } from '@/components/mpr/MprWorkspace';
 import { ApiError, listMprSessions, runMprReconciliation } from '@/lib/mprApi';
 
 export function MprApp() {
+  const user = useCurrentUser();
   const [files, setFiles] = useState<MprSelectedFiles>({ json: [], mpr: [] });
   const [session, setSession] = useState<MprSessionDTO | null>(null);
   const [running, setRunning] = useState(false);
@@ -21,7 +24,7 @@ export function MprApp() {
   const [past, setPast] = useState<MprSessionListItemDTO[] | null>(null);
 
   useEffect(() => {
-    if (session) return;
+    if (session || user.role === 'gm') return; // GMs get their own outlet-scoped view instead — see the early return below.
     listMprSessions()
       .then(setPast)
       .catch(() => setPast([]));
@@ -50,6 +53,20 @@ export function MprApp() {
     setSession(null);
     setFiles({ json: [], mpr: [] });
     setError(null);
+  }
+
+  // MPR ingestion is now fully automated — a GM never uploads/runs it
+  // directly, so this replaces the upload/results screen for them
+  // entirely with their own outlet-scoped status view. Admins keep the
+  // existing flow (still useful as the manual re-run escape hatch — e.g.
+  // re-matching an old snapshot against a late-arriving bank file).
+  if (user.role === 'gm') {
+    return (
+      <>
+        <MprHeader subtitle="Automated — showing your outlet's status" />
+        <GmMprDashboard />
+      </>
+    );
   }
 
   return (

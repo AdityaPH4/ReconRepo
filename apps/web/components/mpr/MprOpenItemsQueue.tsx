@@ -13,7 +13,8 @@ import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ResolveRow } from '@/components/mpr/MprWorkspace';
 import { ApiError, listOpenMprRows } from '@/lib/mprApi';
 
-const BUCKET_LABELS: Record<MprOpenRowDTO['bucket'], string> = {
+/** Shared with GmMprDashboard.tsx — one label set for every MPR bucket, wherever an open row is listed. */
+export const BUCKET_LABELS: Record<MprOpenRowDTO['bucket'], string> = {
   amountMismatch: 'Amount mismatch',
   pending: 'Pending settlement',
   ambiguous: 'Ambiguous',
@@ -22,12 +23,12 @@ const BUCKET_LABELS: Record<MprOpenRowDTO['bucket'], string> = {
   upiResults: 'HDFC Static UPI',
 };
 
-function rowRrn(item: MprOpenRowDTO): string {
+export function rowRrn(item: MprOpenRowDTO): string {
   const row = item.row as { rrn?: string; mpr?: { rrn?: string }; mid?: string };
   return row.rrn || row.mpr?.rrn || row.mid || '—';
 }
 
-function rowAmount(item: MprOpenRowDTO): number | null {
+export function rowAmount(item: MprOpenRowDTO): number | null {
   const row = item.row as { plAmount?: number; mprAmount?: number; l1Total?: number };
   return row.plAmount ?? row.mprAmount ?? row.l1Total ?? null;
 }

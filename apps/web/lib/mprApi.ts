@@ -7,6 +7,7 @@
 import type {
   AddMprRowCommentRequest,
   CloseMprRowRequest,
+  GmMprStatusDTO,
   MprOpenRowDTO,
   MprSessionDTO,
   MprSessionListItemDTO,
@@ -72,6 +73,12 @@ export function mprExportCsvUrl(id: string): string {
 export async function listOpenMprRows(): Promise<MprOpenRowDTO[]> {
   const res = await fetch(`${API_BASE}/api/mpr-sessions/open-rows`, { cache: 'no-store', headers: authHeaders() });
   return unwrap<MprOpenRowDTO[]>(res);
+}
+
+/** A GM's own outlet-scoped MPR status — replaces the upload/run screen for them, since MPR is now fully automated. */
+export async function getGmMprStatus(): Promise<GmMprStatusDTO> {
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/gm-status`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap<GmMprStatusDTO>(res);
 }
 
 /** Resolves one open row with a required note. Admin-only, and requires at least one comment to already exist on the row. */
