@@ -14,7 +14,7 @@ import type { MprRowClosureDTO, MprSessionDTO } from '@toit/contracts';
 import { normDate } from '@toit/mpr-core';
 import { useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
-import { closeMprRow, mprExportCsvUrl } from '@/lib/mprApi';
+import { addMprRowComment, closeMprRow, mprExportCsvUrl } from '@/lib/mprApi';
 import { EmptyRow, PanelSection, diffClass } from '@/components/ui/table';
 
 type TabId = 'settled' | 'mismatch' | 'pending' | 'ambiguous' | 'unexpected' | 'amex' | 'upi';
@@ -202,6 +202,7 @@ export function ResolveRow({
 }) {
   const user = useCurrentUser();
   const [busy, setBusy] = useState(false);
+  const comments = row.comments ?? [];
 
   if (row.status === 'closed') {
     return (
@@ -210,7 +211,19 @@ export function ResolveRow({
       </span>
     );
   }
-  if (user.role !== 'admin') return null;
+
+  async function addComment() {
+    const text = window.prompt('Add a comment on this item:');
+    if (!text?.trim()) return;
+    setBusy(true);
+    try {
+      onResolved(await addMprRowComment(sessionId, row.id, text.trim()));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to add comment.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function resolve() {
     const note = window.prompt('Resolve this item — note (required):');
@@ -226,9 +239,24 @@ export function ResolveRow({
   }
 
   return (
-    <button type="button" className="btn btn-sm" disabled={busy} onClick={resolve}>
-      Resolve
-    </button>
+    <div className="flex items-center gap-2 flex-wrap">
+      {comments.length > 0 && (
+        <span
+          className="tag tag-neutral"
+          title={comments.map((c) => `${c.createdBy} — ${new Date(c.createdAt).toLocaleString('en-IN')}\n${c.text}`).join('\n\n')}
+        >
+          💬 {comments.length}
+        </span>
+      )}
+      <button type="button" className="btn btn-sm" disabled={busy} onClick={addComment}>
+        Comment
+      </button>
+      {user.role === 'admin' && (
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={resolve}>
+          Resolve
+        </button>
+      )}
+    </div>
   );
 }
 

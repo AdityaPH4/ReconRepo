@@ -163,6 +163,7 @@ export function enrichMprMatchResult(result: MatchResult): MprMatchResultDTO {
     closedAt: null,
     closedBy: null,
     closedNote: null,
+    comments: [],
   });
   const open = (): MprRowClosureDTO => ({
     id: randomUUID(),
@@ -170,6 +171,7 @@ export function enrichMprMatchResult(result: MatchResult): MprMatchResultDTO {
     closedAt: null,
     closedBy: null,
     closedNote: null,
+    comments: [],
   });
 
   return {
