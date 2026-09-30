@@ -4,7 +4,13 @@
  * separate tool from Payment Reconciliation, sharing only the API origin.
  */
 
-import type { CloseMprRowRequest, MprOpenRowDTO, MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
+import type {
+  AddMprRowCommentRequest,
+  CloseMprRowRequest,
+  MprOpenRowDTO,
+  MprSessionDTO,
+  MprSessionListItemDTO,
+} from '@toit/contracts';
 import { authHeaders, getToken } from './auth';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
@@ -68,10 +74,21 @@ export async function listOpenMprRows(): Promise<MprOpenRowDTO[]> {
   return unwrap<MprOpenRowDTO[]>(res);
 }
 
-/** Resolves one open row with a required note. Admin-only. */
+/** Resolves one open row with a required note. Admin-only, and requires at least one comment to already exist on the row. */
 export async function closeMprRow(sessionId: string, rowId: string, note: string): Promise<MprSessionDTO> {
   const body: CloseMprRowRequest = { note };
   const res = await fetch(`${API_BASE}/api/mpr-sessions/${sessionId}/rows/${rowId}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  });
+  return unwrap<MprSessionDTO>(res);
+}
+
+/** Adds a comment to an open row. Open to anyone who can view the MPR module — not admin-only. */
+export async function addMprRowComment(sessionId: string, rowId: string, text: string): Promise<MprSessionDTO> {
+  const body: AddMprRowCommentRequest = { text };
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/${sessionId}/rows/${rowId}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),

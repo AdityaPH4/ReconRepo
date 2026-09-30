@@ -517,6 +517,23 @@ export interface MprRowClosureDTO {
   /** Admin's email — who resolved it. */
   closedBy: string | null;
   closedNote: string | null;
+  /**
+   * A running thread on this row, open to anyone who can view the MPR
+   * module (not admin-only, unlike closing) — for tracking investigation
+   * progress on an item before it's ready to resolve. At least one comment
+   * is required before the row can be closed (see `POST .../close`).
+   * Optional — a session persisted before this field existed has none on
+   * its rows; every reader treats a missing array the same as an empty one.
+   */
+  comments?: MprRowCommentDTO[];
+}
+
+export interface MprRowCommentDTO {
+  id: string;
+  text: string;
+  createdAt: string;
+  /** The commenter's own email — comments aren't admin-only, so this isn't necessarily an admin. */
+  createdBy: string;
 }
 
 export type MprSettledRowDTO = SettledRow & MprRowClosureDTO;
@@ -543,6 +560,11 @@ export interface MprMatchResultDTO {
 /** Backs the admin-only "Resolve" action on any open MPR row. */
 export interface CloseMprRowRequest {
   note: string;
+}
+
+/** Backs the "add a comment" action on any open MPR row — open to anyone who can view the MPR module. */
+export interface AddMprRowCommentRequest {
+  text: string;
 }
 
 /** One MPR bucket name that can hold an open item — excludes `settled`, which is never open. */

@@ -9,7 +9,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { rowsToCsv, buildExportRows } from '@toit/mpr-core';
-import type { CloseMprRowRequest, MprOpenBucket, MprOpenRowDTO, MprSessionDTO } from '@toit/contracts';
+import type {
+  AddMprRowCommentRequest,
+  CloseMprRowRequest,
+  MprOpenBucket,
+  MprOpenRowDTO,
+  MprRowCommentDTO,
+  MprSessionDTO,
+} from '@toit/contracts';
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
@@ -144,6 +151,10 @@ mprSessionsRouter.post('/:id/rows/:rowId/close', requireAdmin, async (req, res, 
         res.status(409).json({ error: 'This item is already resolved.' });
         return;
       }
+      if (!row.comments?.length) {
+        res.status(400).json({ error: 'Add a comment on this item before it can be resolved.' });
+        return;
+      }
       const body = req.body as CloseMprRowRequest;
       if (!body?.note?.trim()) {
         res.status(400).json({ error: 'A note is required to resolve this item.' });
@@ -155,6 +166,53 @@ mprSessionsRouter.post('/:id/rows/:rowId/close', requireAdmin, async (req, res, 
         closedAt: new Date().toISOString(),
         closedBy: req.user.email,
         closedNote: body.note.trim(),
+      };
+      break;
+    }
+    if (!found) {
+      res.status(404).json({ error: 'MPR row not found' });
+      return;
+    }
+    const updated = await getMprSessionStore().update(session.meta.id, session);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Adds a comment to any open MPR row — open to anyone who can view the MPR
+ * module (no `requireAdmin`, unlike closing), for tracking investigation
+ * progress before an item is ready to resolve. Closing then requires at
+ * least one comment to already exist (see the gate above).
+ */
+mprSessionsRouter.post('/:id/rows/:rowId/comments', async (req, res, next) => {
+  try {
+    const session = await getMprSessionStore().get(req.params.id!);
+    if (!session) {
+      res.status(404).json({ error: 'MPR session not found' });
+      return;
+    }
+    const body = req.body as AddMprRowCommentRequest;
+    if (!body?.text?.trim()) {
+      res.status(400).json({ error: 'Comment text is required.' });
+      return;
+    }
+    let found = false;
+    for (const bucket of OPEN_BUCKETS) {
+      const idx = session.result[bucket].findIndex((r) => r.id === req.params.rowId);
+      if (idx === -1) continue;
+      found = true;
+      const row = session.result[bucket][idx]!;
+      const comment: MprRowCommentDTO = {
+        id: randomUUID(),
+        text: body.text.trim(),
+        createdAt: new Date().toISOString(),
+        createdBy: req.user.email,
+      };
+      (session.result[bucket] as (typeof row)[])[idx] = {
+        ...row,
+        comments: [...(row.comments ?? []), comment],
       };
       break;
     }
