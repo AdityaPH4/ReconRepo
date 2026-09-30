@@ -12,6 +12,7 @@ import { rowsToCsv, buildExportRows } from '@toit/mpr-core';
 import type {
   AddMprRowCommentRequest,
   CloseMprRowRequest,
+  GmMprStatusDTO,
   MprOpenBucket,
   MprOpenRowDTO,
   MprRowCommentDTO,
@@ -22,7 +23,32 @@ import multer from 'multer';
 import { config } from '../config.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { BadMprRequestError, enrichMprMatchResult, runMprReconciliation } from '../services/mprService.js';
-import { getMprSessionStore } from '../storage/index.js';
+import { getMprSessionStore, getSessionStore } from '../storage/index.js';
+
+/** Bucket names whose rows carry a reliable outlet — excludes `ambiguous`/`unexpected`, which can never be attributed to one outlet (see `GmMprStatusDTO`'s own doc comment). */
+const OUTLET_ATTRIBUTABLE_BUCKETS: readonly MprOpenBucket[] = ['amountMismatch', 'pending', 'amexResults', 'upiResults'];
+
+/**
+ * Best-effort outlet extraction across the different row shapes — loosely
+ * typed on purpose, matching `MprOpenItemsQueue.tsx`'s own `rowRrn`/
+ * `rowAmount` helpers, since the row union isn't cleanly narrowable without
+ * a bucket-keyed cast. `upiResults.pr` is a genuinely mixed shape (an
+ * array, a single tagged transaction, or an inline object) — only the
+ * inline-object variant carries `outlet` at all; the other two return
+ * `null` (excluded from a GM's outlet-scoped view, same as ambiguous/
+ * unexpected).
+ */
+function rowOutlet(bucket: MprOpenBucket, row: unknown): string | null {
+  if (bucket === 'ambiguous' || bucket === 'unexpected') return null;
+  if (bucket === 'upiResults') {
+    const pr = (row as { pr?: unknown }).pr;
+    if (pr && !Array.isArray(pr) && typeof pr === 'object' && 'outlet' in pr) {
+      return (pr as { outlet?: string }).outlet ?? null;
+    }
+    return null;
+  }
+  return (row as { outlet?: string }).outlet ?? null;
+}
 
 const OPEN_BUCKETS: readonly MprOpenBucket[] = [
   'amountMismatch',
@@ -116,6 +142,50 @@ mprSessionsRouter.get('/open-rows', requireAdmin, async (req, res, next) => {
       }
     }
     res.json(openRows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Registered before GET /:id, same reason as /open-rows above.
+mprSessionsRouter.get('/gm-status', async (req, res, next) => {
+  try {
+    const outlet = req.user.role === 'gm' ? req.user.outlet : null;
+    if (!outlet) {
+      res.status(400).json({ error: 'This view is outlet-specific — admins should use the Open MPR Items queue instead.' });
+      return;
+    }
+
+    const pendingFull = await getSessionStore().listPendingMpr();
+    const pendingSessions = pendingFull
+      .filter((s) => s.meta.outlet === outlet)
+      .map((s) => ({ sessionId: s.meta.id, businessDate: s.meta.businessDate, submittedAt: s.meta.submittedAt }));
+
+    const summaries = await getMprSessionStore().list({ limit: 200 });
+    const sessions = await Promise.all(summaries.map((s) => getMprSessionStore().get(s.id)));
+
+    const openItems: MprOpenRowDTO[] = [];
+    let settledCount = 0;
+    for (const session of sessions) {
+      if (!session) continue;
+      for (const row of session.result.settled) {
+        if (rowOutlet('amountMismatch', row) === outlet) settledCount++; // 'settled' shares the same shape as amountMismatch (both TaggedLedgerRow-derived)
+      }
+      for (const bucket of OUTLET_ATTRIBUTABLE_BUCKETS) {
+        for (const row of session.result[bucket]) {
+          if (rowOutlet(bucket, row) !== outlet) continue;
+          if (row.status === 'open') {
+            openItems.push({ sessionId: session.meta.id, sessionCreatedAt: session.meta.createdAt, bucket, row });
+          } else {
+            settledCount++;
+          }
+        }
+      }
+    }
+    openItems.sort((a, b) => b.sessionCreatedAt.localeCompare(a.sessionCreatedAt));
+
+    const status: GmMprStatusDTO = { outlet, pendingSessions, openItems, settledCount };
+    res.json(status);
   } catch (err) {
     next(err);
   }
