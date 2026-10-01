@@ -17,8 +17,14 @@ export function detectRole(name: string): UploadRole | null {
   // Checked before the blanket ".xlsx -> hdfc" rule below, since a Payment
   // Link statement could plausibly also export as .xlsx — "link" in the
   // name is the more specific match, same reasoning as summary-before-PR
-  // just below.
-  if (l.includes('link')) return 'hdfc_link';
+  // just below. `reconciliation_report_<start>_to_<end>` is the real
+  // export's actual filename, confirmed against a genuine sample — it
+  // carries no "hdfc"/"link" substring at all, so without this the file
+  // fell through every rule and was silently rejected as unrecognised,
+  // never even reaching the upload.
+  if (l.includes('link') || l.includes('reconciliation_report') || l.includes('reconciliation report')) {
+    return 'hdfc_link';
+  }
 
   // The optional HDFC (Static UPI) statement is otherwise the only .xlsx the flow accepts.
   if (l.endsWith('.xlsx')) return 'hdfc';
