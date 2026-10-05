@@ -178,8 +178,8 @@ export function UploadPanel({
           <div className="dropzone-sub mt-2">
             <span className="faux-btn">📁 Browse files</span>
             <span className="ml-2">
-              Payment Report (CSV) · All Transactions (ZIP) · Sales Summary (CSV) · HDFC Payment Link Statement
-              (optional — kept with the session for reference; not yet used in the reconciliation itself)
+              Payment Report (CSV) · All Transactions (ZIP) · Sales Summary (CSV) · HDFC Payment Link Report
+              (optional — reconciled transaction-by-transaction against the Payment Report when uploaded)
             </span>
           </div>
         </div>

@@ -13,7 +13,7 @@
  */
 
 import { AMOUNT_EPSILON } from '../constants.js';
-import type { HdfcStatementRow, MatchResult, PinelabsResult } from '../types.js';
+import type { HdfcStatementRow, MatchResult, PaymentLinkRow, PinelabsResult } from '../types.js';
 import type { ResolvableItem } from './types.js';
 
 export function buildPinelabsItems(pinelabs: PinelabsResult): ResolvableItem[] {
@@ -173,6 +173,80 @@ export function buildHdfcUpiItems(
       targetKey: `udup-${x.rrn}`,
       diff: 0,
       label: 'HDFC UPI — Duplicate RRN',
+      orderNo: (x.orders || []).filter(Boolean).join(', '),
+      rrn: x.rrn || '',
+      appearsInExplanation: true,
+      countsTowardGate: false,
+    });
+  });
+
+  return items;
+}
+
+/**
+ * HDFC Payment Link's transaction-level items — same shape and bucket
+ * meaning as `buildHdfcUpiItems()`, adapted for an order-number join
+ * instead of an RRN one. `null` when no Payment Link report was uploaded.
+ */
+export function buildHdfcLinkItems(
+  linkStmt: MatchResult<PaymentLinkRow> | null,
+): ResolvableItem[] {
+  if (!linkStmt) return [];
+  const items: ResolvableItem[] = [];
+
+  linkStmt.onlyPOS.forEach((x, i) => {
+    items.push({
+      globalId: `LPOS-${i + 1}`,
+      targetKey: `lpos-${x.orders?.[0] || x.orderNo || ''}-${x.rrn || ''}`,
+      diff: -(x.amount || 0),
+      label: 'HDFC Link — Only in PR',
+      orderNo: (x.orders || [x.orderNo]).filter(Boolean).join(', '),
+      rrn: x.rrn || '',
+      appearsInExplanation: true,
+      countsTowardGate: true,
+    });
+  });
+
+  linkStmt.onlyTerm.forEach((x, i) => {
+    items.push({
+      globalId: `LSTMT-${i + 1}`,
+      // Same round-trip concern `buildHdfcUpiItems` already documents: a
+      // freshly-built `ReconResult` carries a real `Date`, a JSON-persisted
+      // session carries its ISO-string serialisation — accept either.
+      targetKey: `lstmt-${x.rrn}-${x.date instanceof Date ? x.date.toISOString() : x.date}`,
+      diff: +(x.amount || 0),
+      label: 'HDFC Link — Only in Statement',
+      orderNo: '',
+      rrn: x.rrn || '',
+      appearsInExplanation: true,
+      countsTowardGate: true,
+    });
+  });
+
+  linkStmt.reconRows
+    .filter((x) => Math.abs(x.diff) > AMOUNT_EPSILON)
+    .forEach((x, i) => {
+      items.push({
+        globalId: `LMM-${i + 1}`,
+        targetKey: `lmm-${x.rrn}`,
+        diff: x.diff,
+        label: 'HDFC Link — Amount mismatch',
+        orderNo: (x.orders || []).filter(Boolean).join(', '),
+        rrn: x.rrn || '',
+        appearsInExplanation: true,
+        countsTowardGate: true,
+      });
+    });
+
+  // A duplicated order id on the statement side is the same kind of rare,
+  // bookkeeping-only edge case as HDFC UPI's own `dupRRN` bucket — a remark
+  // can be attached, but it never blocks submission.
+  linkStmt.dupRRN.forEach((x, i) => {
+    items.push({
+      globalId: `LDUP-${i + 1}`,
+      targetKey: `ldup-${x.rrn}`,
+      diff: 0,
+      label: 'HDFC Link — Duplicate order ID',
       orderNo: (x.orders || []).filter(Boolean).join(', '),
       rrn: x.rrn || '',
       appearsInExplanation: true,

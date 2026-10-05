@@ -27,6 +27,7 @@ import {
   AMOUNT_EPSILON,
   NO_RRN_REMARKS,
   advanceBalance,
+  buildHdfcLinkItems,
   buildHdfcUpiItems,
   buildPinelabsItems,
   canSubmit,
@@ -47,6 +48,7 @@ import {
   type PinelabsResult,
   type MatchResult,
   type HdfcStatementRow,
+  type PaymentLinkRow,
   type ResolvableItem,
   type TdsEntry,
 } from '@toit/recon-core';
@@ -55,11 +57,12 @@ export class JustificationError extends Error {
   readonly status = 400;
 }
 
-/** Every Pinelabs + HDFC-UPI resolvable item for a session — what a square-off group's net is computed against. */
+/** Every Pinelabs + HDFC-UPI + HDFC Link resolvable item for a session — what a square-off group's net is computed against. */
 export function buildAllItems(session: SessionDTO): ResolvableItem[] {
   const pinelabs = session.result.pinelabs as unknown as PinelabsResult;
   const upiHdfc = session.result.upiHdfc as unknown as MatchResult<HdfcStatementRow> | null;
-  return [...buildPinelabsItems(pinelabs), ...buildHdfcUpiItems(upiHdfc)];
+  const linkStmt = session.result.linkStmt as unknown as MatchResult<PaymentLinkRow> | null;
+  return [...buildPinelabsItems(pinelabs), ...buildHdfcUpiItems(upiHdfc), ...buildHdfcLinkItems(linkStmt)];
 }
 
 /**
@@ -404,17 +407,18 @@ export function clearBoh(
   if (!entry && !staged) throw new JustificationError('Bills-on-hold entry not found.');
   if (entry && entry.status !== 'open') throw new JustificationError('This entry is already cleared.');
 
-  // A BOH clearance sourced from HDFC-UPI, the aggregate Static UPI tab
-  // (Kotak, or HDFC absent a statement — see `AggregateJustificationPanel`'s
-  // own doc comment), MPR, or Pinelabs needs the same 12-digit RRN
-  // discipline as any other justification for that source — legacy never
-  // asked for one here, but that just meant a cleared bill couldn't be tied
-  // back to the bank/terminal record that actually paid it. MPR and
-  // Pinelabs additionally need the date the transaction actually shows up
-  // in the bank/Pinelabs settlement (MPR) report, since that can lag the
-  // recon's own business date by a day or more.
+  // A BOH clearance sourced from HDFC-UPI, HDFC Link, the aggregate Static
+  // UPI tab (Kotak, or HDFC absent a statement — see
+  // `AggregateJustificationPanel`'s own doc comment), MPR, or Pinelabs needs
+  // the same 12-digit RRN discipline as any other justification for that
+  // source — legacy never asked for one here, but that just meant a cleared
+  // bill couldn't be tied back to the bank/terminal record that actually
+  // paid it. MPR and Pinelabs additionally need the date the transaction
+  // actually shows up in the bank/Pinelabs settlement (MPR) report, since
+  // that can lag the recon's own business date by a day or more.
   const needsRrn =
     req.clearSource === 'HDFC Static UPI' ||
+    req.clearSource === 'HDFC Link' ||
     req.clearSource === 'Static UPI' ||
     req.clearSource === 'MPR' ||
     req.clearSource === 'Pinelabs';
@@ -539,10 +543,12 @@ export function recordTds(
 export function computeSubmitGate(session: SessionDTO): SubmitGateDTO {
   const pinelabs = session.result.pinelabs as unknown as PinelabsResult;
   const upiHdfc = session.result.upiHdfc as unknown as MatchResult<HdfcStatementRow> | null;
+  const linkStmt = session.result.linkStmt as unknown as MatchResult<PaymentLinkRow> | null;
 
   return canSubmit({
     pinelabs,
     upiHdfc,
+    linkStmt,
     justification: session.justification,
     grandDiff: session.frs.grandDiff,
     hasSummary: session.summaryData !== null,
@@ -593,6 +599,15 @@ function targetKeyForUpiHdfc(bucket: 'onlyPOS' | 'onlyTerm' | 'mismatch', x: Rec
   return `umm-${x.rrn as string}`;
 }
 
+function targetKeyForHdfcLink(bucket: 'onlyPOS' | 'onlyTerm' | 'mismatch', x: Record<string, unknown>): string {
+  if (bucket === 'onlyPOS') {
+    const orders = x.orders as string[] | undefined;
+    return `lpos-${orders?.[0] || (x.orderNo as string) || ''}-${(x.rrn as string) || ''}`;
+  }
+  if (bucket === 'onlyTerm') return `lstmt-${x.rrn as string}-${x.date as string}`;
+  return `lmm-${x.rrn as string}`;
+}
+
 export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
   const result = session.result as unknown as {
     pinelabs: {
@@ -603,6 +618,11 @@ export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
       amexDupTerm: Array<{ amount: number; rrn?: string }>;
     };
     upiHdfc: {
+      onlyPOS: Array<Record<string, unknown>>;
+      onlyTerm: Array<Record<string, unknown>>;
+      reconRows: Array<{ rrn: string; diff: number; plAmt: number; prAmt: number; orders?: string[]; pr?: { orderNo?: string; paymentName?: string } }>;
+    } | null;
+    linkStmt: {
       onlyPOS: Array<Record<string, unknown>>;
       onlyTerm: Array<Record<string, unknown>>;
       reconRows: Array<{ rrn: string; diff: number; plAmt: number; prAmt: number; orders?: string[]; pr?: { orderNo?: string; paymentName?: string } }>;
@@ -746,13 +766,69 @@ export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
       });
   }
 
+  if (result.linkStmt) {
+    const linkEntries = entryByKey('hdfc_link_stmt');
+    const l = result.linkStmt;
+    l.onlyPOS.forEach((x) => {
+      const e = linkEntries.get(targetKeyForHdfcLink('onlyPOS', x));
+      if (!e) return;
+      const amount = (x.amount as number) || 0;
+      items.push({
+        source: 'HDFC Link — only in POS',
+        remark: e.remark,
+        label: (x.paymentName as string) || '',
+        orderNo: ((x.orders as string[]) || [x.orderNo as string]).filter(Boolean).join(', '),
+        rrn: (x.rrn as string) || '',
+        plAmt: 0,
+        prAmt: amount,
+        diff: -amount,
+      });
+    });
+    l.onlyTerm.forEach((x) => {
+      const e = linkEntries.get(targetKeyForHdfcLink('onlyTerm', x));
+      if (!e) return;
+      const amount = (x.amount as number) || 0;
+      items.push({
+        source: 'HDFC Link — only in statement',
+        remark: e.remark,
+        label: '',
+        orderNo: '',
+        rrn: (x.rrn as string) || '',
+        plAmt: amount,
+        prAmt: 0,
+        diff: amount,
+      });
+    });
+    l.reconRows
+      .filter((x) => Math.abs(x.diff) > 0.5)
+      .forEach((x) => {
+        const e = linkEntries.get(`lmm-${x.rrn}`);
+        if (!e) return;
+        items.push({
+          source: 'HDFC Link — amount mismatch',
+          remark: e.remark,
+          label: x.pr?.paymentName || '',
+          orderNo: (x.orders || [x.pr?.orderNo]).filter(Boolean).join(', '),
+          rrn: x.rrn,
+          plAmt: x.plAmt,
+          prAmt: x.prAmt,
+          diff: x.diff,
+        });
+      });
+  }
+
   // A square-off pairing that doesn't net to zero on its own, explained by
   // one remark attached to the group rather than either member row — mirrors
   // `collectExplained`'s own group-residual branch (recon-core's canonical
   // version, used at submit time) so the live pre-submit view here can never
   // disagree with what the submit gate actually decides.
   const allItems = buildAllItems(session);
-  for (const source of ['pinelabs', 'upi_hdfc'] as const) {
+  const squareOffResidualLabel: Record<string, string> = {
+    pinelabs: 'Pinelabs — square-off residual',
+    upi_hdfc: 'HDFC Static UPI — square-off residual',
+    hdfc_link_stmt: 'HDFC Link — square-off residual',
+  };
+  for (const source of ['pinelabs', 'upi_hdfc', 'hdfc_link_stmt'] as const) {
     session.justification.entries
       .filter((e) => e.source === source && e.targetKey !== null && isSquareOffGroupKey(e.targetKey))
       .forEach((e) => {
@@ -760,7 +836,7 @@ export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
         if (net === null) return; // stale group — excluded, never double-counted
         const diff = e.direction === 'excess' ? e.amount : -e.amount;
         items.push({
-          source: source === 'pinelabs' ? 'Pinelabs — square-off residual' : 'HDFC Static UPI — square-off residual',
+          source: squareOffResidualLabel[source]!,
           remark: e.remark,
           label: e.description || e.remark,
           orderNo: '',

@@ -53,19 +53,25 @@ export function BohClearModal({ session, request, onClose, onSaved }: ModalProps
   // field per modal instance is enough.
   const rrnRequired =
     effectiveSource === 'HDFC Static UPI' ||
+    effectiveSource === 'HDFC Link' ||
     effectiveSource === 'Static UPI' ||
     effectiveSource === 'MPR' ||
     effectiveSource === 'Pinelabs';
   const needsMprDate = effectiveSource === 'MPR' || effectiveSource === 'Pinelabs';
 
-  // A row-level HDFC-UPI item already carries its own RRN — an HDFC UPI
-  // Statement had to be uploaded to get transaction-level items at all, and
-  // that match is what produced this RRN. `RemarkCell` passes it straight
-  // through as `request.rrn`, so there's nothing to ask the operator to
-  // re-type. Every other RRN-required source (no statement backs MPR at
-  // all) still has no known RRN, so those keep asking manually.
+  // A row-level HDFC-UPI or HDFC-Link item already carries its own RRN — a
+  // statement had to be uploaded to get transaction-level items at all
+  // (HDFC's own RRN for UPI, the padded Merchant Order ID for Link), and
+  // that match is what produced it. `RemarkCell` passes it straight through
+  // as `request.rrn`, so there's nothing to ask the operator to re-type.
+  // Every other RRN-required source (no statement backs MPR at all) still
+  // has no known RRN, so those keep asking manually.
   const knownRrn =
-    effectiveSource === 'HDFC Static UPI' && request.rrn && /^\d{12}$/.test(request.rrn) ? request.rrn : null;
+    (effectiveSource === 'HDFC Static UPI' || effectiveSource === 'HDFC Link') &&
+    request.rrn &&
+    /^\d{12}$/.test(request.rrn)
+      ? request.rrn
+      : null;
   const needsRrn = rrnRequired && !knownRrn;
 
   const exactAmount = request.amount > 0.5 ? request.amount : undefined;

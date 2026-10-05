@@ -12,7 +12,7 @@
  */
 
 import type { SessionDTO } from '@toit/contracts';
-import { fmt, hdfcUpiCompleteness } from '@toit/recon-core/display';
+import { fmt, hdfcLinkCompleteness, hdfcUpiCompleteness } from '@toit/recon-core/display';
 import { useState } from 'react';
 import { FinalReconSummary } from '@/components/FinalReconSummary';
 import { KpiTiles, type PanelId } from '@/components/KpiTiles';
@@ -21,6 +21,7 @@ import { JustificationProvider } from '@/components/justification/JustificationP
 import { AdvancesPanel } from '@/components/panels/AdvancesPanel';
 import { AggregatePanel } from '@/components/panels/AggregatePanel';
 import { BillsOnHoldPanel } from '@/components/panels/BillsOnHoldPanel';
+import { HdfcLinkPanel } from '@/components/panels/HdfcLinkPanel';
 import { HdfcUpiPanel } from '@/components/panels/HdfcUpiPanel';
 import { PinelabsPanel } from '@/components/panels/PinelabsPanel';
 
@@ -92,6 +93,16 @@ function TransactionView({
   const upiDiff =
     (hdfcCompletenessForDiff ? hdfcCompletenessForDiff.netDiff : (totals.hdfcUpi.diff ?? 0)) +
     (totals.kotakUpi.diff ?? 0);
+
+  // Same canonical figure the "HDFC Link" KPI tile shows (`KpiTiles.tsx`):
+  // once a Payment Link report exists, its share switches from the
+  // aggregate diff to the transaction-level completeness net.
+  const linkCompletenessForDiff = hdfcLinkCompleteness(
+    result.linkStmt as never,
+    justification.entries,
+    justification.squareOff,
+  );
+  const linkDiff = linkCompletenessForDiff ? linkCompletenessForDiff.netDiff : (totals.hdfcLink.diff ?? 0);
 
   return (
     <>
@@ -190,8 +201,18 @@ function TransactionView({
 
       {panel === 'hdfc_link' && (
         <>
-          <AggregateJustificationPanel source="hdfc_link" title="HDFC Link" diff={totals.hdfcLink.diff} />
-          <AggregatePanel title="HDFC Link" totals={totals.hdfcLink} rows={result.hdfcLink} />
+          {result.linkStmt && <HdfcLinkPanel linkStmt={result.linkStmt} />}
+          <AggregateJustificationPanel source="hdfc_link" title="HDFC Link" diff={linkDiff} />
+          <AggregatePanel
+            title="HDFC Link"
+            totals={totals.hdfcLink}
+            rows={result.hdfcLink}
+            note={
+              counts.hdfcLink
+                ? `HDFC Payment Link is reconciled transaction-by-transaction: ${counts.hdfcLink.reconciled} matched, ${counts.hdfcLink.unreconciled} mismatched, ${counts.hdfcLink.onlyPOS} POS-only, ${counts.hdfcLink.onlyTerm} statement-only.`
+                : 'No HDFC Payment Link report uploaded — HDFC Link uses the aggregate drawer comparison.'
+            }
+          />
         </>
       )}
 

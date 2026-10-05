@@ -31,12 +31,14 @@ import {
   money,
   OUTLET_NAMES,
   parseHdfcStatement,
+  parsePaymentLinkStatement,
   parsePaymentReport,
   parsePaymentSummary,
   parseSaleSummaryDrawerSection,
   parseSaleSummarySalesSection,
   parseSaleSummaryTaxesSection,
   parseTransactionsZip,
+  PaymentLinkStatementFormatError,
   pinelabsAcquirerBreakdown,
   reconcile,
 } from '@toit/recon-core';
@@ -44,6 +46,7 @@ import type {
   BusinessWindow,
   HdfcStatementRow,
   OutletCode,
+  PaymentLinkRow,
   PRRow,
   ReconResult,
   SummaryData,
@@ -51,6 +54,7 @@ import type {
 } from '@toit/recon-core';
 import type {
   FrsDTO,
+  HdfcLinkStatementMetaDTO,
   HdfcStatementMetaDTO,
   PanelSummariesDTO,
   PanelTotalsDTO,
@@ -67,6 +71,8 @@ export interface RunInputFiles {
   zip: { buffer: Buffer; originalName: string };
   sum?: { buffer: Buffer; originalName: string };
   hdfc?: { buffer: Buffer; originalName: string };
+  /** HDFC Payment Link reconciliation report — optional; see `parsePaymentLinkStatement()`. */
+  hdfcLink?: { buffer: Buffer; originalName: string };
   /** Admin-only manual outlet pick (see `routes/sessions.ts`) — wins over whatever the ZIP's terminal store name would otherwise detect. */
   outletOverride?: OutletCode;
   /**
@@ -100,6 +106,8 @@ export interface RunOutcome {
   taxes: TaxesSummaryDTO | null;
   hdfcStmtRows: HdfcStatementRow[] | null;
   hdfcStatementMeta: HdfcStatementMetaDTO | null;
+  linkStmtRows: PaymentLinkRow[] | null;
+  hdfcLinkStatementMeta: HdfcLinkStatementMetaDTO | null;
   result: ReconResult;
   outlet: OutletCode;
   win: BusinessWindow | null;
@@ -264,15 +272,36 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
     }
   }
 
+  let linkStmtRows: PaymentLinkRow[] | null = null;
+  let hdfcLinkStatementMeta: HdfcLinkStatementMetaDTO | null = null;
+  if (files.hdfcLink) {
+    try {
+      const parsed = parsePaymentLinkStatement(files.hdfcLink.buffer.toString('utf8'), win);
+      linkStmtRows = parsed.rows;
+      hdfcLinkStatementMeta = { rows: parsed.rows.length, skippedNonSale: parsed.skippedNonSale };
+      if (!parsed.rows.length) {
+        warnings.push(
+          'The HDFC Payment Link report contained no SALE rows inside the business window — HDFC Link used the aggregate flow.',
+        );
+      }
+    } catch (err) {
+      // A bad optional file must never block a session — same tolerance as the HDFC UPI statement above.
+      const msg = err instanceof PaymentLinkStatementFormatError ? err.message : (err as Error).message;
+      warnings.push(
+        `HDFC Payment Link report could not be read: ${msg}. Continuing without it — HDFC Link used the aggregate flow.`,
+      );
+    }
+  }
+
   // 6. Reconcile.
-  const result = reconcile({ prData, zipInside: inside, hdfcStmtRows, outlet });
+  const result = reconcile({ prData, zipInside: inside, hdfcStmtRows, linkStmtRows, outlet });
   result.zipFiltered = filtered;
 
   // ── Derived figures, computed here so the UI never does reconciliation
   // arithmetic of its own ────────────────────────────────────────────────
   const prMap = buildPRMap(prData);
   const sumMap = buildSumMap(summaryData);
-  const ctx = { prData, zipInside: inside, upiHdfc: result.upiHdfc };
+  const ctx = { prData, zipInside: inside, upiHdfc: result.upiHdfc, linkStmt: result.linkStmt };
 
   const frsRows = FRS_METHODS.map((m) => {
     const a = frsRowAmounts(m, prMap, sumMap, ctx);
@@ -300,6 +329,8 @@ export async function runReconciliation(files: RunInputFiles): Promise<RunOutcom
     taxes,
     hdfcStmtRows,
     hdfcStatementMeta,
+    linkStmtRows,
+    hdfcLinkStatementMeta,
     result,
     outlet,
     win,
@@ -380,6 +411,15 @@ function buildCounts(result: ReconResult): ReconCountsDTO {
           onlyPOS: result.upiHdfc.onlyPOS.length,
           onlyTerm: result.upiHdfc.onlyTerm.length,
           dupRRN: result.upiHdfc.dupRRN.length,
+        }
+      : null,
+    hdfcLink: result.linkStmt
+      ? {
+          reconciled: result.linkStmt.reconRows.filter((x) => !isMaterial(x.diff)).length,
+          unreconciled: result.linkStmt.reconRows.filter((x) => isMaterial(x.diff)).length,
+          onlyPOS: result.linkStmt.onlyPOS.length,
+          onlyTerm: result.linkStmt.onlyTerm.length,
+          dupRRN: result.linkStmt.dupRRN.length,
         }
       : null,
     swiggy: result.swiggy.length,

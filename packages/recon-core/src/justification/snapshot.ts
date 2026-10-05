@@ -15,7 +15,7 @@ import type { PinelabsAcquirerBreakdown } from '../engine/pinelabsBreakdown.js';
 import { advanceBalance, isAdvanceExhausted } from './advances.js';
 import type { FrsRowDTOLike } from './reportTypes.js';
 import type { OutletCode, PinelabsResult, PRRow, ReconResult, SummaryData, ZipRow } from '../types.js';
-import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
+import { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals, type ExplainedItem } from './residual.js';
 import { squareOffGroupKey, squareOffPairList } from './squareOff.js';
 import type { SubmitStatus } from './submitGate.js';
@@ -435,6 +435,7 @@ export function buildSnapshot(input: BuildSnapshotInput): Snapshot {
     justification.entries,
     pinelabsItems,
     buildHdfcUpiItems(result.upiHdfc),
+    buildHdfcLinkItems(result.linkStmt),
     justification.squareOff,
   );
   const { excessTotal, shortTotal } = explainedTotals(explanations);
