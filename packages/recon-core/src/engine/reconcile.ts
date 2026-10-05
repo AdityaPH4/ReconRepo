@@ -34,6 +34,7 @@ function bucketByTab(prData: readonly PRRow[]): Record<Tab, PRRow[]> {
     bills: [],
     bank: [],
     hdfc_link: [],
+    paper_pos: [],
     other: [],
   };
   for (const r of prData) {
@@ -113,6 +114,7 @@ export function reconcile(input: ReconcileInput): ReconResult {
     bills: byTab.bills,
     bank: byTab.bank,
     hdfcLink: byTab.hdfc_link,
+    paperPos: byTab.paper_pos,
     other: byTab.other,
     zipFiltered: [],
   };

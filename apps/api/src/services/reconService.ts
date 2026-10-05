@@ -427,6 +427,7 @@ function buildCounts(result: ReconResult): ReconCountsDTO {
     upi: result.upi.length,
     bills: result.bills.length,
     bank: result.bank.length,
+    paperPos: result.paperPos.length,
     other: result.other.length,
     zipFiltered: result.zipFiltered.length,
   };
@@ -481,6 +482,7 @@ function buildTotals(
     kotakUpi: drawerTotals(sumAmounts(kotakRows), drawer('Kotak Static UPI')),
     bank: drawerTotals(sumAmounts(result.bank), drawer('Bank transfer')),
     hdfcLink: drawerTotals(sumAmounts(result.hdfcLink), drawer('HDFC Payment Link')),
+    paperPos: drawerTotals(sumAmounts(result.paperPos), drawer('Paper POS')),
     bills: drawerTotals(sumAmounts(result.bills), drawer('Bills on Hold')),
     swiggy: {
       prTotal: sumAmounts(result.swiggy),

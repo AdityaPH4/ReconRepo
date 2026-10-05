@@ -112,6 +112,14 @@ export function bankOk(hasSummary: boolean, diff: number, entries: readonly Just
   return Math.abs(residual) < AMOUNT_EPSILON;
 }
 
+/** Same shape as `bankOk` — no leniency band; the ₹300 band is Cash-only (see `cashOk`'s own doc comment). */
+export function paperPosOk(hasSummary: boolean, diff: number, entries: readonly JustificationEntry[]): boolean {
+  if (!hasSummary) return true;
+  if (Math.abs(diff) < AMOUNT_EPSILON) return true;
+  const residual = diff - entryNet(entries, 'paper_pos');
+  return Math.abs(residual) < AMOUNT_EPSILON;
+}
+
 export interface HdfcLinkOkParams {
   hasSummary: boolean;
   /** From `hdfcLinkCompleteness()` — `null` when no Payment Link statement was uploaded. */

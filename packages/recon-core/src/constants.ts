@@ -92,6 +92,15 @@ export const BANK_NAMES = ['bank transfer'];
 // "HDFC Payment Link", not the assumed "HDFC Link". Substring-matched (like
 // Bank/Pinelabs) rather than exact, so either wording is accepted.
 export const HDFC_LINK_NAMES = ['hdfc payment link', 'hdfc link'];
+/**
+ * Paid in person via a physical paper slip (shows up as "PAPER POS" in the
+ * Pinelabs All Transactions export's Hardware Model/Payment Mode columns —
+ * those terminal-side rows are deliberately excluded from electronic-
+ * settlement recon entirely, see `parsers/transactionsZip.ts`). Substring-
+ * matched, not exact, since the real Payment Report's exact casing hasn't
+ * been confirmed against a live sample yet.
+ */
+export const PAPER_POS_NAMES = ['paper pos'];
 
 /**
  * Routes a Payment Report `paymentName` to its panel.
@@ -110,6 +119,7 @@ export function routePayName(pn: string | null | undefined): Tab {
   if (BILLS_NAMES.some((x) => n.includes(x))) return 'bills';
   if (BANK_NAMES.some((x) => n.includes(x))) return 'bank';
   if (HDFC_LINK_NAMES.some((x) => n.includes(x))) return 'hdfc_link';
+  if (PAPER_POS_NAMES.some((x) => n.includes(x))) return 'paper_pos';
   return 'other';
 }
 
@@ -199,6 +209,18 @@ export const FRS_METHODS: FrsMethod[] = [
     reconciledNote: 'POS integrated',
   },
   { label: 'Cash', sourceType: 'drawer', prKeys: ['Cash'], sumKeys: ['Cash'] },
+  {
+    label: 'Paper POS',
+    sourceType: 'drawer',
+    // Both casings kept, same tolerance as HDFC Link's own `prKeys` —
+    // `routePayName()`'s own match is case-insensitive, but the exact-match
+    // `prMap`/`sumMap` lookup here isn't, and the exact casing the real
+    // Payment Report/Drawer Summary use hasn't been confirmed against a live
+    // sample yet (the "PAPER POS" seen so far is from the terminal's All
+    // Transactions export, a different file).
+    prKeys: ['Paper POS', 'PAPER POS'],
+    sumKeys: ['Paper POS', 'PAPER POS'],
+  },
   {
     label: 'HDFC Static UPI',
     sourceType: 'conditional',

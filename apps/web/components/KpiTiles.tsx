@@ -32,11 +32,21 @@ import {
   hdfcLinkCompleteness,
   hdfcLinkOk,
   hdfcUpiCompleteness,
+  paperPosOk,
   pinelabsCompleteness,
   upiOk,
 } from '@toit/recon-core/display';
 
-export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank' | 'hdfc_link' | 'advances';
+export type PanelId =
+  | 'pinelabs'
+  | 'swiggy'
+  | 'cash'
+  | 'upi'
+  | 'bills'
+  | 'bank'
+  | 'hdfc_link'
+  | 'paper_pos'
+  | 'advances';
 
 /** `ok` = neutral/no action needed, `err` = shortage (red), `excess` = excess (green, never alarming). */
 type Stat = 'ok' | 'err' | 'excess' | 'neutral';
@@ -132,6 +142,10 @@ function buildTiles(session: SessionDTO): Tile[] {
   const hdfcLinkDiff = linkCompleteness ? linkCompleteness.netDiff : (totals.hdfcLink.diff ?? 0);
   const hdfcLinkResolved = hdfcLinkOk({ hasSummary, linkCompleteness, hdfcLinkDiff, entries });
 
+  // ── Paper POS ────────────────────────────────────────────────────────
+  const paperPosDiff = totals.paperPos.diff ?? 0;
+  const paperPosResolved = paperPosOk(hasSummary, paperPosDiff, entries);
+
   return [
     {
       id: 'pinelabs',
@@ -167,6 +181,13 @@ function buildTiles(session: SessionDTO): Tile[] {
       main: diffLabel(hdfcLinkDiff, hasSummary),
       note: `${result.hdfcLink.length} Payment Report rows`,
       stat: directionalStat(hdfcLinkResolved, hdfcLinkDiff),
+    },
+    {
+      id: 'paper_pos',
+      label: 'Paper POS',
+      main: diffLabel(paperPosDiff, hasSummary),
+      note: `${result.paperPos.length} Payment Report rows`,
+      stat: directionalStat(paperPosResolved, paperPosDiff),
     },
     {
       id: 'swiggy',
