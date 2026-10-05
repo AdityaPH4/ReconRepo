@@ -56,10 +56,14 @@ export function collectExplained(
   entries: readonly JustificationEntry[],
   pinelabsItems: readonly ResolvableItem[],
   hdfcItems: readonly ResolvableItem[],
+  linkItems: readonly ResolvableItem[],
   squareOff: SquareOffMap,
 ): ExplainedItem[] {
   const plByKey = new Map(pinelabsItems.map((i) => [i.targetKey, i]));
   const hdfcByKey = new Map(hdfcItems.map((i) => [i.targetKey, i]));
+  const linkByKey = new Map(linkItems.map((i) => [i.targetKey, i]));
+  const itemsBySource = { pinelabs: pinelabsItems, upi_hdfc: hdfcItems, hdfc_link_stmt: linkItems } as const;
+  const byKeyBySource = { pinelabs: plByKey, upi_hdfc: hdfcByKey, hdfc_link_stmt: linkByKey } as const;
 
   const out: ExplainedItem[] = [];
   for (const e of entries) {
@@ -67,15 +71,20 @@ export function collectExplained(
     let label: string;
     let orderNo = '';
     let rrn = e.rrn ?? '';
-    if (e.source === 'pinelabs' || e.source === 'upi_hdfc') {
+    if (e.source === 'pinelabs' || e.source === 'upi_hdfc' || e.source === 'hdfc_link_stmt') {
       if (e.targetKey !== null && isSquareOffGroupKey(e.targetKey)) {
-        const items = e.source === 'pinelabs' ? pinelabsItems : hdfcItems;
+        const items = itemsBySource[e.source];
         const net = squareOffNetByGroupKey(squareOff, e.targetKey, items);
         if (net === null) continue; // stale group — excluded, never double-counted
         diff = e.direction === 'excess' ? e.amount : -e.amount;
-        label = e.source === 'pinelabs' ? 'Pinelabs — square-off residual' : 'HDFC Static UPI — square-off residual';
+        label =
+          e.source === 'pinelabs'
+            ? 'Pinelabs — square-off residual'
+            : e.source === 'upi_hdfc'
+              ? 'HDFC Static UPI — square-off residual'
+              : 'HDFC Link — square-off residual';
       } else {
-        const item = e.targetKey === null ? undefined : (e.source === 'pinelabs' ? plByKey : hdfcByKey).get(e.targetKey);
+        const item = e.targetKey === null ? undefined : byKeyBySource[e.source].get(e.targetKey);
         if (!item || !item.appearsInExplanation) continue;
         diff = item.diff;
         label = item.label;

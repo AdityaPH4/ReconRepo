@@ -428,13 +428,31 @@ describe('completeness', () => {
   });
 
   it('HDFC Link requires exactness too, same shape as Bank, netting only against its own source', () => {
+    // `linkCompleteness: null` — no Payment Link statement uploaded, so this
+    // exercises the aggregate fallback branch (same shape as `bankOk`).
     const entries = [entry({ source: 'hdfc_link', direction: 'excess', remark: 'Tips', amount: 490 })];
-    assert.equal(hdfcLinkOk(true, 500, entries), false);
+    assert.equal(hdfcLinkOk({ hasSummary: true, linkCompleteness: null, hdfcLinkDiff: 500, entries }), false);
     const exact = [entry({ source: 'hdfc_link', direction: 'excess', remark: 'Tips', amount: 500 })];
-    assert.equal(hdfcLinkOk(true, 500, exact), true);
+    assert.equal(hdfcLinkOk({ hasSummary: true, linkCompleteness: null, hdfcLinkDiff: 500, entries: exact }), true);
     // A Bank-sourced entry must not net against an HDFC Link diff.
     const wrongSource = [entry({ source: 'bank', direction: 'excess', remark: 'Tips', amount: 500 })];
-    assert.equal(hdfcLinkOk(true, 500, wrongSource), false);
+    assert.equal(
+      hdfcLinkOk({ hasSummary: true, linkCompleteness: null, hdfcLinkDiff: 500, entries: wrongSource }),
+      false,
+    );
+  });
+
+  it('hdfcLinkOk is count-based once a Payment Link statement exists, ignoring the aggregate diff entirely', () => {
+    const resolved = { netDiff: 0, unresolvedCount: 0, allResolved: true };
+    assert.equal(
+      hdfcLinkOk({ hasSummary: true, linkCompleteness: resolved, hdfcLinkDiff: 99999, entries: [] }),
+      true,
+    );
+    const unresolved = { netDiff: 500, unresolvedCount: 1, allResolved: false };
+    assert.equal(
+      hdfcLinkOk({ hasSummary: true, linkCompleteness: unresolved, hdfcLinkDiff: 0, entries: [] }),
+      false,
+    );
   });
 
   it('upiOk requires HDFC fully resolved AND Kotak within tolerance when a statement exists', () => {
@@ -471,7 +489,7 @@ describe('residual', () => {
       entry({ source: 'pinelabs', targetKey: 'R1', remark: 'Tips', direction: 'excess', amount: 300 }),
       entry({ source: 'cash', direction: 'shortage', remark: 'Short Collection', amount: 100 }),
     ];
-    const explained = collectExplained(entries, pinelabsItems, [], {});
+    const explained = collectExplained(entries, pinelabsItems, [], [], {});
     assert.equal(explained.length, 2);
     const totals = explainedTotals(explained);
     assert.equal(totals.excessTotal, 300);
@@ -486,7 +504,7 @@ describe('residual', () => {
     const map = toggleSquareOff({}, 'MM-1', 'POS-1', true);
     const key = squareOffGroupKey(map, 'MM-1')!;
     const entries = [entry({ source: 'pinelabs', targetKey: key, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
-    const explained = collectExplained(entries, items, [], map);
+    const explained = collectExplained(entries, items, [], [], map);
     assert.equal(explained.length, 1);
     assert.equal(explained[0]!.diff, 200);
     assert.equal(explained[0]!.label, 'Pinelabs — square-off residual');
@@ -502,7 +520,7 @@ describe('residual', () => {
     // The pairing is gone now — the entry's key no longer matches anything live.
     const unpaired = toggleSquareOff(map, 'MM-1', 'POS-1', false);
     const entries = [entry({ source: 'pinelabs', targetKey: staleKey, remark: 'Extra Payment Received', direction: 'excess', amount: 200 })];
-    const explained = collectExplained(entries, items, [], unpaired);
+    const explained = collectExplained(entries, items, [], [], unpaired);
     assert.equal(explained.length, 0);
   });
 
@@ -518,7 +536,7 @@ describe('residual', () => {
       countsTowardGate: true,
     };
     const entries = [entry({ source: 'pinelabs', targetKey: 'dup-R9', remark: 'Other', comment: 'ambiguous' })];
-    const explained = collectExplained(entries, [dupItem], [], {});
+    const explained = collectExplained(entries, [dupItem], [], [], {});
     assert.equal(explained.length, 0);
   });
 
@@ -534,7 +552,7 @@ describe('residual', () => {
       countsTowardGate: false,
     };
     const entries = [entry({ source: 'upi_hdfc', targetKey: 'udup-R9', remark: 'Other', comment: 'ambiguous' })];
-    const explained = collectExplained(entries, [], [udupItem], {});
+    const explained = collectExplained(entries, [], [udupItem], [], {});
     assert.equal(explained.length, 1);
     assert.equal(explained[0]!.diff, 0);
     assert.equal(explained[0]!.label, 'HDFC UPI — Duplicate RRN');

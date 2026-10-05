@@ -77,7 +77,7 @@ export interface RunFiles {
   zip: File;
   sum?: File | undefined;
   hdfc?: File | undefined;
-  /** HDFC Payment Link statement — stored with the session for reference, same as `hdfc`, but not yet parsed or reconciled against. */
+  /** HDFC Payment Link reconciliation report — optional; reconciled transaction-by-transaction by Merchant Order ID when present, same as `hdfc`. */
   hdfc_link?: File | undefined;
   /** Admin-only manual outlet pick — wins over whatever the ZIP's terminal store name would otherwise detect. Ignored by the API for a GM (who has exactly one outlet already). */
   outlet?: OutletCode | undefined;

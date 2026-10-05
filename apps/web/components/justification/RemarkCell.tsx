@@ -33,9 +33,9 @@ import { modalKindForRemark } from './types';
 import { useJustification } from './JustificationProvider';
 
 interface Props {
-  source: Extract<JustificationSourceDTO, 'pinelabs' | 'upi_hdfc'>;
+  source: Extract<JustificationSourceDTO, 'pinelabs' | 'upi_hdfc' | 'hdfc_link_stmt'>;
   item: ResolvableItem;
-  /** Every resolvable item in this same domain (Pinelabs or HDFC-UPI) — needed to offer square-off partners. */
+  /** Every resolvable item in this same domain (Pinelabs, HDFC-UPI, or HDFC Link) — needed to offer square-off partners. */
   allItems: ResolvableItem[];
 }
 
@@ -57,11 +57,11 @@ export function RemarkCell({ source, item, allItems }: Props) {
   // appears in both and a raw REMARKS_ALL would render it as two <option>s
   // with the same key.
   //
-  // Every row here is Pinelabs or HDFC-UPI (this component's `source` prop
-  // is typed to exactly those two) — both traceable, transaction-level
-  // sources a corporate client could pay through and have TDS deducted from,
-  // same reasoning as the Bank tab — so a shortage-signed row always offers
-  // "TDS Deducted" too.
+  // Every row here is Pinelabs, HDFC-UPI, or HDFC Link (this component's
+  // `source` prop is typed to exactly those three) — all traceable,
+  // transaction-level sources a corporate client could pay through and have
+  // TDS deducted from, same reasoning as the Bank tab — so a shortage-signed
+  // row always offers "TDS Deducted" too.
   const remarkOptions =
     item.diff > AMOUNT_EPSILON
       ? REMARKS_EXCESS
@@ -164,12 +164,22 @@ export function RemarkCell({ source, item, allItems }: Props) {
           direction: target.direction,
           // BOH Clear's source is locked to whichever row triggered it —
           // legacy: `openBohClearFromRecon` (reconciliation (68).html:4607-4665).
-          lockedSource: modalKind === 'boh-clear' ? (source === 'pinelabs' ? 'Pinelabs' : 'HDFC Static UPI') : undefined,
-          // A row-level HDFC-UPI item already carries its own RRN (that's how
-          // it got matched/listed in the first place) — `BohClearModal` uses
-          // this to skip asking the operator to re-type an RRN the system
-          // already knows, when the source is HDFC Static UPI specifically.
-          // A group residual has no single row's RRN to pass through.
+          // HDFC Link has no legacy equivalent (the statement didn't exist
+          // yet); it slots in next to HDFC Static UPI, same reasoning.
+          lockedSource:
+            modalKind === 'boh-clear'
+              ? source === 'pinelabs'
+                ? 'Pinelabs'
+                : source === 'upi_hdfc'
+                  ? 'HDFC Static UPI'
+                  : 'HDFC Link'
+              : undefined,
+          // A row-level HDFC-UPI/HDFC-Link item already carries its own RRN
+          // (that's how it got matched/listed in the first place) —
+          // `BohClearModal` uses this to skip asking the operator to re-type
+          // an RRN the system already knows, when the source is one of
+          // those two specifically. A group residual has no single row's
+          // RRN to pass through.
           rrn: target.rrn,
         });
         return;

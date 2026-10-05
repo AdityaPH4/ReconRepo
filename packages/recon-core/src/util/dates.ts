@@ -109,6 +109,23 @@ export function parseZipDT(s: string | null | undefined): Date | null {
 }
 
 /**
+ * Parses an HDFC Payment Link reconciliation report timestamp:
+ * `YYYY-MM-DD HH:MM:SS`, 24-hour, read as IST. Confirmed against two real
+ * exports — e.g. `2026-09-29 17:20:28`. Returns `null` when the format
+ * doesn't match exactly, same "unparseable means no date" convention as
+ * every other timestamp reader here.
+ */
+export function parsePaymentLinkDT(s: string | null | undefined): Date | null {
+  if (!s) return null;
+  const m = String(s)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const [, yr, mo, d, hh, mm, ss] = m;
+  return istDate(+yr!, +mo! - 1, +d!, +hh!, +mm!, +ss!);
+}
+
+/**
  * Parses an HDFC statement timestamp: date as `YYYY-MM-DD`, time as
  * `H:MM:SS AM/PM`, read as IST.
  */

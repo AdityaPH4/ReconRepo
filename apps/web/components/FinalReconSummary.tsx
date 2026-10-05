@@ -19,7 +19,7 @@
 
 import { useState } from 'react';
 import type { ExplainedItemDTO, FrsRowDTO, PinelabsBreakdownDTO, SessionDTO } from '@toit/contracts';
-import { AMOUNT_EPSILON, THRESHOLD, entryNet, fmt, hdfcUpiCompleteness } from '@toit/recon-core/display';
+import { AMOUNT_EPSILON, THRESHOLD, entryNet, fmt, hdfcLinkCompleteness, hdfcUpiCompleteness } from '@toit/recon-core/display';
 import { ApiError, reportUrl, snapshotUrl, submitSession } from '@/lib/api';
 
 export function FinalReconSummary({
@@ -439,7 +439,11 @@ function SourceStatusSection({ session }: { session: SessionDTO }) {
   const bankDiff = totals.bank.diff ?? 0;
   const bankResidual = bankDiff - entryNet(justification.entries, 'bank');
 
-  const hdfcLinkDiff = totals.hdfcLink.diff ?? 0;
+  // Same reasoning as HDFC Static UPI above: once a Payment Link report
+  // exists, the "unexplained" figure must be the count-based completeness
+  // net the submit gate itself uses, not the aggregate drawer-vs-PR diff.
+  const linkCompleteness = hdfcLinkCompleteness(result.linkStmt as never, justification.entries, justification.squareOff);
+  const hdfcLinkDiff = linkCompleteness ? linkCompleteness.netDiff : (totals.hdfcLink.diff ?? 0);
   const hdfcLinkResidual = hdfcLinkDiff - entryNet(justification.entries, 'hdfc_link');
 
   const tags = [

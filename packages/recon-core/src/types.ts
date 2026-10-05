@@ -125,6 +125,29 @@ export interface HdfcStatementParse {
   unknownCity: number;
 }
 
+/**
+ * One row of the HDFC Payment Link reconciliation report — see
+ * `parsers/hdfcPaymentLink.ts`. Matched against the Payment Report by
+ * Merchant Order ID (aliased into `rrn`), not a bank RRN.
+ */
+export interface PaymentLinkRow {
+  rrn: string;
+  merchantOrderId: string;
+  amount: number;
+  netAmount: number;
+  fee: number;
+  date: Date;
+  dateRaw: string;
+  paymentMode: string;
+}
+
+/** Result of parsing the HDFC Payment Link report, with a count of what was dropped. */
+export interface PaymentLinkStatementParse {
+  rows: PaymentLinkRow[];
+  /** Rows whose `Txn Type` was present and not `SALE`. */
+  skippedNonSale: number;
+}
+
 /** The Payment Summary ("drawer") CSV — a single header row + single value row. */
 export type SummaryData = Record<string, string>;
 
@@ -245,6 +268,8 @@ export interface ReconResult {
   pinelabs: PinelabsResult;
   /** Transaction-level Static UPI match; `null` when no HDFC statement was supplied. */
   upiHdfc: MatchResult<HdfcStatementRow> | null;
+  /** Transaction-level HDFC Payment Link match, by Merchant Order ID; `null` when no Payment Link report was supplied. */
+  linkStmt: MatchResult<PaymentLinkRow> | null;
   swiggy: PRRow[];
   cash: PRRow[];
   upi: PRRow[];
@@ -261,6 +286,8 @@ export interface ReconcileInput {
   prData: PRRow[];
   zipInside: ZipRow[];
   hdfcStmtRows?: HdfcStatementRow[] | null;
+  /** Parsed HDFC Payment Link report rows, if one was uploaded. */
+  linkStmtRows?: PaymentLinkRow[] | null;
   /** Filters the HDFC statement to one outlet. Legacy read this from `S.outlet`. */
   outlet?: OutletCode | null;
 }

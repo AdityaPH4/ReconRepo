@@ -25,7 +25,16 @@
  */
 
 import type { SessionDTO } from '@toit/contracts';
-import { bankOk, cashOk, fmt, hdfcLinkOk, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from '@toit/recon-core/display';
+import {
+  bankOk,
+  cashOk,
+  fmt,
+  hdfcLinkCompleteness,
+  hdfcLinkOk,
+  hdfcUpiCompleteness,
+  pinelabsCompleteness,
+  upiOk,
+} from '@toit/recon-core/display';
 
 export type PanelId = 'pinelabs' | 'swiggy' | 'cash' | 'upi' | 'bills' | 'bank' | 'hdfc_link' | 'advances';
 
@@ -119,8 +128,9 @@ function buildTiles(session: SessionDTO): Tile[] {
   const bankResolved = bankOk(hasSummary, bankDiff, entries);
 
   // ── HDFC Link ────────────────────────────────────────────────────────
-  const hdfcLinkDiff = totals.hdfcLink.diff ?? 0;
-  const hdfcLinkResolved = hdfcLinkOk(hasSummary, hdfcLinkDiff, entries);
+  const linkCompleteness = hdfcLinkCompleteness(result.linkStmt as never, entries, justification.squareOff);
+  const hdfcLinkDiff = linkCompleteness ? linkCompleteness.netDiff : (totals.hdfcLink.diff ?? 0);
+  const hdfcLinkResolved = hdfcLinkOk({ hasSummary, linkCompleteness, hdfcLinkDiff, entries });
 
   return [
     {

@@ -39,10 +39,10 @@ export const CASH_REMARKS_SHORTAGE = ['Paid Out', ...REMARKS_SHORTAGE] as const;
  * Shortage remarks for traceable, corporate-payment sources — same list as
  * `REMARKS_SHORTAGE`, plus "TDS Deducted". TDS withholding happens on the
  * Bank tab (NEFT/RTGS from a corporate client) and on individual Pinelabs/
- * HDFC-UPI transaction-level rows (a corporate card/UPI payment can be
- * TDS-deducted the same way) — but never on Cash or the aggregate/consumer
- * UPI tab, so this stays off `REMARKS_SHORTAGE` itself rather than leaking
- * onto every tab that shares it.
+ * HDFC-UPI/HDFC-Link transaction-level rows (a corporate card/UPI/payment-
+ * link payment can be TDS-deducted the same way) — but never on Cash or the
+ * aggregate/consumer UPI tab, so this stays off `REMARKS_SHORTAGE` itself
+ * rather than leaking onto every tab that shares it.
  */
 export const REMARKS_SHORTAGE_WITH_TDS = [...REMARKS_SHORTAGE, 'TDS Deducted'] as const;
 
@@ -225,7 +225,11 @@ export const FRS_METHODS: FrsMethod[] = [
   },
   {
     label: 'HDFC Link',
-    sourceType: 'drawer',
+    // Conditional, same as HDFC Static UPI: transaction-level (matched by
+    // order number against an uploaded HDFC Payment Link report) when one
+    // was uploaded, else the drawer comparison below — see
+    // `frsRowAmounts()`'s own `m.label === 'HDFC Link'` branch.
+    sourceType: 'conditional',
     // Confirmed against a real Payment Report: "HDFC Payment Link". Both
     // variants kept — prMap/sumMap key on the exact raw string, so a drawer
     // export using the shorter "HDFC Link" wording still resolves.

@@ -12,9 +12,17 @@
  */
 
 import { AMOUNT_EPSILON, THRESHOLD } from '../constants.js';
-import type { HdfcStatementRow, MatchResult, PinelabsResult } from '../types.js';
-import { bankOk, cashOk, hdfcLinkOk, hdfcUpiCompleteness, pinelabsCompleteness, upiOk } from './completeness.js';
-import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
+import type { HdfcStatementRow, MatchResult, PaymentLinkRow, PinelabsResult } from '../types.js';
+import {
+  bankOk,
+  cashOk,
+  hdfcLinkCompleteness,
+  hdfcLinkOk,
+  hdfcUpiCompleteness,
+  pinelabsCompleteness,
+  upiOk,
+} from './completeness.js';
+import { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals } from './residual.js';
 import type { AdvanceApplication, JustificationState } from './types.js';
 
@@ -39,6 +47,7 @@ export interface SubmitGateResult {
 export interface CanSubmitInput {
   pinelabs: PinelabsResult;
   upiHdfc: MatchResult<HdfcStatementRow> | null;
+  linkStmt: MatchResult<PaymentLinkRow> | null;
   justification: JustificationState;
   /** `grandSum − grandPR` from `grandTotals()` (`engine/frs.ts`), excluding POS-integrated methods. */
   grandDiff: number;
@@ -61,6 +70,7 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
   const {
     pinelabs,
     upiHdfc,
+    linkStmt,
     justification,
     grandDiff,
     hasSummary,
@@ -94,8 +104,15 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
   const bankResolved = bankOk(hasSummary, bankDiff, entries);
   if (!bankResolved) blockers.push('Bank transfer difference is not fully justified.');
 
-  const hdfcLinkResolved = hdfcLinkOk(hasSummary, hdfcLinkDiff, entries);
-  if (!hdfcLinkResolved) blockers.push('HDFC Link difference is not fully justified.');
+  const linkCompleteness = hdfcLinkCompleteness(linkStmt, entries, squareOff);
+  const hdfcLinkResolved = hdfcLinkOk({ hasSummary, linkCompleteness, hdfcLinkDiff, entries });
+  if (!hdfcLinkResolved) {
+    blockers.push(
+      linkCompleteness
+        ? `${linkCompleteness.unresolvedCount} HDFC Link transaction${linkCompleteness.unresolvedCount === 1 ? '' : 's'} still need a remark or square-off.`
+        : 'HDFC Link difference is not fully justified.',
+    );
+  }
 
   const upiResolved = upiOk({ hasSummary, hdfcCompleteness, hdfcAggregateDiff, kotakDiff, entries });
   if (!upiResolved) blockers.push('Static UPI difference is not fully justified.');
@@ -113,7 +130,8 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
 
   const pinelabsItems = buildPinelabsItems(pinelabs);
   const hdfcItems = buildHdfcUpiItems(upiHdfc);
-  const explained = collectExplained(entries, pinelabsItems, hdfcItems, squareOff);
+  const linkItems = buildHdfcLinkItems(linkStmt);
+  const explained = collectExplained(entries, pinelabsItems, hdfcItems, linkItems, squareOff);
   const { excessTotal, shortTotal } = explainedTotals(explained);
   const residual = grandDiff - (excessTotal - shortTotal);
 

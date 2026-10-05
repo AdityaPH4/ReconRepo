@@ -15,8 +15,8 @@
  */
 
 import { AMOUNT_EPSILON, THRESHOLD } from '../constants.js';
-import type { HdfcStatementRow, MatchResult, PinelabsResult } from '../types.js';
-import { buildHdfcUpiItems, buildPinelabsItems } from './items.js';
+import type { HdfcStatementRow, MatchResult, PaymentLinkRow, PinelabsResult } from '../types.js';
+import { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { isSquareOffResolved } from './squareOff.js';
 import type { JustificationEntry, JustificationSource, ResolvableItem, SquareOffMap } from './types.js';
 
@@ -74,6 +74,21 @@ export function hdfcUpiCompleteness(
   );
 }
 
+/** `null` when no Payment Link statement was uploaded — there is nothing transaction-level to check. */
+export function hdfcLinkCompleteness(
+  linkStmt: MatchResult<PaymentLinkRow> | null,
+  entries: readonly JustificationEntry[],
+  squareOff: SquareOffMap,
+): CompletenessResult | null {
+  if (!linkStmt) return null;
+  const items = buildHdfcLinkItems(linkStmt);
+  return itemsCompleteness(
+    items,
+    entries.filter((e) => e.source === 'hdfc_link_stmt'),
+    squareOff,
+  );
+}
+
 /** Net signed total of every aggregate-tab entry for one source (Cash/UPI/Bank). */
 export function entryNet(entries: readonly JustificationEntry[], source: JustificationSource): number {
   return entries
@@ -97,12 +112,28 @@ export function bankOk(hasSummary: boolean, diff: number, entries: readonly Just
   return Math.abs(residual) < AMOUNT_EPSILON;
 }
 
-/** Same shape as `bankOk` — no leniency band, exact-to-ε once a Payment Summary exists. */
-export function hdfcLinkOk(hasSummary: boolean, diff: number, entries: readonly JustificationEntry[]): boolean {
+export interface HdfcLinkOkParams {
+  hasSummary: boolean;
+  /** From `hdfcLinkCompleteness()` — `null` when no Payment Link statement was uploaded. */
+  linkCompleteness: CompletenessResult | null;
+  /** Aggregate HDFC Link diff (summary − PR), used only when no statement exists. */
+  hdfcLinkDiff: number;
+  entries: readonly JustificationEntry[];
+}
+
+/**
+ * With a statement: transaction-level, count-based (mirrors `hdfcUpiCompleteness`
+ * feeding into `upiOk`). Without one: same shape as `bankOk` — no leniency
+ * band, exact-to-ε once a Payment Summary exists.
+ */
+export function hdfcLinkOk({ hasSummary, linkCompleteness, hdfcLinkDiff, entries }: HdfcLinkOkParams): boolean {
   if (!hasSummary) return true;
-  if (Math.abs(diff) < AMOUNT_EPSILON) return true;
-  const residual = diff - entryNet(entries, 'hdfc_link');
-  return Math.abs(residual) < AMOUNT_EPSILON;
+  if (!linkCompleteness) {
+    if (Math.abs(hdfcLinkDiff) < AMOUNT_EPSILON) return true;
+    const residual = hdfcLinkDiff - entryNet(entries, 'hdfc_link');
+    return Math.abs(residual) < AMOUNT_EPSILON;
+  }
+  return linkCompleteness.allResolved;
 }
 
 export interface UpiOkParams {

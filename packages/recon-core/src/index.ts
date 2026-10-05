@@ -30,6 +30,8 @@ export type {
   PRGroup,
   PRParse,
   PRRow,
+  PaymentLinkRow,
+  PaymentLinkStatementParse,
   PinelabsResult,
   ReconResult,
   ReconRow,
@@ -114,6 +116,7 @@ export {
   parseSaleSummaryTaxesSection,
 } from './parsers/paymentSummary.js';
 export { HdfcStatementFormatError, parseHdfcStatement } from './parsers/hdfcStatement.js';
+export { PaymentLinkStatementFormatError, parsePaymentLinkStatement } from './parsers/hdfcPaymentLink.js';
 
 // ── Engine ────────────────────────────────────────────────────────────────
 export { matchTransactionLevel } from './engine/match.js';
@@ -129,6 +132,7 @@ export {
   frsRowAmounts,
   grandTotals,
   hdfcTerminalPR,
+  linkTerminalPR,
   pinelabsTerminalPR,
 } from './engine/frs.js';
 export type { FrsContext } from './engine/frs.js';
@@ -154,7 +158,7 @@ export type {
 } from './justification/types.js';
 export { emptyJustificationState } from './justification/types.js';
 
-export { buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
+export { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
 
 export {
   isEligibleSquareOffPartner,
@@ -175,12 +179,13 @@ export {
   bankOk,
   cashOk,
   entryNet,
+  hdfcLinkCompleteness,
   hdfcLinkOk,
   hdfcUpiCompleteness,
   pinelabsCompleteness,
   upiOk,
 } from './justification/completeness.js';
-export type { CompletenessResult, UpiOkParams } from './justification/completeness.js';
+export type { CompletenessResult, HdfcLinkOkParams, UpiOkParams } from './justification/completeness.js';
 
 export { collectExplained, explainedTotals } from './justification/residual.js';
 export type { ExplainedItem } from './justification/residual.js';

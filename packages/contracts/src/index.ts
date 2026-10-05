@@ -89,6 +89,12 @@ export interface HdfcStatementMetaDTO {
   unknownCity: number;
 }
 
+export interface HdfcLinkStatementMetaDTO {
+  rows: number;
+  /** Rows whose `Txn Type` was present and not `SALE` (e.g. a refund). */
+  skippedNonSale: number;
+}
+
 // ── Session ───────────────────────────────────────────────────────────────
 
 export type SessionStatus = 'draft' | 'submitted' | 'discarded';
@@ -113,6 +119,7 @@ export interface SessionMetaDTO {
   zipFilteredRows: number;
   files: UploadedFileDTO[];
   hdfcStatement: HdfcStatementMetaDTO | null;
+  hdfcLinkStatement: HdfcLinkStatementMetaDTO | null;
   /**
    * Non-fatal problems the operator must see — an unreadable HDFC statement, a
    * missing business date, an undetectable outlet. The legacy app raised these
@@ -181,6 +188,8 @@ export interface ReconCountsDTO {
   pinelabs: PinelabsCountsDTO;
   /** `null` when no HDFC statement was uploaded. */
   upiHdfc: UpiHdfcCountsDTO | null;
+  /** `null` when no HDFC Payment Link report was uploaded. */
+  hdfcLink: UpiHdfcCountsDTO | null;
   swiggy: number;
   cash: number;
   upi: number;

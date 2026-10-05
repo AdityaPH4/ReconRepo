@@ -16,6 +16,7 @@ import type {
   HdfcStatementRow,
   MatchResult,
   PRRow,
+  PaymentLinkRow,
   SummaryData,
   ZipRow,
 } from '../types.js';
@@ -86,11 +87,30 @@ export function hdfcTerminalPR(
   return { pr, term };
 }
 
+/**
+ * HDFC Payment Link's transaction-level totals, reconstructed from the
+ * match buckets — same shape and same reasoning as `hdfcTerminalPR()`
+ * above. Returns `null` when no Payment Link report was uploaded.
+ */
+export function linkTerminalPR(
+  linkStmt: MatchResult<PaymentLinkRow> | null,
+): { pr: number; term: number } | null {
+  if (!linkStmt) return null;
+  const pr =
+    linkStmt.reconRows.reduce((s, x) => s + (x.prAmt || 0), 0) +
+    linkStmt.onlyPOS.reduce((s, x) => s + (x.amount || 0), 0);
+  const term =
+    linkStmt.reconRows.reduce((s, x) => s + (x.plAmt || 0), 0) +
+    linkStmt.onlyTerm.reduce((s, x) => s + (x.amount || 0), 0);
+  return { pr, term };
+}
+
 /** Context `frsRowAmounts` needs to resolve the transaction-level rows. */
 export interface FrsContext {
   prData: readonly PRRow[];
   zipInside: readonly ZipRow[];
   upiHdfc: MatchResult<HdfcStatementRow> | null;
+  linkStmt: MatchResult<PaymentLinkRow> | null;
 }
 
 /**
@@ -114,6 +134,16 @@ export function frsRowAmounts(
   }
   if (m.sourceType === 'conditional' && m.label === 'HDFC Static UPI' && ctx.upiHdfc) {
     const t = hdfcTerminalPR(ctx.upiHdfc)!;
+    return {
+      pr: t.pr,
+      drawerAmt: null,
+      sourceAmt: t.term,
+      diff: t.term - t.pr,
+      usingSource: true,
+    };
+  }
+  if (m.sourceType === 'conditional' && m.label === 'HDFC Link' && ctx.linkStmt) {
+    const t = linkTerminalPR(ctx.linkStmt)!;
     return {
       pr: t.pr,
       drawerAmt: null,

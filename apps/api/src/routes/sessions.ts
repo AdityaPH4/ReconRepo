@@ -56,10 +56,9 @@ const UPLOAD_FIELDS = [
   { name: 'zip', maxCount: 1 },
   { name: 'sum', maxCount: 1 },
   { name: 'hdfc', maxCount: 1 },
-  // Stored alongside the other raw files, same as `sum`/`hdfc` — not parsed
-  // or reconciled against yet (no confirmed HDFC Payment Link statement
-  // format to build a reader against). Purely a record-keeping upload for
-  // now; see the doc comment on `UploadRole` in @toit/contracts.
+  // HDFC Payment Link reconciliation report — reconciled transaction-by-
+  // transaction by Merchant Order ID, same optional-statement treatment as
+  // `hdfc` above. See `parsePaymentLinkStatement()`.
   { name: 'hdfc_link', maxCount: 1 },
 ] as const;
 
@@ -122,6 +121,7 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       zip: { buffer: zip!.buffer, originalName: zip!.originalname },
       ...(sum ? { sum: { buffer: sum.buffer, originalName: sum.originalname } } : {}),
       ...(hdfc ? { hdfc: { buffer: hdfc.buffer, originalName: hdfc.originalname } } : {}),
+      ...(hdfc_link ? { hdfcLink: { buffer: hdfc_link.buffer, originalName: hdfc_link.originalname } } : {}),
       ...(outletOverride ? { outletOverride } : {}),
       ...(gmOutlet ? { gmOutlet } : {}),
       ...(businessDateOverride ? { businessDateOverride } : {}),
@@ -196,6 +196,7 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
         zipFilteredRows: outcome.zipFiltered.length,
         files: stored,
         hdfcStatement: outcome.hdfcStatementMeta,
+        hdfcLinkStatement: outcome.hdfcLinkStatementMeta,
         warnings: outcome.warnings,
         discardedAt: null,
         supersededBySessionId: null,

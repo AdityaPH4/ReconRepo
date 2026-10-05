@@ -29,6 +29,8 @@ export type {
   PRGroup,
   PRParse,
   PRRow,
+  PaymentLinkRow,
+  PaymentLinkStatementParse,
   PinelabsResult,
   ReconResult,
   ReconRow,
@@ -100,7 +102,7 @@ export type {
 } from './justification/types.js';
 export { emptyJustificationState } from './justification/types.js';
 
-export { buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
+export { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
 
 export {
   isEligibleSquareOffPartner,
@@ -121,12 +123,13 @@ export {
   bankOk,
   cashOk,
   entryNet,
+  hdfcLinkCompleteness,
   hdfcLinkOk,
   hdfcUpiCompleteness,
   pinelabsCompleteness,
   upiOk,
 } from './justification/completeness.js';
-export type { CompletenessResult, UpiOkParams } from './justification/completeness.js';
+export type { CompletenessResult, HdfcLinkOkParams, UpiOkParams } from './justification/completeness.js';
 
 export { collectExplained, explainedTotals } from './justification/residual.js';
 export type { ExplainedItem } from './justification/residual.js';
