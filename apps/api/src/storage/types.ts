@@ -89,6 +89,8 @@ export interface AdvanceStore {
   listApplications(outlet: OutletCode | null): Promise<AdvanceApplication[]>;
   /** Durable closure outside any recon session — see `Advance.status`. */
   close(id: string, closedAt: string, closedBy: string, closedReason: string): Promise<Advance>;
+  /** Undoes a mistaken closure — back to `open`, clearing `closedAt`/`closedBy`/`closedReason`. Mirrors `TdsStore.reopen()`; the 7-day eligibility window is enforced by the route, not here. */
+  reopen(id: string): Promise<Advance>;
 }
 
 // ── Bills-on-hold repository — outlet-scoped cross-session store ─────────

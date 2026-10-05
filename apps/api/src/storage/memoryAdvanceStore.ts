@@ -48,5 +48,13 @@ export function createMemoryAdvanceStore(): AdvanceStore {
       advances.set(id, closed);
       return closed;
     },
+
+    async reopen(id) {
+      const advance = advances.get(id);
+      if (!advance) throw new Error(`Advance not found: ${id}`);
+      const reopened: Advance = { ...advance, status: 'open', closedAt: null, closedBy: null, closedReason: null };
+      advances.set(id, reopened);
+      return reopened;
+    },
   };
 }

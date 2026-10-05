@@ -66,5 +66,14 @@ export function createPostgresAdvanceStore(pool: Pool): AdvanceStore {
       await pool.query(`UPDATE recon.advances SET status = 'closed', data = $2 WHERE id = $1`, [id, closed]);
       return closed;
     },
+
+    async reopen(id) {
+      const { rows } = await pool.query<{ data: Advance }>('SELECT data FROM recon.advances WHERE id = $1', [id]);
+      const advance = rows[0]?.data;
+      if (!advance) throw new Error(`Advance not found: ${id}`);
+      const reopened: Advance = { ...advance, status: 'open', closedAt: null, closedBy: null, closedReason: null };
+      await pool.query(`UPDATE recon.advances SET status = 'open', data = $2 WHERE id = $1`, [id, reopened]);
+      return reopened;
+    },
   };
 }
