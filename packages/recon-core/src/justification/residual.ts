@@ -15,12 +15,13 @@ import type { Remark } from '../constants.js';
 import { isSquareOffGroupKey, squareOffNetByGroupKey } from './squareOff.js';
 import type { JustificationEntry, JustificationSource, ResolvableItem, SquareOffMap } from './types.js';
 
-/** Per-`JustificationSource` label for the aggregate (Cash/UPI/Bank/HDFC Link) tabs — legacy's own `source:` literals in `collectExplainedForSubmit` (5060–5069); `hdfc_link` has no legacy equivalent. */
-const AGGREGATE_LABEL: Record<'cash' | 'upi' | 'bank' | 'hdfc_link', string> = {
+/** Per-`JustificationSource` label for the aggregate (Cash/UPI/Bank/HDFC Link/Paper POS) tabs — legacy's own `source:` literals in `collectExplainedForSubmit` (5060–5069); `hdfc_link`/`paper_pos` have no legacy equivalent. */
+const AGGREGATE_LABEL: Record<'cash' | 'upi' | 'bank' | 'hdfc_link' | 'paper_pos', string> = {
   cash: 'Cash',
   upi: 'HDFC/Kotak UPI',
   bank: 'Bank Transfer',
   hdfc_link: 'HDFC Link',
+  paper_pos: 'Paper POS',
 };
 
 export interface ExplainedItem {
@@ -91,7 +92,13 @@ export function collectExplained(
         orderNo = item.orderNo;
         rrn = item.rrn;
       }
-    } else if (e.source === 'cash' || e.source === 'upi' || e.source === 'bank' || e.source === 'hdfc_link') {
+    } else if (
+      e.source === 'cash' ||
+      e.source === 'upi' ||
+      e.source === 'bank' ||
+      e.source === 'hdfc_link' ||
+      e.source === 'paper_pos'
+    ) {
       diff = e.direction === 'excess' ? e.amount : -e.amount;
       label = AGGREGATE_LABEL[e.source];
     } else {

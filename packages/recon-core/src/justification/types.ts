@@ -33,6 +33,7 @@ export type JustificationSource =
   | 'bank'
   | 'hdfc_link'
   | 'hdfc_link_stmt'
+  | 'paper_pos'
   | 'boh';
 
 export type Direction = 'excess' | 'shortage';

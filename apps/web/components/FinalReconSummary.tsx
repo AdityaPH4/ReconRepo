@@ -19,7 +19,14 @@
 
 import { useState } from 'react';
 import type { ExplainedItemDTO, FrsRowDTO, PinelabsBreakdownDTO, SessionDTO } from '@toit/contracts';
-import { AMOUNT_EPSILON, THRESHOLD, entryNet, fmt, hdfcLinkCompleteness, hdfcUpiCompleteness } from '@toit/recon-core/display';
+import {
+  AMOUNT_EPSILON,
+  THRESHOLD,
+  entryNet,
+  fmt,
+  hdfcLinkCompleteness,
+  hdfcUpiCompleteness,
+} from '@toit/recon-core/display';
 import { ApiError, reportUrl, snapshotUrl, submitSession } from '@/lib/api';
 
 export function FinalReconSummary({
@@ -446,6 +453,9 @@ function SourceStatusSection({ session }: { session: SessionDTO }) {
   const hdfcLinkDiff = linkCompleteness ? linkCompleteness.netDiff : (totals.hdfcLink.diff ?? 0);
   const hdfcLinkResidual = hdfcLinkDiff - entryNet(justification.entries, 'hdfc_link');
 
+  const paperPosDiff = totals.paperPos.diff ?? 0;
+  const paperPosResidual = paperPosDiff - entryNet(justification.entries, 'paper_pos');
+
   const tags = [
     {
       ok: submitGate.perSource.pinelabs,
@@ -497,6 +507,18 @@ function SourceStatusSection({ session }: { session: SessionDTO }) {
             : Math.abs(hdfcLinkResidual) < AMOUNT_EPSILON
               ? 'Fully justified'
               : `Unexplained: ${fmt(Math.abs(hdfcLinkResidual))}`,
+    },
+    {
+      ok: submitGate.perSource.paperPos,
+      label: 'Paper POS',
+      detail:
+        totals.paperPos.summaryTotal === null
+          ? 'No summary'
+          : Math.abs(paperPosDiff) < AMOUNT_EPSILON
+            ? 'Balanced'
+            : Math.abs(paperPosResidual) < AMOUNT_EPSILON
+              ? 'Fully justified'
+              : `Unexplained: ${fmt(Math.abs(paperPosResidual))}`,
     },
   ];
 
