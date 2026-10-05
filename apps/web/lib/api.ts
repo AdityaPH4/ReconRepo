@@ -208,6 +208,11 @@ export function closeAdvance(id: string, closedReason: string): Promise<AdvanceD
   return postJson(`${API_BASE}/api/advances/${id}/close`, { closedReason } satisfies CloseAdvanceRequest);
 }
 
+/** Admin-only, and only within 7 days of the original closing date — see the route's own doc comment. */
+export function reopenAdvance(id: string): Promise<AdvanceDTO> {
+  return postJson(`${API_BASE}/api/advances/${id}/reopen`, {});
+}
+
 export async function listEligibleBoh(
   sessionId: string,
   opts: { includeToday?: boolean; amount?: number } = {},

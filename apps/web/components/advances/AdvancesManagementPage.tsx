@@ -17,7 +17,15 @@ import { useEffect, useState } from 'react';
 import type { AdvanceWithBalanceDTO } from '@toit/contracts';
 import { OUTLET_CODES, OUTLET_NAMES, type OutletCode, fmt, fmtEventDate, isMaterial } from '@toit/recon-core/display';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
-import { ApiError, closeAdvance, listAdvances } from '@/lib/api';
+import { ApiError, closeAdvance, listAdvances, reopenAdvance } from '@/lib/api';
+
+/** Mirrors the server's own window — see repositories.ts's `ADVANCE_REOPEN_WINDOW_DAYS`. Purely a UX nicety (hide a button that would just fail); the server enforces this independently regardless of what the client shows. */
+const REOPEN_WINDOW_DAYS = 7;
+
+function daysSince(iso: string): number {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return Math.floor((Date.now() - new Date(iso).getTime()) / DAY_MS);
+}
 
 export function AdvancesManagementPage() {
   const user = useCurrentUser();
@@ -58,6 +66,20 @@ export function AdvancesManagementPage() {
       await refresh();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to close advance.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function reopen(row: AdvanceWithBalanceDTO) {
+    if (!window.confirm(`Reopen the advance from "${row.advance.custName}"? It will go back to the Open list.`)) return;
+    setBusyId(row.advance.id);
+    setError(null);
+    try {
+      await reopenAdvance(row.advance.id);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Failed to reopen advance.');
     } finally {
       setBusyId(null);
     }
@@ -193,23 +215,42 @@ export function AdvancesManagementPage() {
                   <th>Closed by</th>
                   <th>Closed at</th>
                   <th>Reason</th>
+                  {isAdmin && <th />}
                 </tr>
               </thead>
               <tbody>
-                {closed.map((r) => (
-                  <tr key={r.advance.id}>
-                    {isAdmin && <td>{r.advance.outlet}</td>}
-                    <td>{r.advance.custName}</td>
-                    <td className="mono">{fmtEventDate(r.advance.eventDate)}</td>
-                    <td className="num">{fmt(r.advance.originalAmount)}</td>
-                    <td className="num">{fmt(r.balance)}</td>
-                    <td className="text-tiny text-ink-3">{r.advance.closedBy || '—'}</td>
-                    <td className="text-tiny text-ink-3">
-                      {r.advance.closedAt ? new Date(r.advance.closedAt).toLocaleString('en-IN') : '—'}
-                    </td>
-                    <td className="text-tiny text-ink-3">{r.advance.closedReason || '—'}</td>
-                  </tr>
-                ))}
+                {closed.map((r) => {
+                  const ageDays = r.advance.closedAt ? daysSince(r.advance.closedAt) : null;
+                  const reopenable = isAdmin && ageDays !== null && ageDays <= REOPEN_WINDOW_DAYS;
+                  return (
+                    <tr key={r.advance.id}>
+                      {isAdmin && <td>{r.advance.outlet}</td>}
+                      <td>{r.advance.custName}</td>
+                      <td className="mono">{fmtEventDate(r.advance.eventDate)}</td>
+                      <td className="num">{fmt(r.advance.originalAmount)}</td>
+                      <td className="num">{fmt(r.balance)}</td>
+                      <td className="text-tiny text-ink-3">{r.advance.closedBy || '—'}</td>
+                      <td className="text-tiny text-ink-3">
+                        {r.advance.closedAt ? new Date(r.advance.closedAt).toLocaleString('en-IN') : '—'}
+                      </td>
+                      <td className="text-tiny text-ink-3">{r.advance.closedReason || '—'}</td>
+                      {isAdmin && (
+                        <td>
+                          {reopenable && (
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              disabled={busyId === r.advance.id}
+                              onClick={() => reopen(r)}
+                            >
+                              Reopen
+                            </button>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

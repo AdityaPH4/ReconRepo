@@ -15,12 +15,22 @@ import {
   advanceBalance,
   eligibleAdvances,
   eligibleBohEntries,
+  todayIsoIST,
   type BohEntry,
   type OutletCode,
 } from '@toit/recon-core';
 import { Router } from 'express';
-import { outletScope } from '../middleware/auth.js';
+import { outletScope, requireAdmin } from '../middleware/auth.js';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
+
+/** How long after a GM's own closure an admin can still undo it — see the reopen route below. */
+const ADVANCE_REOPEN_WINDOW_DAYS = 7;
+
+/** Whole-calendar-day difference, IST-anchored — same convention as `bohAging.ts`'s own `daysBetween`, not raw UTC/millisecond math on a full timestamp. */
+function daysBetween(earlierIso: string, laterIso: string): number {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  return Math.round((Date.parse(`${laterIso}T00:00:00Z`) - Date.parse(`${earlierIso}T00:00:00Z`)) / DAY_MS);
+}
 
 async function loadSessionInScope(req: import('express').Request, sessionId: string) {
   const session = await getSessionStore().get(sessionId);
@@ -123,6 +133,42 @@ advancesRouter.post('/:id/close', async (req, res, next) => {
     }
     const closed = await store.close(advance.id, new Date().toISOString(), req.user.email, body.closedReason.trim());
     res.json(closed);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/advances/:id/reopen — admin-only (unlike close, which a GM does
+// for their own outlet). Undoes a mistaken closure, but only within
+// ADVANCE_REOPEN_WINDOW_DAYS of the closing date — enforced here, not just
+// hidden client-side, same as every other admin mutation's authorization in
+// this codebase.
+advancesRouter.post('/:id/reopen', requireAdmin, async (req, res, next) => {
+  try {
+    const store = getAdvanceStore();
+    const advance = await store.get(req.params.id!);
+    if (!advance) {
+      res.status(404).json({ error: 'Advance not found' });
+      return;
+    }
+    if (advance.status === 'open') {
+      res.status(409).json({ error: 'This advance is already open.' });
+      return;
+    }
+    if (!advance.closedAt) {
+      res.status(409).json({ error: 'This advance has no closed date on record.' });
+      return;
+    }
+    const closedCivilDate = todayIsoIST(new Date(advance.closedAt));
+    const ageDays = daysBetween(closedCivilDate, todayIsoIST());
+    if (ageDays > ADVANCE_REOPEN_WINDOW_DAYS) {
+      res.status(409).json({
+        error: `This advance was closed ${ageDays} days ago — reopening is only allowed within ${ADVANCE_REOPEN_WINDOW_DAYS} days of closing.`,
+      });
+      return;
+    }
+    const reopened = await store.reopen(advance.id);
+    res.json(reopened);
   } catch (err) {
     next(err);
   }
