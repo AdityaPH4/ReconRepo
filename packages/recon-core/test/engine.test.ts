@@ -197,6 +197,10 @@ describe('routePayName()', () => {
     assert.equal(routePayName('Pinelabs APOS'), 'pinelabs');
     assert.equal(routePayName('Manual APOS'), 'pinelabs');
     assert.equal(routePayName('Card/UPI'), 'pinelabs');
+    // Paper POS is a third Pinelabs payment-mode variant, not its own panel —
+    // see PINELABS_NAMES's own doc comment.
+    assert.equal(routePayName('Paper POS'), 'pinelabs');
+    assert.equal(routePayName('PAPER POS'), 'pinelabs');
     assert.equal(routePayName('Swiggy-Online'), 'swiggy');
     assert.equal(routePayName('ZOMATO'), 'swiggy');
     assert.equal(routePayName('Cash'), 'cash');
@@ -362,19 +366,26 @@ describe('parsePaymentReport()', () => {
 });
 
 describe('parseTransactionsZip()', () => {
-  it('applies all three exclusions and records why', async () => {
+  it('applies both exclusions and records why', async () => {
     const win = buildWin({ y: 2026, m: 7, d: 1 });
     const { inside, filtered } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
 
-    assert.equal(inside.length, 9);
-    assert.equal(filtered.length, 3);
+    // 9 ordinary rows + the fixture's own Paper POS row, which now flows
+    // through like any other (see transactionsZip.ts's own doc comment).
+    assert.equal(inside.length, 10);
+    assert.equal(filtered.length, 2);
 
     const reasons = filtered.map((f) => f._fReason).sort();
-    assert.deepEqual(reasons, [
-      'Not successful (FAILED)',
-      'Outside business window',
-      'Paper POS — excluded from recon',
-    ]);
+    assert.deepEqual(reasons, ['Not successful (FAILED)', 'Outside business window']);
+  });
+
+  it('keeps a Paper POS row in `inside`, carrying its own payment mode', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    const { inside } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
+    const paperPos = inside.find((r) => r.rrn === '100000000097');
+    assert.ok(paperPos);
+    assert.equal(paperPos!.paymentMode, 'PAPER POS');
+    assert.equal(paperPos!.amount, 333);
   });
 
   it('resolves the outlet from the terminal store name', async () => {
@@ -403,16 +414,14 @@ describe('findUnsettledSuccessRows() — Batch Settle Check', () => {
     assert.equal(unsettled[0]!.batchStatus, 'Pending');
   });
 
-  it('still flags an unsettled Paper-POS row even though it is excluded from `inside`', async () => {
+  it('flags an unsettled Paper POS row the same way as any other — it is no longer a special excluded case', async () => {
     const win = buildWin({ y: 2026, m: 7, d: 1 });
-    // Paper POS *and* unsettled — excluded from the electronic-settlement
-    // math, but it's still the same business date's real money, so a
-    // genuine settle problem there is still worth surfacing.
     const csv =
       ZIP_CSV +
       '\nPINELABS,PAPER POS,UnsettledPaper,VISA,555.00,0,01/08/2026 10:35:00 PM,Pending,Success,100000000095,02/08/2026,B14,INV14,A14,Sale,South,Toit- Bangalore,T1,M1,PAPER POS';
     const { inside, filtered } = await parseTransactionsZip(await makeZip(csv), win);
-    assert.equal(inside.some((r) => r.rrn === '100000000095'), false);
+    // Settled or not, a Paper POS row is in `inside` now — same as Card/UPI.
+    assert.ok(inside.some((r) => r.rrn === '100000000095'));
     const unsettled = findUnsettledSuccessRows(inside, filtered);
     assert.ok(unsettled.some((r) => r.rrn === '100000000095'));
   });
@@ -615,7 +624,12 @@ describe('reconcile()', () => {
       ['1006', '1008', '1011'],
     );
 
-    assert.deepEqual(p.onlyTerm.map((x) => x.rrn), ['100000000006']);
+    // 100000000006 (the fixture's dedicated "terminal-only" row) plus
+    // 100000000097 (the fixture's Paper POS row, which has no PR-side
+    // counterpart in this fixture and so is unmatched here too — a Paper
+    // POS row is reconciled by RRN exactly like any other Pinelabs row,
+    // not treated specially).
+    assert.deepEqual(p.onlyTerm.map((x) => x.rrn), ['100000000006', '100000000097']);
 
     assert.equal(p.dupRRN.length, 1);
     assert.equal(p.dupRRN[0]!._dupSrc, 'Terminal');
@@ -631,6 +645,28 @@ describe('reconcile()', () => {
     // Neither side can be asserted unmatched when the key is ambiguous.
     const { result } = await runRecon(false);
     assert.ok(!result.pinelabs.onlyTerm.some((x) => x.rrn === '100000000007'));
+  });
+
+  it('reconciles a "Paper POS" Payment Report row against its terminal row by RRN, inside Pinelabs — no separate tab', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    const paperPosPR = [
+      'Toit Payment Report,,,,,,,,,,,',
+      'Order No,Date,Customer Name,Employee,Payment Type,Payment Name,Card Number,Auth Code,Amount,Tip,Bank,Retrieval Reference No',
+      '2001,01-Aug-2026 20:00:00,Pat,E1,Paper,Paper POS,,,333.00,0,,100000000097',
+    ].join('\n');
+    const { rows: prData } = parsePaymentReport(paperPosPR);
+    assert.equal(prData[0]!.tab, 'pinelabs');
+
+    const { inside } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
+    const result = reconcile({ prData, zipInside: inside, hdfcStmtRows: null, outlet: 'BLRT' });
+
+    // The fixture's own Paper POS terminal row (100000000097) now has a
+    // matching PR row, so it moves out of onlyTerm and into reconRows.
+    const matched = result.pinelabs.reconRows.find((x) => x.rrn === '100000000097');
+    assert.ok(matched);
+    assert.equal(matched!.diff, 0);
+    assert.ok(!result.pinelabs.onlyTerm.some((x) => x.rrn === '100000000097'));
+    assert.equal(result.other.length, 0);
   });
 
   it('matches AMEX by auth code first, then by amount', async () => {
@@ -706,15 +742,15 @@ describe('FRS amounts', () => {
 
     assert.equal(a.usingSource, true);
     assert.equal(a.drawerAmt, null);
-    // Terminal side = every in-window ZIP row, AMEX included:
-    // 1000+1000+520+300+800+900+900+1500+1600.
-    assert.equal(a.sourceAmt, 8520);
+    // Terminal side = every in-window ZIP row, AMEX and Paper POS included:
+    // 1000+1000+520+300+800+900+900+1500+1600+333.
+    assert.equal(a.sourceAmt, 8853);
     // POS side = every Pinelabs-routed PR row, matched or not.
     assert.equal(a.pr, 9450);
     // Negative: the POS recorded more than the terminal settled — the
-    // unmatched POS rows (700 + 250 + 1700) less the terminal-only 800
-    // and the +20 overcollection.
-    assert.equal(a.diff, -930);
+    // unmatched POS rows (700 + 250 + 1700) less the terminal-only 800 and
+    // the unmatched Paper POS 333, and the +20 overcollection.
+    assert.equal(a.diff, -597);
     // The drawer figure for Pinelabs (5,020) is deliberately ignored.
     assert.notEqual(a.sourceAmt, sumMap['Pinelabs APOS']);
   });
