@@ -555,7 +555,6 @@ export function computeSubmitGate(session: SessionDTO): SubmitGateDTO {
     cashDiff: session.totals.cash.diff ?? 0,
     bankDiff: session.totals.bank.diff ?? 0,
     hdfcLinkDiff: session.totals.hdfcLink.diff ?? 0,
-    paperPosDiff: session.totals.paperPos.diff ?? 0,
     hdfcAggregateDiff: session.totals.hdfcUpi.diff ?? 0,
     kotakDiff: session.totals.kotakUpi.diff ?? 0,
     // A draft session's own "Advance Applied" entries always point at a
@@ -854,9 +853,8 @@ export function buildExplanationItems(session: SessionDTO): ExplainedItemDTO[] {
     upi: 'HDFC/Kotak UPI',
     bank: 'Bank Transfer',
     hdfc_link: 'HDFC Link',
-    paper_pos: 'Paper POS',
   };
-  for (const source of ['cash', 'upi', 'bank', 'hdfc_link', 'paper_pos'] as const) {
+  for (const source of ['cash', 'upi', 'bank', 'hdfc_link'] as const) {
     session.justification.entries
       .filter((e) => e.source === source && e.amount)
       .forEach((e) => {

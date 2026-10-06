@@ -19,7 +19,6 @@ import {
   hdfcLinkCompleteness,
   hdfcLinkOk,
   hdfcUpiCompleteness,
-  paperPosOk,
   pinelabsCompleteness,
   upiOk,
 } from './completeness.js';
@@ -42,7 +41,6 @@ export interface SubmitGateResult {
     upi: boolean;
     bank: boolean;
     hdfcLink: boolean;
-    paperPos: boolean;
   };
 }
 
@@ -60,8 +58,6 @@ export interface CanSubmitInput {
   bankDiff: number;
   /** Drawer HDFC Link total minus PR HDFC Link total. */
   hdfcLinkDiff: number;
-  /** Drawer Paper POS total minus PR Paper POS total. */
-  paperPosDiff: number;
   /** Drawer HDFC total minus PR HDFC total — used only when no HDFC statement was uploaded. */
   hdfcAggregateDiff: number;
   /** Drawer Kotak total minus PR Kotak total. */
@@ -81,7 +77,6 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
     cashDiff,
     bankDiff,
     hdfcLinkDiff,
-    paperPosDiff,
     hdfcAggregateDiff,
     kotakDiff,
     applications,
@@ -108,9 +103,6 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
 
   const bankResolved = bankOk(hasSummary, bankDiff, entries);
   if (!bankResolved) blockers.push('Bank transfer difference is not fully justified.');
-
-  const paperPosResolved = paperPosOk(hasSummary, paperPosDiff, entries);
-  if (!paperPosResolved) blockers.push('Paper POS difference is not fully justified.');
 
   const linkCompleteness = hdfcLinkCompleteness(linkStmt, entries, squareOff);
   const hdfcLinkResolved = hdfcLinkOk({ hasSummary, linkCompleteness, hdfcLinkDiff, entries });
@@ -166,7 +158,6 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
       upi: upiResolved,
       bank: bankResolved,
       hdfcLink: hdfcLinkResolved,
-      paperPos: paperPosResolved,
     },
   };
 }

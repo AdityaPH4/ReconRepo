@@ -33,7 +33,6 @@ import {
   isAdvanceExhausted,
   isEligibleSquareOffPartner,
   isSquareOffResolved,
-  paperPosOk,
   pinelabsCompleteness,
   squareOffGroupKey,
   squareOffNet,
@@ -456,15 +455,6 @@ describe('completeness', () => {
     );
   });
 
-  it('Paper POS requires exactness too, same shape as Bank, netting only against its own source', () => {
-    const entries = [entry({ source: 'paper_pos', direction: 'excess', remark: 'Tips', amount: 490 })];
-    assert.equal(paperPosOk(true, 500, entries), false);
-    const exact = [entry({ source: 'paper_pos', direction: 'excess', remark: 'Tips', amount: 500 })];
-    assert.equal(paperPosOk(true, 500, exact), true);
-    const wrongSource = [entry({ source: 'bank', direction: 'excess', remark: 'Tips', amount: 500 })];
-    assert.equal(paperPosOk(true, 500, wrongSource), false);
-  });
-
   it('upiOk requires HDFC fully resolved AND Kotak within tolerance when a statement exists', () => {
     const resolvedHdfc = { netDiff: 0, unresolvedCount: 0, allResolved: true };
     assert.equal(
@@ -577,14 +567,12 @@ describe('canSubmit', () => {
     const result = canSubmit({
       pinelabs,
       upiHdfc: null,
-      linkStmt: null,
       justification: emptyJustificationState(),
       grandDiff: 250,
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 0,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -597,14 +585,12 @@ describe('canSubmit', () => {
     const result = canSubmit({
       pinelabs: pinelabsResult(),
       upiHdfc: null,
-      linkStmt: null,
       justification: emptyJustificationState(),
       grandDiff: THRESHOLD + 50,
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 0,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -620,14 +606,12 @@ describe('canSubmit', () => {
     const result = canSubmit({
       pinelabs: pinelabsResult(),
       upiHdfc: null,
-      linkStmt: null,
       justification: { ...emptyJustificationState(), entries },
       grandDiff: 0,
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 0,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -640,14 +624,12 @@ describe('canSubmit', () => {
     const result = canSubmit({
       pinelabs: pinelabsResult(),
       upiHdfc: null,
-      linkStmt: null,
       justification: emptyJustificationState(),
       grandDiff: 500,
       hasSummary: true,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 500,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -657,39 +639,16 @@ describe('canSubmit', () => {
     assert.ok(result.blockers.some((b) => b.includes('HDFC Link')));
   });
 
-  it('an unjustified Paper POS difference blocks submission, same as Bank', () => {
-    const result = canSubmit({
-      pinelabs: pinelabsResult(),
-      upiHdfc: null,
-      linkStmt: null,
-      justification: emptyJustificationState(),
-      grandDiff: 500,
-      hasSummary: true,
-      cashDiff: 0,
-      bankDiff: 0,
-      hdfcLinkDiff: 0,
-      paperPosDiff: 500,
-      hdfcAggregateDiff: 0,
-      kotakDiff: 0,
-      applications: [],
-    });
-    assert.equal(result.ok, false);
-    assert.equal(result.perSource.paperPos, false);
-    assert.ok(result.blockers.some((b) => b.includes('Paper POS')));
-  });
-
   it('is ok, "balanced", when nothing is outstanding', () => {
     const result = canSubmit({
       pinelabs: pinelabsResult(),
       upiHdfc: null,
-      linkStmt: null,
       justification: emptyJustificationState(),
       grandDiff: 0,
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 0,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -708,14 +667,12 @@ describe('canSubmit', () => {
     const blocked = canSubmit({
       pinelabs,
       upiHdfc: null,
-      linkStmt: null,
       justification: { ...emptyJustificationState(), squareOff: map },
       grandDiff: 200,
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 0,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],
@@ -728,14 +685,12 @@ describe('canSubmit', () => {
     const unblocked = canSubmit({
       pinelabs,
       upiHdfc: null,
-      linkStmt: null,
       justification: { ...emptyJustificationState(), squareOff: map, entries },
       grandDiff: 200,
       hasSummary: false,
       cashDiff: 0,
       bankDiff: 0,
       hdfcLinkDiff: 0,
-      paperPosDiff: 0,
       hdfcAggregateDiff: 0,
       kotakDiff: 0,
       applications: [],

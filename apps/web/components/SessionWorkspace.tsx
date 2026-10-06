@@ -216,13 +216,6 @@ function TransactionView({
         </>
       )}
 
-      {panel === 'paper_pos' && (
-        <>
-          <AggregateJustificationPanel source="paper_pos" title="Paper POS" diff={totals.paperPos.diff} />
-          <AggregatePanel title="Paper POS" totals={totals.paperPos} rows={result.paperPos} />
-        </>
-      )}
-
       {panel === 'bills' && <BillsOnHoldPanel rows={result.bills} totals={totals.bills} />}
 
       {panel === 'advances' && <AdvancesPanel />}
