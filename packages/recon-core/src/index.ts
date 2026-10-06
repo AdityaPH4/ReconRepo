@@ -59,7 +59,6 @@ export {
   NO_RRN_REMARKS,
   OUTLET_CODES,
   OUTLET_NAMES,
-  PAPER_POS_NAMES,
   PINELABS_NAMES,
   REMARKS_ALL,
   REMARKS_EXCESS,
@@ -183,7 +182,6 @@ export {
   hdfcLinkCompleteness,
   hdfcLinkOk,
   hdfcUpiCompleteness,
-  paperPosOk,
   pinelabsCompleteness,
   upiOk,
 } from './justification/completeness.js';

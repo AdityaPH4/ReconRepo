@@ -195,7 +195,6 @@ export interface ReconCountsDTO {
   upi: number;
   bills: number;
   bank: number;
-  paperPos: number;
   other: number;
   zipFiltered: number;
 }
@@ -215,7 +214,6 @@ export interface PanelSummariesDTO {
   kotakUpi: PanelTotalsDTO;
   bank: PanelTotalsDTO;
   hdfcLink: PanelTotalsDTO;
-  paperPos: PanelTotalsDTO;
   bills: PanelTotalsDTO;
   /**
    * Swiggy/Zomato never block submission, but legacy still compared each
@@ -363,7 +361,6 @@ export interface SubmitGateDTO {
     upi: boolean;
     bank: boolean;
     hdfcLink: boolean;
-    paperPos: boolean;
   };
 }
 

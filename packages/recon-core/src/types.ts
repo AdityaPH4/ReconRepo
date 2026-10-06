@@ -18,7 +18,6 @@ export type Tab =
   | 'bills'
   | 'bank'
   | 'hdfc_link'
-  | 'paper_pos'
   | 'other';
 
 /** The three uploaded file roles. Legacy: `ROLE`. */
@@ -278,8 +277,6 @@ export interface ReconResult {
   bank: PRRow[];
   /** Advances collected via an HDFC payment link — matched by order number, not RRN, against its own settlement file. See `hdfcLinkSettlementLedger()`. */
   hdfcLink: PRRow[];
-  /** Paid in person via a physical paper slip, not a terminal — no digital settlement record to reconcile against, same aggregate drawer-vs-PR treatment as Cash/Bank. */
-  paperPos: PRRow[];
   other: PRRow[];
   zipFiltered: ZipRow[];
 }

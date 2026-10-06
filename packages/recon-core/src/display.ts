@@ -126,7 +126,6 @@ export {
   hdfcLinkCompleteness,
   hdfcLinkOk,
   hdfcUpiCompleteness,
-  paperPosOk,
   pinelabsCompleteness,
   upiOk,
 } from './justification/completeness.js';

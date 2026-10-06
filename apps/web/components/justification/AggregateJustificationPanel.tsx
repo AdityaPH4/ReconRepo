@@ -30,7 +30,7 @@ import { diffClass } from '@/components/ui/table';
 import { modalKindForRemark } from './types';
 import { useJustification } from './JustificationProvider';
 
-type Source = 'cash' | 'upi' | 'bank' | 'hdfc_link' | 'paper_pos';
+type Source = 'cash' | 'upi' | 'bank' | 'hdfc_link';
 
 const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: readonly string[] }> = {
   cash: { excess: CASH_REMARKS_EXCESS, shortage: CASH_REMARKS_SHORTAGE },
@@ -44,18 +44,14 @@ const REMARKS_BY_SOURCE: Record<Source, { excess: readonly string[]; shortage: r
   // deduct TDS on an HDFC Link collection. Easy to move onto the TDS-aware
   // list later if that turns out to happen too.
   hdfc_link: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
-  // A paper slip has no bank/RRN record to trace a TDS deduction against —
-  // same non-traceable shape as Cash, not Bank/HDFC Link.
-  paper_pos: { excess: REMARKS_EXCESS, shortage: REMARKS_SHORTAGE },
 };
 
-/** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`; `hdfc_link`/`paper_pos` have no legacy equivalent. */
+/** BOH Clear's locked-source label per aggregate tab — legacy's `_sourceLabel` per `openBohClearFrom*`; `hdfc_link` has no legacy equivalent. */
 const BOH_LOCKED_SOURCE: Record<Source, string> = {
   cash: 'Cash',
   upi: 'Static UPI',
   bank: 'Bank Transfer',
   hdfc_link: 'HDFC Link',
-  paper_pos: 'Paper POS',
 };
 
 export function AggregateJustificationPanel({
