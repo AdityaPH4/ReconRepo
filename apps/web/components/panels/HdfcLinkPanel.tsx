@@ -2,15 +2,19 @@
 
 /**
  * HDFC Payment Link — transaction-level reconciliation.
- * Mirrors `HdfcUpiPanel.tsx` exactly, but keyed by Merchant Order ID rather
- * than a bank RRN (a payment link is generated per order, not per card
- * swipe) — see `packages/recon-core/src/parsers/hdfcPaymentLink.ts`'s own
- * doc comment. Only rendered when a Payment Link report was uploaded
- * (`linkStmt` non-null) — otherwise HDFC Link stays entirely on the
- * aggregate drawer-comparison flow (`AggregateJustificationPanel`).
- * `buildHdfcLinkItems` assigns the same `LPOS-N`/`LSTMT-N`/`LMM-N`/`LDUP-N`
- * `globalId` scheme the API's completeness check uses, so a remark or
- * square-off entered here resolves the same row the submit gate is checking.
+ * Mirrors `HdfcUpiPanel.tsx` exactly, but keyed by ARN (Acquirer Reference
+ * Number) rather than a UPI RRN — see
+ * `packages/recon-core/src/parsers/hdfcPaymentLink.ts`'s own doc comment.
+ * Displayed as "ARN" throughout this panel, not "RRN", even though the
+ * underlying field/type is still named `rrn` (the generic join-key name
+ * every `MatchResult<T>` source uses). Only rendered when a Payment Link
+ * report was uploaded (`linkStmt` non-null) — otherwise HDFC Link stays
+ * entirely on the aggregate drawer-comparison flow
+ * (`AggregateJustificationPanel`), shown instead of this panel, not
+ * alongside it. `buildHdfcLinkItems` assigns the same
+ * `LPOS-N`/`LSTMT-N`/`LMM-N`/`LDUP-N` `globalId` scheme the API's
+ * completeness check uses, so a remark or square-off entered here resolves
+ * the same row the submit gate is checking.
  */
 
 import type { Jsonified } from '@toit/contracts';
@@ -125,10 +129,10 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
       })),
     },
     {
-      label: 'Duplicate order ID',
+      label: 'Duplicate ARN',
       rows: linkStmt.dupRRN.map((x, i): BucketRow => ({
         key: `ldup-${i}`,
-        tagLabel: 'Duplicate order ID',
+        tagLabel: 'Duplicate ARN',
         tagClass: 'tag-accent',
         rrn: x.rrn || '',
         orderNo: (x.orders ?? []).join(', '),
@@ -186,7 +190,7 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
             <thead>
               <tr>
                 <th className="w-[13%]">Category / ID</th>
-                <th className="w-[7%]">RRN</th>
+                <th className="w-[7%]">ARN</th>
                 <th className="w-[7%]">Order(s)</th>
                 <th className="w-[11%]">Date / Time</th>
                 <th className="w-[13%] num">Payment Report</th>
@@ -242,7 +246,7 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[17%]">RRN</th>
+                <th className="w-[17%]">ARN</th>
                 <th className="w-[26%]">Order No(s)</th>
                 <th className="w-[18%] num">Statement amount</th>
                 <th className="w-[21%] num">Payment Report amount</th>

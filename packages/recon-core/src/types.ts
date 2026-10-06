@@ -127,8 +127,11 @@ export interface HdfcStatementParse {
 
 /**
  * One row of the HDFC Payment Link reconciliation report — see
- * `parsers/hdfcPaymentLink.ts`. Matched against the Payment Report by
- * Merchant Order ID (aliased into `rrn`), not a bank RRN.
+ * `parsers/hdfcPaymentLink.ts`. Matched against the Payment Report by ARN
+ * (`rrn` here, same field name `matchTransactionLevel()` already expects
+ * from every other terminal-like source) — the genuine bank-assigned
+ * reference, same join shape as HDFC Static UPI's own RRN match.
+ * `merchantOrderId` is carried separately, display-only.
  */
 export interface PaymentLinkRow {
   rrn: string;
@@ -268,7 +271,7 @@ export interface ReconResult {
   pinelabs: PinelabsResult;
   /** Transaction-level Static UPI match; `null` when no HDFC statement was supplied. */
   upiHdfc: MatchResult<HdfcStatementRow> | null;
-  /** Transaction-level HDFC Payment Link match, by Merchant Order ID; `null` when no Payment Link report was supplied. */
+  /** Transaction-level HDFC Payment Link match, by ARN; `null` when no Payment Link report was supplied. */
   linkStmt: MatchResult<PaymentLinkRow> | null;
   swiggy: PRRow[];
   cash: PRRow[];

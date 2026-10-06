@@ -19,11 +19,6 @@ import type {
 import { groupAmexPR, matchAmex } from './amex.js';
 import { matchTransactionLevel } from './match.js';
 
-/** Left-pads a digit-only order id to 12 characters — the PR-side half of the same join-key convention `parsers/hdfcPaymentLink.ts`'s `padOrderId()` applies to the statement side (also used by `hdfcLinkSettlementLedger()`'s Layer-2 feed). */
-function padOrderId(raw: string): string {
-  return raw.replace(/\D/g, '').padStart(12, '0');
-}
-
 /** Buckets Payment Report rows by the panel their payment name routes to. */
 function bucketByTab(prData: readonly PRRow[]): Record<Tab, PRRow[]> {
   const byTab: Record<Tab, PRRow[]> = {
@@ -77,16 +72,16 @@ export function reconcile(input: ReconcileInput): ReconResult {
   }
 
   // ── Optional: transaction-level HDFC Payment Link ───────────────────────
-  // Runs only when a Payment Link report was uploaded. Matched by order
-  // number, not RRN — both sides padded to 12 digits the same way
-  // `hdfcLinkSettlementLedger()` already normalises for the Layer-2 feed,
-  // so a PR row's real `rrn` (often blank for a link transaction) is never
-  // what's compared here.
+  // Runs only when a Payment Link report was uploaded. Matched by ARN —
+  // the Payment Report's own `rrn` already carries it for a Payment Link
+  // transaction (same column every other payment method's RRN comes from),
+  // exactly the same shape as the HDFC Static UPI match just above. No
+  // padding/aliasing needed, unlike the Layer-2 MPR feed's own Merchant
+  // Order ID convention (`hdfcLinkSettlementLedger()`), which is unrelated.
   let linkStmt: MatchResult<never> | ReconResult['linkStmt'] = null;
   if (linkStmtRows && linkStmtRows.length) {
-    const linkPRRowsForMatch = byTab.hdfc_link.map((r) => ({ ...r, rrn: padOrderId(r.orderNo) }));
-    if (linkPRRowsForMatch.length || linkStmtRows.length) {
-      linkStmt = matchTransactionLevel(linkPRRowsForMatch, linkStmtRows);
+    if (byTab.hdfc_link.length || linkStmtRows.length) {
+      linkStmt = matchTransactionLevel(byTab.hdfc_link, linkStmtRows);
     }
   }
 

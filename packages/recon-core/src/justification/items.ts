@@ -238,7 +238,7 @@ export function buildHdfcLinkItems(
       });
     });
 
-  // A duplicated order id on the statement side is the same kind of rare,
+  // A duplicated ARN on the statement side is the same kind of rare,
   // bookkeeping-only edge case as HDFC UPI's own `dupRRN` bucket — a remark
   // can be attached, but it never blocks submission.
   linkStmt.dupRRN.forEach((x, i) => {
@@ -246,7 +246,7 @@ export function buildHdfcLinkItems(
       globalId: `LDUP-${i + 1}`,
       targetKey: `ldup-${x.rrn}`,
       diff: 0,
-      label: 'HDFC Link — Duplicate order ID',
+      label: 'HDFC Link — Duplicate ARN',
       orderNo: (x.orders || []).filter(Boolean).join(', '),
       rrn: x.rrn || '',
       appearsInExplanation: true,

@@ -26,6 +26,7 @@ import {
   istDate,
   money,
   parseHdfcStatement,
+  parsePaymentLinkStatement,
   parsePaymentReport,
   parsePaymentSummary,
   parsePRDate,
@@ -568,6 +569,34 @@ describe('parseHdfcStatement()', () => {
   });
 });
 
+describe('parsePaymentLinkStatement()', () => {
+  const LINK_CSV = [
+    'TID,SG MID,Merchant Order ID,SG Txn ID,SG Refund ID,Txn Date,Settlement Date,Txn Type,Txn Amount,Txn Fee,GST,Net Amount,Txn Currency,Settlement Currency,Payment Mode,Payment Sub Mode,Payment Instrument,Payment Sub Instrument Type,Card Category,Auth Code,Card Number / VPA,Issuing Bank,ARN,UTR,Udf 1',
+    'T1,M1,2001,S1,,2026-09-17 10:15:00,2026-09-18 00:00:00,SALE,500.00,5.00,0,495.00,INR,INR,UPI,,,,,,user@okhdfcbank,,30012345678901234567890,UTR1,',
+    // Refund — dropped, counted, not matched.
+    'T2,M1,2002,S2,,2026-09-17 11:00:00,2026-09-18 00:00:00,REFUND,100.00,0,0,100.00,INR,INR,UPI,,,,,,user2@okaxis,,30012345678901234567891,UTR2,',
+  ].join('\n');
+
+  it('keys rows by ARN, not Merchant Order ID — merchantOrderId is display-only', () => {
+    const win = buildWin({ y: 2026, m: 8, d: 17 });
+    const out = parsePaymentLinkStatement(LINK_CSV, win);
+
+    assert.equal(out.rows.length, 1);
+    assert.equal(out.skippedNonSale, 1);
+    assert.equal(out.rows[0]!.rrn, '30012345678901234567890');
+    assert.equal(out.rows[0]!.merchantOrderId, '2001');
+    assert.equal(out.rows[0]!.amount, 500);
+  });
+
+  it('throws when the ARN column is missing — it is the real join key now', () => {
+    const noArnCsv = [
+      'Merchant Order ID,Txn Date,Txn Amount',
+      '2001,2026-09-17 10:15:00,500.00',
+    ].join('\n');
+    assert.throws(() => parsePaymentLinkStatement(noArnCsv, null), /ARN/);
+  });
+});
+
 // ── Reconciliation ────────────────────────────────────────────────────────
 
 describe('reconcile()', () => {
@@ -667,6 +696,38 @@ describe('reconcile()', () => {
     assert.equal(matched!.diff, 0);
     assert.ok(!result.pinelabs.onlyTerm.some((x) => x.rrn === '100000000097'));
     assert.equal(result.other.length, 0);
+  });
+
+  it('reconciles HDFC Payment Link by ARN — the Payment Report\'s own Retrieval Ref No column, no padding/aliasing', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 17 }); // August (0-indexed month)
+    const linkPR = [
+      'Toit Payment Report,,,,,,,,,,,',
+      'Order No,Date,Customer Name,Employee,Payment Type,Payment Name,Card Number,Auth Code,Amount,Tip,Bank,Retrieval Reference No',
+      '3001,17-Aug-2026 20:00:00,Pat,E1,Online,HDFC Payment Link,,,500.00,0,,30012345678901234567890',
+      '3002,17-Aug-2026 20:05:00,Sam,E1,Online,HDFC Payment Link,,,150.00,0,,30012345678901234567899',
+    ].join('\n');
+    const { rows: prData } = parsePaymentReport(linkPR);
+    assert.ok(prData.every((r) => r.tab === 'hdfc_link'));
+    assert.equal(prData[0]!.rrn, '30012345678901234567890');
+
+    const linkCsv = [
+      'Merchant Order ID,Txn Date,Txn Amount,ARN',
+      '3001,2026-08-17 20:00:00,500.00,30012345678901234567890',
+      // No PR counterpart for this ARN — lands in onlyTerm.
+      '9999,2026-08-17 20:10:00,250.00,30012345678901234567898',
+    ].join('\n');
+    const linkStmtRows = parsePaymentLinkStatement(linkCsv, win).rows;
+
+    const result = reconcile({ prData, zipInside: [], hdfcStmtRows: null, linkStmtRows, outlet: 'BLRT' });
+    assert.ok(result.linkStmt);
+    const ls = result.linkStmt!;
+    assert.equal(ls.reconRows.length, 1);
+    assert.equal(ls.reconRows[0]!.rrn, '30012345678901234567890');
+    assert.equal(ls.reconRows[0]!.diff, 0);
+    // 3002's own ARN (...899) has no statement counterpart — onlyPOS.
+    assert.deepEqual(ls.onlyPOS.map((x) => x.rrn), ['30012345678901234567899']);
+    // The statement's 9999/...898 row has no PR counterpart — onlyTerm.
+    assert.deepEqual(ls.onlyTerm.map((x) => x.merchantOrderId), ['9999']);
   });
 
   it('matches AMEX by auth code first, then by amount', async () => {
