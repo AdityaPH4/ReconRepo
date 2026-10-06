@@ -82,7 +82,16 @@ export const THRESHOLD = 300;
 export const AMOUNT_EPSILON = 0.5;
 
 // ── Payment-name → panel routing ──────────────────────────────────────────
-export const PINELABS_NAMES = ['pinelabs apos', 'manual apos', 'card/upi', 'card'];
+// "Paper POS" is a third Pinelabs payment-mode variant alongside Card/UPI —
+// paid in person via a physical paper slip rather than a card/UPI tap, but
+// still a real terminal transaction with its own RRN (the terminal's own
+// "PAPER POS" rows used to be excluded from recon entirely; see
+// `parsers/transactionsZip.ts`'s doc comment for why that changed). Routed
+// into the same 'pinelabs' bucket as Card/UPI, reconciled by RRN the same
+// way — its own payment mode stays visible per-row via `ZipRow.paymentMode`
+// wherever the UI already shows that (`PinelabsPanel`'s "Payment name"
+// column), not via a separate tab/tile.
+export const PINELABS_NAMES = ['pinelabs apos', 'manual apos', 'card/upi', 'card', 'paper pos'];
 export const SWIGGY_NAMES = ['swiggy', 'zomato'];
 export const CASH_NAMES = ['cash'];
 export const UPI_NAMES = ['hdfc static upi', 'kotak static upi'];

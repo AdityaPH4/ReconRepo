@@ -53,11 +53,18 @@ function zipRow(r: readonly string[], C: ColMap): ZipRow {
  * those that count toward reconciliation (`inside`) and those excluded
  * (`filtered`, each carrying a `_fReason`).
  *
- * Three exclusions apply, in order:
+ * Two exclusions apply, in order:
  *  1. `Txn Status` other than `success`
- *  2. Paper POS rows — no digital amount, so not part of electronic settlement
- *  3. Timestamps outside the business window (AMEX included — the legacy
+ *  2. Timestamps outside the business window (AMEX included — the legacy
  *     comment is explicit that the window applies to both)
+ *
+ * Paper POS rows (Hardware Model/Payment Mode = "PAPER POS") used to be
+ * excluded here too, on the assumption they carried no reconcilable amount —
+ * a real export disproved that (a genuine amount, RRN and settlement status,
+ * same shape as any other row), so they now flow through `inside` like a
+ * Card/UPI row and reconcile the same way, keyed by RRN. `paymentMode` is
+ * still carried on every `ZipRow`, so Card/UPI/Paper POS stay distinguishable
+ * wherever the UI already shows it (`PinelabsPanel`'s "Payment name" column).
  */
 export async function parseTransactionsZip(
   data: Buffer | ArrayBuffer | Uint8Array,
@@ -103,7 +110,6 @@ export async function parseTransactionsZip(
     store: H.loose('store name'),
     tid: H.loose('tid'),
     mid: H.loose('mid'),
-    hardwareModel: H.loose('hardware model'),
   };
 
   const inside: ZipRow[] = [];
@@ -116,13 +122,6 @@ export async function parseTransactionsZip(
     const rawStatus = cell(r, C.txnStatus!);
     if (rawStatus.toLowerCase() !== 'success') {
       filtered.push({ ...zipRow(r, C), _fReason: `Not successful (${rawStatus})` });
-      continue;
-    }
-
-    const hwModel = cell(r, C.hardwareModel!).toUpperCase();
-    const pmMode = cell(r, C.paymentMode!).toUpperCase();
-    if (hwModel === 'PAPER POS' || pmMode === 'PAPER POS') {
-      filtered.push({ ...zipRow(r, C), _fReason: 'Paper POS — excluded from recon' });
       continue;
     }
 
@@ -149,15 +148,16 @@ export async function parseTransactionsZip(
  * final for *this* business date.
  *
  * Scoped to `inside` plus whichever `filtered` rows were excluded for a
- * reason other than the business window — a Paper-POS row is still the
- * same business date's real money, just excluded from the electronic-
- * settlement math, so a genuine settle problem there is still worth
- * surfacing before submitting. A row excluded for being *outside the
- * business window* is a different story: it belongs to some other date
- * entirely (a different day's stray row in the same ZIP, or the ~07:00
- * carry-over edge), so whether it happens to be settled has nothing to do
- * with whether today's upload is safe to reconcile — that date isn't being
- * reconciled right now, and will get this same check on its own day.
+ * reason other than the business window (today, that's only the
+ * non-successful-status exclusion, which can never itself be a `Success`
+ * row — so in practice this only ever matters for `inside`, but stays
+ * written generically in case a future exclusion reason needs the same
+ * treatment). A row excluded for being *outside the business window* is a
+ * different story: it belongs to some other date entirely (a different
+ * day's stray row in the same ZIP, or the ~07:00 carry-over edge), so
+ * whether it happens to be settled has nothing to do with whether today's
+ * upload is safe to reconcile — that date isn't being reconciled right now,
+ * and will get this same check on its own day.
  */
 export function findUnsettledSuccessRows(inside: readonly ZipRow[], filtered: readonly ZipRow[]): ZipRow[] {
   const inScopeFiltered = filtered.filter((r) => r._fReason !== 'Outside business window');
