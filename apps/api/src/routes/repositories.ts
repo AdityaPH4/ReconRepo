@@ -64,8 +64,7 @@ advancesRouter.get('/eligible', async (req, res, next) => {
     const advances = [...committedAdvances, ...session.justification.draftAdvances];
     const applications = [...committedApplications, ...session.justification.draftApplications];
 
-    const amount = req.query.amount ? Number(req.query.amount) : undefined;
-    const eligible = eligibleAdvances(advances, applications, amount);
+    const eligible = eligibleAdvances(advances, applications);
     res.json(eligible satisfies EligibleAdvanceDTO[]);
   } catch (err) {
     next(err);

@@ -13,6 +13,7 @@ import {
   AMOUNT_EPSILON,
   THRESHOLD,
   advanceBalance,
+  appliedApplicationIdsOf,
   buildHdfcUpiItems,
   buildPinelabsItems,
   buildReportHtml,
@@ -153,6 +154,7 @@ function entry(overrides: Partial<JustificationEntry>): JustificationEntry {
     notes: null,
     createdAdvanceId: null,
     appliedApplicationId: null,
+    appliedApplicationIds: [],
     bohClearanceId: null,
     createdAt: '2026-08-01T00:00:00.000Z',
     ...overrides,
@@ -620,6 +622,68 @@ describe('canSubmit', () => {
     assert.ok(result.blockers.some((b) => b.includes('backing advance')));
   });
 
+  it('a multi-advance apply orphans if even ONE of its several applications goes missing', () => {
+    const entries = [
+      entry({
+        source: 'cash',
+        direction: 'shortage',
+        remark: 'Advance Applied',
+        amount: 600,
+        appliedApplicationIds: ['ap-ok', 'ap-missing'],
+      }),
+    ];
+    const applications = [
+      { id: 'ap-ok', advanceId: 'adv-1', sessionId: 's-1', targetKey: null, amount: 200, appliedDate: '2026-08-02' },
+    ];
+    const result = canSubmit({
+      pinelabs: pinelabsResult(),
+      upiHdfc: null,
+      linkStmt: null,
+      justification: { ...emptyJustificationState(), entries },
+      grandDiff: 0,
+      hasSummary: false,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 0,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications,
+    });
+    assert.equal(result.ok, false);
+    assert.ok(result.blockers.some((b) => b.includes('backing advance')));
+  });
+
+  it('a multi-advance apply with every application still present does not orphan', () => {
+    const entries = [
+      entry({
+        source: 'cash',
+        direction: 'shortage',
+        remark: 'Advance Applied',
+        amount: 600,
+        appliedApplicationIds: ['ap-1', 'ap-2'],
+      }),
+    ];
+    const applications = [
+      { id: 'ap-1', advanceId: 'adv-1', sessionId: 's-1', targetKey: null, amount: 200, appliedDate: '2026-08-02' },
+      { id: 'ap-2', advanceId: 'adv-2', sessionId: 's-1', targetKey: null, amount: 400, appliedDate: '2026-08-02' },
+    ];
+    const result = canSubmit({
+      pinelabs: pinelabsResult(),
+      upiHdfc: null,
+      linkStmt: null,
+      justification: { ...emptyJustificationState(), entries },
+      grandDiff: 0,
+      hasSummary: false,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 0,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications,
+    });
+    assert.ok(!result.blockers.some((b) => b.includes('backing advance')));
+  });
+
   it('an unjustified HDFC Link difference blocks submission, same as Bank', () => {
     const result = canSubmit({
       pinelabs: pinelabsResult(),
@@ -702,6 +766,22 @@ describe('canSubmit', () => {
 
 // ── Advances ──────────────────────────────────────────────────────────────
 
+describe('appliedApplicationIdsOf()', () => {
+  it('reads the new plural field when present', () => {
+    const e = entry({ remark: 'Advance Applied', appliedApplicationIds: ['ap-1', 'ap-2'] });
+    assert.deepEqual(appliedApplicationIdsOf(e), ['ap-1', 'ap-2']);
+  });
+
+  it('falls back to the old singular field for a pre-multi-advance-apply entry', () => {
+    const e = entry({ remark: 'Advance Applied', appliedApplicationId: 'ap-old', appliedApplicationIds: [] });
+    assert.deepEqual(appliedApplicationIdsOf(e), ['ap-old']);
+  });
+
+  it('returns empty for any entry that never applied an advance', () => {
+    assert.deepEqual(appliedApplicationIdsOf(entry({ remark: 'Tips' })), []);
+  });
+});
+
 describe('advances', () => {
   const outlet: OutletCode = 'BLRT';
   const advance: Advance = {
@@ -728,17 +808,13 @@ describe('advances', () => {
     assert.equal(isAdvanceExhausted(advance, applications), false);
   });
 
-  it('an exact shortage amount only makes exact-balance advances eligible', () => {
-    const applications: AdvanceApplication[] = [];
-    const [result] = eligibleAdvances([advance], applications, 700);
-    assert.equal(result.eligible, false);
-    const [exact] = eligibleAdvances([advance], applications, 1000);
-    assert.equal(exact.eligible, true);
-  });
-
-  it('with no known shortage amount (Cash/UPI/Bank flow), every advance with balance is eligible', () => {
+  it('every open, non-exhausted advance is returned with its balance — no per-advance amount gate', () => {
+    // Multi-advance apply means selectability is universal now; whether a
+    // SELECTION's sum matches a known shortage is the caller's concern
+    // (the modal's running total, or `applyAdvance()`'s square-off check),
+    // not something `eligibleAdvances()` itself filters on per advance.
     const [result] = eligibleAdvances([advance], []);
-    assert.equal(result.eligible, true);
+    assert.equal(result!.balance, 1000);
   });
 
   it('an exhausted advance is excluded entirely', () => {

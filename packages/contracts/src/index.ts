@@ -328,11 +328,17 @@ export type BohStagingEntryDTO = BohStagingEntry;
 export type TdsEntryDTO = TdsEntry;
 export type SnapshotDTO = Snapshot;
 
+/**
+ * An open, non-exhausted advance pickable from the "Advance Applied" modal.
+ * Every one is universally selectable now (multi-select — see
+ * `ApplyAdvanceRequest`'s own doc comment) — there is no longer a
+ * per-advance "does this one amount match" gate; the modal computes the
+ * running total of whatever the operator has selected and compares that
+ * against the known deficit itself.
+ */
 export interface EligibleAdvanceDTO {
   advance: AdvanceDTO;
   balance: number;
-  eligible: boolean;
-  ineligibleReason: string | null;
 }
 
 /** `GET /api/advances` — every committed advance for the caller's outlet (open + closed), with its derived balance. Backs the standalone Advance Closure module — no `exactAmount`-matching context applies outside a specific justification modal, unlike `EligibleAdvanceDTO`. */
@@ -403,11 +409,20 @@ export interface RecordAdvanceRequest {
   rrn?: string | null;
 }
 
-/** Backs the "Advance Applied" modal — always consumes the advance's full remaining balance. */
+/**
+ * Backs the "Advance Applied" modal — one or more advances, each always
+ * consumed for its own full remaining balance; their balances are summed
+ * into one `JustificationEntry`. When `targetKey` is a square-off group,
+ * `applyAdvance()` validates the sum against the group's real net
+ * server-side (same as a single advance always has); for a plain row/
+ * aggregate target there is no server-side amount check, same as every
+ * other remark type — the UI is relied on to only enable Apply once the
+ * selection sums to the known deficit.
+ */
 export interface ApplyAdvanceRequest {
   source: JustificationSourceDTO;
   targetKey: string | null;
-  advanceId: string;
+  advanceIds: string[];
 }
 
 /** Backs "add to BOH repository" from the Bills-on-Hold tab — staged until submit. */

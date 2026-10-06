@@ -27,6 +27,7 @@ import {
   AMOUNT_EPSILON,
   NO_RRN_REMARKS,
   advanceBalance,
+  appliedApplicationIdsOf,
   buildHdfcLinkItems,
   buildHdfcUpiItems,
   buildPinelabsItems,
@@ -111,6 +112,7 @@ function newEntry(base: Partial<JustificationEntry> & Pick<JustificationEntry, '
     notes: null,
     createdAdvanceId: null,
     appliedApplicationId: null,
+    appliedApplicationIds: [],
     bohClearanceId: null,
     createdTdsEntryId: null,
     createdAt: new Date().toISOString(),
@@ -174,8 +176,11 @@ export function removeEntry(state: JustificationState, entryId: string): Justifi
   if (entry.createdAdvanceId) {
     next = removeAdvance(next, entry.createdAdvanceId);
   }
-  if (entry.appliedApplicationId) {
-    next = removeApplication(next, entry.appliedApplicationId);
+  // Every application this entry made (plural — a multi-advance apply made
+  // more than one in a single entry) is undone, restoring each advance's
+  // own derived balance.
+  for (const applicationId of appliedApplicationIdsOf(entry)) {
+    next = removeApplication(next, applicationId);
   }
   if (entry.bohClearanceId) {
     next = removeBohClearance(next, entry.bohClearanceId);
@@ -188,17 +193,27 @@ export function removeEntry(state: JustificationState, entryId: string): Justifi
 
 function removeAdvance(state: JustificationState, advanceId: string): JustificationState {
   // Cascade: any application drawn from this advance is orphaned money and
-  // must go too, along with the entry that recorded it.
-  const orphanedApplicationIds = new Set(
+  // must go too, along with the entry that recorded it. For a multi-advance
+  // apply, that entry may have drawn from one or more OTHER, still-valid
+  // advances too — the whole entry still goes (its own `amount` no longer
+  // adds up once one of its applications is gone), so every application it
+  // made is released, not just the one tied to this specific advance, or
+  // the other advance would stay silently, permanently short-balanced with
+  // nothing left pointing at why.
+  const directlyOrphaned = new Set(
     state.draftApplications.filter((a) => a.advanceId === advanceId).map((a) => a.id),
   );
-  let entries = state.entries.filter((e) => e.createdAdvanceId !== advanceId);
-  entries = entries.filter((e) => !(e.appliedApplicationId && orphanedApplicationIds.has(e.appliedApplicationId)));
+  const entriesToRemove = state.entries.filter(
+    (e) => e.createdAdvanceId === advanceId || appliedApplicationIdsOf(e).some((id) => directlyOrphaned.has(id)),
+  );
+  const allApplicationIdsToRelease = new Set(entriesToRemove.flatMap((e) => appliedApplicationIdsOf(e)));
+  const entryIdsToRemove = new Set(entriesToRemove.map((e) => e.id));
+
   return {
     ...state,
-    entries,
+    entries: state.entries.filter((e) => !entryIdsToRemove.has(e.id)),
     draftAdvances: state.draftAdvances.filter((a) => a.id !== advanceId),
-    draftApplications: state.draftApplications.filter((a) => !orphanedApplicationIds.has(a.id)),
+    draftApplications: state.draftApplications.filter((a) => !allApplicationIdsToRelease.has(a.id)),
   };
 }
 
@@ -325,49 +340,68 @@ export interface AdvanceContext {
   applications: readonly AdvanceApplication[];
 }
 
+/**
+ * Applies one or more advances together against a single shortage — e.g.
+ * two separately-received advances (₹2,000, ₹4,000) that together explain
+ * one ₹6,000 gap, neither of which matches it alone. Each selected advance
+ * still always consumes its own full remaining balance (no partial-apply
+ * path, same as a single-advance apply always had) — what's new is that
+ * their balances are summed into ONE `JustificationEntry` backed by
+ * MULTIPLE `AdvanceApplication` rows, one per advance, all sharing the same
+ * `targetKey`.
+ */
 export function applyAdvance(
   state: JustificationState,
   req: ApplyAdvanceRequest,
   ctx: { sessionId: string; allItems: readonly ResolvableItem[] } & AdvanceContext,
 ): JustificationState {
-  const advance = ctx.advances.find((a) => a.id === req.advanceId);
-  if (!advance) throw new JustificationError('Advance not found.');
-  if (isAdvanceClosed(advance)) {
-    throw new JustificationError('This advance has been closed and can no longer be applied.');
-  }
-  const balance = advanceBalance(advance, ctx.applications);
-  if (isAdvanceExhausted(advance, ctx.applications)) {
-    throw new JustificationError('This advance has no remaining balance.');
-  }
+  const advanceIds = [...new Set(req.advanceIds)];
+  if (advanceIds.length === 0) throw new JustificationError('Select at least one advance to apply.');
 
-  // Applying always consumes the FULL balance (no partial-apply path — see
-  // below), so the group-residual check runs against that full amount.
-  assertResolvesSquareOffGroup(state, req.targetKey ?? null, 'shortage', balance, ctx.allItems);
+  const advances = advanceIds.map((id) => {
+    const advance = ctx.advances.find((a) => a.id === id);
+    if (!advance) throw new JustificationError('Advance not found.');
+    if (isAdvanceClosed(advance)) {
+      throw new JustificationError(`${advance.custName}'s advance has been closed and can no longer be applied.`);
+    }
+    if (isAdvanceExhausted(advance, ctx.applications)) {
+      throw new JustificationError(`${advance.custName}'s advance has no remaining balance.`);
+    }
+    return advance;
+  });
 
-  const application: AdvanceApplication = {
+  // Every selected advance always consumes its own full remaining balance —
+  // legacy has no partial-apply path (`applyAmt = bal`, unconditionally);
+  // the port preserves that per advance, just now summed across however
+  // many were selected together.
+  const balances = advances.map((advance) => advanceBalance(advance, ctx.applications));
+  const totalAmount = balances.reduce((s, b) => s + b, 0);
+
+  assertResolvesSquareOffGroup(state, req.targetKey ?? null, 'shortage', totalAmount, ctx.allItems);
+
+  const appliedDate = new Date().toISOString().slice(0, 10);
+  const applications: AdvanceApplication[] = advances.map((advance, i) => ({
     id: randomUUID(),
     advanceId: advance.id,
     sessionId: ctx.sessionId,
     targetKey: req.targetKey ?? null,
-    // Applying an advance always consumes its full remaining balance —
-    // legacy has no partial-apply path (`applyAmt = bal`, unconditionally).
-    amount: balance,
-    appliedDate: new Date().toISOString().slice(0, 10),
-  };
+    amount: balances[i]!,
+    appliedDate,
+  }));
 
   const entry = newEntry({
     source: req.source,
     direction: 'shortage',
     remark: 'Advance Applied',
-    amount: balance,
+    amount: totalAmount,
     targetKey: req.targetKey ?? null,
-    appliedApplicationId: application.id,
+    appliedApplicationIds: applications.map((a) => a.id),
   });
 
   return {
     ...state,
     entries: [...state.entries, entry],
-    draftApplications: [...state.draftApplications, application],
+    draftApplications: [...state.draftApplications, ...applications],
   };
 }
 

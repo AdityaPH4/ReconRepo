@@ -13,7 +13,15 @@
  * own entries (not just a count), since "what happened" is the point.
  */
 
-import { OUTLET_CODES, OUTLET_NAMES, REMARKS_ALL, advanceBalance, isAdvanceExhausted, todayIsoIST } from '@toit/recon-core';
+import {
+  OUTLET_CODES,
+  OUTLET_NAMES,
+  REMARKS_ALL,
+  advanceBalance,
+  appliedApplicationIdsOf,
+  isAdvanceExhausted,
+  todayIsoIST,
+} from '@toit/recon-core';
 import type { Advance, AdvanceApplication, JustificationEntry } from '@toit/recon-core';
 import type {
   AdminAdvancesSummaryDTO,
@@ -80,17 +88,26 @@ function findAdvanceCustName(session: SessionDTO, advanceId: string | null, allA
   return committed?.custName ?? null;
 }
 
-function findAppliedAdvanceCustName(
+/** Every customer name an "Advance Applied" entry's application(s) resolve to — plural since a multi-advance apply can draw from more than one customer's advance at once. */
+function findAppliedAdvanceCustNames(
   session: SessionDTO,
-  applicationId: string | null,
+  applicationIds: readonly string[],
   targetKey: string | null,
   allAdvances: readonly Advance[],
-): string | null {
-  if (!applicationId) return null;
-  const draftApp = session.justification.draftApplications.find((a) => a.id === applicationId);
-  if (draftApp) return findAdvanceCustName(session, draftApp.advanceId, allAdvances);
-  if (!targetKey) return null;
-  return session.snapshot?.advances.applications.find((a) => a.targetKey === targetKey)?.advanceCustName ?? null;
+): string[] {
+  if (applicationIds.length) {
+    const names = applicationIds
+      .map((id) => session.justification.draftApplications.find((a) => a.id === id))
+      .filter((a): a is AdvanceApplication => !!a)
+      .map((a) => findAdvanceCustName(session, a.advanceId, allAdvances))
+      .filter((n): n is string => !!n);
+    if (names.length) return names;
+  }
+  if (!targetKey) return [];
+  return (session.snapshot?.advances.applications ?? [])
+    .filter((a) => a.targetKey === targetKey)
+    .map((a) => a.advanceCustName)
+    .filter(Boolean);
 }
 
 function findBohClearedLabel(session: SessionDTO, clearanceId: string | null): string | null {
@@ -117,8 +134,8 @@ function justificationText(e: JustificationEntry, session: SessionDTO, allAdvanc
       return name ? `Advance — ${name}` : '';
     }
     case 'Advance Applied': {
-      const name = findAppliedAdvanceCustName(session, e.appliedApplicationId, e.targetKey, allAdvances);
-      return name ? `Applied to ${name}'s advance` : '';
+      const names = findAppliedAdvanceCustNames(session, appliedApplicationIdsOf(e), e.targetKey, allAdvances);
+      return names.length ? `Applied to ${names.map((n) => `${n}'s`).join(', ')} advance${names.length === 1 ? '' : 's'}` : '';
     }
     case 'Bill on Hold Cleared': {
       const label = findBohClearedLabel(session, e.bohClearanceId);

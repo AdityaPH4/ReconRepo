@@ -74,13 +74,35 @@ export interface JustificationEntry {
   notes: string | null;
   /** Set when this entry's remark is "Advance Received" — the advance it created. */
   createdAdvanceId: string | null;
-  /** Set when this entry's remark is "Advance Applied" — the application it created. */
+  /**
+   * @deprecated Superseded by `appliedApplicationIds` once multi-advance
+   * apply shipped — a session recorded before that only ever has this one
+   * populated, never the plural. Never written by new code; still read as
+   * a fallback by `appliedApplicationIdsOf()` below, so an old entry still
+   * cascades/displays correctly. New code should read
+   * `appliedApplicationIdsOf(entry)`, never this field directly.
+   */
   appliedApplicationId: string | null;
+  /** Set when this entry's remark is "Advance Applied" — every application it created, one per advance selected (length 1 for a single-advance apply). Empty for every other remark. */
+  appliedApplicationIds: string[];
   /** Set when this entry's remark is "Bill on Hold Cleared" — the clearance it created. */
   bohClearanceId: string | null;
   /** Set when this entry's remark is "TDS Deducted" — the repository entry it created. */
   createdTdsEntryId: string | null;
   createdAt: string;
+}
+
+/**
+ * Every `AdvanceApplication` id this entry created, old-shape entries
+ * included — reads `appliedApplicationIds` when present, falling back to
+ * the single legacy `appliedApplicationId` otherwise. The one place both
+ * fields should ever be read from; every other caller (orphan-checking,
+ * cascade-removal, display) goes through this instead of touching either
+ * field directly.
+ */
+export function appliedApplicationIdsOf(entry: JustificationEntry): string[] {
+  if (entry.appliedApplicationIds?.length) return entry.appliedApplicationIds;
+  return entry.appliedApplicationId ? [entry.appliedApplicationId] : [];
 }
 
 /** A symmetric pairing of two resolvable items whose diffs net to ~0. Legacy: `S.squareOff`. */
