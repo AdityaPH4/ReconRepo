@@ -24,7 +24,7 @@ import {
 } from './completeness.js';
 import { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals } from './residual.js';
-import type { AdvanceApplication, JustificationState } from './types.js';
+import { appliedApplicationIdsOf, type AdvanceApplication, type JustificationState } from './types.js';
 
 export type SubmitStatus = 'balanced' | 'within_threshold' | 'needs_explanation';
 
@@ -117,11 +117,15 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
   const upiResolved = upiOk({ hasSummary, hdfcCompleteness, hdfcAggregateDiff, kotakDiff, entries });
   if (!upiResolved) blockers.push('Static UPI difference is not fully justified.');
 
-  const orphaned = entries.filter(
-    (e) =>
-      e.remark === 'Advance Applied' &&
-      (!e.appliedApplicationId || !applications.some((a) => a.id === e.appliedApplicationId)),
-  );
+  // An entry orphans if it has no backing application at all, or if ANY of
+  // its (possibly several, for a multi-advance apply) applications no
+  // longer exists — a partial loss is still a real gap in what the entry's
+  // own `amount` claims to account for.
+  const orphaned = entries.filter((e) => {
+    if (e.remark !== 'Advance Applied') return false;
+    const ids = appliedApplicationIdsOf(e);
+    return ids.length === 0 || ids.some((id) => !applications.some((a) => a.id === id));
+  });
   if (orphaned.length) {
     blockers.push(
       `${orphaned.length} "Advance Applied" entr${orphaned.length === 1 ? 'y' : 'ies'} no longer have a backing advance — remove or re-record before submitting.`,

@@ -186,12 +186,8 @@ export function recordTds(sessionId: string, body: RecordTdsRequest): Promise<Se
   return postJson(justificationUrl(sessionId, '/tds'), body);
 }
 
-export async function listEligibleAdvances(
-  sessionId: string,
-  amount?: number,
-): Promise<EligibleAdvanceDTO[]> {
+export async function listEligibleAdvances(sessionId: string): Promise<EligibleAdvanceDTO[]> {
   const params = new URLSearchParams({ sessionId });
-  if (amount !== undefined) params.set('amount', String(amount));
   const res = await fetch(`${API_BASE}/api/advances/eligible?${params}`, { cache: 'no-store', headers: authHeaders() });
   return unwrap(res);
 }

@@ -2,40 +2,68 @@
 
 /**
  * Ported from `reconciliation (68).html` lines 4062–4183
- * (`openAdvanceAppliedModal`/`renderAdvList`/`confirmAdvanceApplied`).
- *
- * Single-selection only — legacy has no multi-advance-per-transaction path.
- * When a real shortage amount is known (opened from a Pinelabs/HDFC-UPI row),
- * only advances whose balance matches it exactly are selectable; opened from
- * Cash/UPI/Bank (amount not yet known), every advance with a balance is
- * eligible and its full balance is applied.
+ * (`openAdvanceAppliedModal`/`renderAdvList`/`confirmAdvanceApplied`), since
+ * extended to multi-select: a shortage is often the sum of *several*
+ * separately-received advances (e.g. ₹2,000 and ₹4,000 toward one ₹6,000
+ * gap), neither of which matches it alone. Every open, non-exhausted
+ * advance is selectable — there is no longer a per-advance "does this one
+ * amount match" gate (`EligibleAdvanceDTO`'s own doc comment). When a real
+ * shortage amount is known (opened from a Pinelabs/HDFC-UPI row or a
+ * square-off group), Apply only enables once the running total of whatever
+ * is currently selected matches it exactly; opened from Cash/UPI/Bank
+ * (amount not yet known), Apply enables as soon as at least one advance is
+ * selected, same as a single-advance apply always allowed.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { EligibleAdvanceDTO } from '@toit/contracts';
-import { fmt, fmtEventDate } from '@toit/recon-core/display';
+import { AMOUNT_EPSILON, fmt, fmtEventDate } from '@toit/recon-core/display';
 import { ApiError, applyAdvance, listEligibleAdvances } from '@/lib/api';
 import { ModalShell } from '../ModalShell';
 import type { ModalProps } from '../types';
 
 export function AdvanceAppliedModal({ session, request, onClose, onSaved }: ModalProps) {
   const [advances, setAdvances] = useState<EligibleAdvanceDTO[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const exactAmount = request.amount > 0.5 ? request.amount : undefined;
 
   useEffect(() => {
-    listEligibleAdvances(session.meta.id, exactAmount)
+    listEligibleAdvances(session.meta.id)
       .then(setAdvances)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load advances.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.meta.id, exactAmount]);
+  }, [session.meta.id]);
+
+  const selectedTotal = useMemo(() => {
+    if (!advances) return 0;
+    return advances
+      .filter((a) => selectedIds.has(a.advance.id))
+      .reduce((s, a) => s + a.balance, 0);
+  }, [advances, selectedIds]);
+
+  const matchesExact = exactAmount === undefined || Math.abs(selectedTotal - exactAmount) < AMOUNT_EPSILON;
+  const canApply = selectedIds.size > 0 && matchesExact;
+
+  function toggle(advanceId: string) {
+    setError(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(advanceId)) next.delete(advanceId);
+      else next.add(advanceId);
+      return next;
+    });
+  }
 
   async function save() {
-    if (!selectedId) {
-      setError('Select an advance to apply.');
+    if (!canApply) {
+      setError(
+        selectedIds.size === 0
+          ? 'Select at least one advance to apply.'
+          : `Selected total ${fmt(selectedTotal)} does not match the shortage amount ${fmt(exactAmount!)}.`,
+      );
       return;
     }
     setSaving(true);
@@ -44,7 +72,7 @@ export function AdvanceAppliedModal({ session, request, onClose, onSaved }: Moda
       const updated = await applyAdvance(session.meta.id, {
         source: request.source,
         targetKey: request.targetKey,
-        advanceId: selectedId,
+        advanceIds: [...selectedIds],
       });
       onSaved(updated);
     } catch (err) {
@@ -63,21 +91,42 @@ export function AdvanceAppliedModal({ session, request, onClose, onSaved }: Moda
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-ok" onClick={save} disabled={saving || !selectedId}>
+          <button type="button" className="btn btn-ok" onClick={save} disabled={saving || !canApply}>
             {saving ? 'Saving…' : 'Apply'}
           </button>
         </>
       }
     >
-      <p className="text-body mb-3">
-        {exactAmount ? (
-          <>
-            Shortage amount: <strong>{fmt(exactAmount)}</strong> · select the matching advance
-          </>
-        ) : (
-          'Select an advance to apply — its full remaining balance will be used.'
-        )}
+      <p className="text-body mb-1">
+        {exactAmount
+          ? 'Select one or more advances — their balances must add up to the shortage amount below.'
+          : 'Select one or more advances — each one’s full remaining balance will be used.'}
       </p>
+      {exactAmount !== undefined && (
+        <div className={`info-panel mb-3 ${matchesExact ? '' : 'alert-warn'}`}>
+          <div className="info-grid">
+            <div className="info-card">
+              <p className="info-label">Shortage amount</p>
+              <p className="info-value">{fmt(exactAmount)}</p>
+            </div>
+            <div className="info-card">
+              <p className="info-label">Selected ({selectedIds.size})</p>
+              <p className={`info-value ${matchesExact ? 'text-ok' : 'text-err'}`}>{fmt(selectedTotal)}</p>
+            </div>
+            <div className="info-card">
+              <p className="info-label">{matchesExact ? 'Status' : 'Still needed'}</p>
+              <p className={`info-value ${matchesExact ? 'text-ok' : 'text-err'}`}>
+                {matchesExact ? '✓ Matches' : fmt(exactAmount - selectedTotal)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      {exactAmount === undefined && selectedIds.size > 0 && (
+        <p className="text-tiny text-ink-3 mb-3">
+          Selected {selectedIds.size} advance{selectedIds.size === 1 ? '' : 's'} — total {fmt(selectedTotal)}.
+        </p>
+      )}
       {error && (
         <div className="alert alert-warn mb-3">
           <span>⚠</span>
@@ -95,20 +144,13 @@ export function AdvanceAppliedModal({ session, request, onClose, onSaved }: Moda
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {advances.map(({ advance, balance, eligible, ineligibleReason }) => {
-            const selected = selectedId === advance.id;
+          {advances.map(({ advance, balance }) => {
+            const selected = selectedIds.has(advance.id);
             return (
               <div
                 key={advance.id}
-                className={`pick-card px-4 py-3 ${eligible ? 'cursor-pointer' : 'opacity-45 cursor-not-allowed'} ${selected ? 'pick-card-selected' : ''}`}
-                onClick={() => {
-                  if (!eligible) {
-                    setError(ineligibleReason);
-                    return;
-                  }
-                  setSelectedId(selected ? null : advance.id);
-                  setError(null);
-                }}
+                className={`pick-card px-4 py-3 cursor-pointer ${selected ? 'pick-card-selected' : ''}`}
+                onClick={() => toggle(advance.id)}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-start min-w-0">
@@ -125,7 +167,6 @@ export function AdvanceAppliedModal({ session, request, onClose, onSaved }: Moda
                         {advance.phone && advance.notes ? ' · ' : ''}
                         {advance.notes || (!advance.phone ? '—' : '')}
                       </p>
-                      {!eligible && <p className="text-tiny text-err mt-1">✗ {ineligibleReason}</p>}
                       {selected && (
                         <p className="text-tiny text-accent-ink font-semibold mt-1">Selected — will apply {fmt(balance)}</p>
                       )}

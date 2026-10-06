@@ -156,7 +156,7 @@ export type {
   SquareOffMap,
   TdsEntry,
 } from './justification/types.js';
-export { emptyJustificationState } from './justification/types.js';
+export { appliedApplicationIdsOf, emptyJustificationState } from './justification/types.js';
 
 export { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
 
