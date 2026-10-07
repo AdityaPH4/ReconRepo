@@ -190,13 +190,17 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
             <thead>
               <tr>
                 <th className="w-[13%]">Category / ID</th>
-                <th className="w-[7%]">ARN</th>
-                <th className="w-[7%]">Order(s)</th>
+                {/* ARN runs ~23 digits (vs. a 12-digit RRN elsewhere) — needs
+                    real room of its own, not the same share Pinelabs/HDFC-UPI
+                    give their own RRN column, or it visually collides with
+                    Order(s) right next to it. */}
+                <th className="w-[15%]">ARN</th>
+                <th className="w-[6%]">Order(s)</th>
                 <th className="w-[11%]">Date / Time</th>
-                <th className="w-[13%] num">Payment Report</th>
+                <th className="w-[12%] num">Payment Report</th>
                 <th className="w-[8%] num">Statement</th>
                 <th className="w-[10%] num">Diff</th>
-                <th className="w-[31%]">Action</th>
+                <th className="w-[25%]">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -221,7 +225,11 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
                               <span className={`tag ${r.tagClass}`}>{r.tagLabel}</span>{' '}
                               <span className="mono text-ink-3 text-tiny">{r.item.globalId}</span>
                             </td>
-                            <td className="mono text-tiny">{r.rrn}</td>
+                            {/* `break-all`: a long, unbroken ARN digit string
+                                has no natural wrap point, so without this it
+                                overflows its fixed-width cell rather than
+                                wrapping — straight into Order(s) next door. */}
+                            <td className="mono text-tiny break-all">{r.rrn}</td>
                             <td>{r.orderNo}</td>
                             <td className="text-ink-3 text-micro whitespace-nowrap">{r.date ? fmtDate(r.date) : '—'}</td>
                             <td className="num">{r.pr === null ? '—' : fmt(r.pr)}</td>
@@ -246,10 +254,10 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="w-[17%]">ARN</th>
-                <th className="w-[26%]">Order No(s)</th>
+                <th className="w-[24%]">ARN</th>
+                <th className="w-[20%]">Order No(s)</th>
                 <th className="w-[18%] num">Statement amount</th>
-                <th className="w-[21%] num">Payment Report amount</th>
+                <th className="w-[20%] num">Payment Report amount</th>
                 <th className="w-[18%]">Status</th>
               </tr>
             </thead>
@@ -260,7 +268,7 @@ export function HdfcLinkPanel({ linkStmt }: { linkStmt: LinkStmt }) {
                 <>
                   {matched.map((x) => (
                     <tr key={x.rrn}>
-                      <td className="mono">{x.rrn || '—'}</td>
+                      <td className="mono break-all">{x.rrn || '—'}</td>
                       <td>{(x.orders ?? []).join(', ')}</td>
                       <td className="num">{fmt(x.plAmt)}</td>
                       <td className="num">{fmt(x.prAmt)}</td>
