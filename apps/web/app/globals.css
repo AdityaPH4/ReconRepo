@@ -51,6 +51,12 @@
   --color-warn-soft: #fffbeb;
   --color-warn-ink: #b45309;
 
+  /* Distinct from --color-warn (amber/yellow) — the submissions calendar's
+     "partially submitted" state needs its own, visibly different color. */
+  --color-orange: #ea580c;
+  --color-orange-soft: #fff7ed;
+  --color-orange-ink: #c2410c;
+
   /* ── Purple — squared off, Manual APOS ───────────────────────────────── */
   --color-pur: #7c3aed;
   --color-pur-soft: #f5f3ff;
@@ -459,6 +465,9 @@
   }
   .tag-warn {
     @apply bg-warn-soft text-warn-ink;
+  }
+  .tag-orange {
+    @apply bg-orange-soft text-orange-ink;
   }
   .tag-accent {
     @apply bg-accent-soft text-accent-ink;

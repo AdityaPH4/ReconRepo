@@ -325,6 +325,10 @@ export interface SessionListItemDTO {
   businessDate: string | null;
   createdAt: string;
   grandDiff: number;
+  /** Modules ("KPI tiles") already locked via partial submission — see `SessionMetaDTO.submittedModules`'s own doc comment. `[]` for a plain draft with no partial submits yet. */
+  submittedModules: SubmissionModule[];
+  /** `true` when every justification entry recorded in this session is a routine remark (Tips/Advance Received/Advance Applied/Bill on Hold Cleared) — vacuously `true` for a session with no entries at all. Drives the submissions calendar's green-vs-yellow distinction. */
+  allExplainedRoutine: boolean;
 }
 
 // ── Justification & submit layer ─────────────────────────────────────────
@@ -704,7 +708,20 @@ export interface DashboardDTO {
 
 // ── Submissions calendar — shared by the GM and admin dashboards ──────────
 
-export type SubmissionDayStatus = 'done' | 'missed' | 'today';
+/**
+ * - `'green'` — fully submitted, and every justification entry recorded is
+ *   one of the routine remarks (Tips/Advance Received/Advance Applied/Bill
+ *   on Hold Cleared) — closed, nothing to review.
+ * - `'yellow'` — fully submitted, but at least one entry is something other
+ *   than a routine remark (Extra Payment Received, Short Collection, TDS
+ *   Deducted, Other, …) — closed, but flagged for review.
+ * - `'orange'` — partially submitted — some modules locked, others still open.
+ * - `'red'` — nothing submitted at all for a day that's already due.
+ * - `'today'` — the current day, with no submission activity yet; not a
+ *   miss, just not due yet. A day with partial/full activity *today* gets
+ *   its real `orange`/`yellow`/`green` color instead of this.
+ */
+export type SubmissionDayStatus = 'green' | 'yellow' | 'orange' | 'red' | 'today';
 
 export interface SubmissionDayDTO {
   /** `yyyy-mm-dd`. */

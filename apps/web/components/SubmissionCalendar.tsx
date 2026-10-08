@@ -1,8 +1,10 @@
 'use client';
 
 /**
- * One outlet's month-at-a-glance submission calendar — green for a
- * submitted day, red for missed, blue for today, blank for the future.
+ * One outlet's month-at-a-glance submission calendar — green for fully
+ * submitted and clean, yellow for fully submitted but flagged for review,
+ * orange for partially submitted, red for missed, blue for today (nothing
+ * submitted yet, but not due until end of day), blank for the future.
  * Monday-first grid. Shared by the GM dashboard (its own outlet) and the
  * admin dashboard (every outlet, one of these per card, with the outlet's
  * assigned GM email(s) shown — empty on the GM dashboard's own call).
@@ -11,27 +13,35 @@
 import type { OutletSubmissionsDTO, SubmissionDayStatus } from '@toit/contracts';
 
 const DAY_TAG: Record<SubmissionDayStatus, string> = {
-  done: 'tag-ok',
-  missed: 'tag-err',
+  green: 'tag-ok',
+  yellow: 'tag-warn',
+  orange: 'tag-orange',
+  red: 'tag-err',
   today: 'tag-accent',
 };
 
 /** Solid fills for the legend's small dots — `tag-*`'s own pale `-soft` backgrounds read as washed-out at 8px, unlike on a full pill. */
 const LEGEND_DOT: Record<SubmissionDayStatus, string> = {
-  done: 'bg-ok',
-  missed: 'bg-err',
+  green: 'bg-ok',
+  yellow: 'bg-warn',
+  orange: 'bg-orange',
+  red: 'bg-err',
   today: 'bg-accent',
 };
 
 const STATUS_LABEL: Record<SubmissionDayStatus, string> = {
-  done: 'Submitted',
-  missed: 'Missed',
+  green: 'Submitted — clean',
+  yellow: 'Submitted — flagged for review',
+  orange: 'Partially submitted',
+  red: 'Missed',
   today: 'Today',
 };
 
 const LEGEND: Array<{ status: SubmissionDayStatus; label: string }> = [
-  { status: 'done', label: 'Done' },
-  { status: 'missed', label: 'Missed' },
+  { status: 'green', label: 'Clean' },
+  { status: 'yellow', label: 'Flagged' },
+  { status: 'orange', label: 'Partial' },
+  { status: 'red', label: 'Missed' },
   { status: 'today', label: 'Today' },
 ];
 
@@ -52,8 +62,10 @@ function dayLabel(iso: string, status: SubmissionDayStatus | null): string {
 
 export function SubmissionCalendar({ outlet }: { outlet: OutletSubmissionsDTO }) {
   const leadingBlanks = outlet.days.length > 0 ? mondayFirstWeekday(outlet.days[0]!.date) : 0;
-  const doneCount = outlet.days.filter((d) => d.status === 'done').length;
-  const missedCount = outlet.days.filter((d) => d.status === 'missed').length;
+  const doneCount = outlet.days.filter((d) => d.status === 'green' || d.status === 'yellow').length;
+  const flaggedCount = outlet.days.filter((d) => d.status === 'yellow').length;
+  const partialCount = outlet.days.filter((d) => d.status === 'orange').length;
+  const missedCount = outlet.days.filter((d) => d.status === 'red').length;
 
   return (
     <div className="panel">
@@ -64,6 +76,22 @@ export function SubmissionCalendar({ outlet }: { outlet: OutletSubmissionsDTO })
             <p className="panel-title">{outlet.outletName}</p>
             <p className="panel-subtitle">
               {doneCount} submitted
+              {flaggedCount > 0 ? (
+                <>
+                  {', '}
+                  <span className="text-warn-ink font-semibold">{flaggedCount} flagged</span>
+                </>
+              ) : (
+                ''
+              )}
+              {partialCount > 0 ? (
+                <>
+                  {', '}
+                  <span className="text-orange-ink font-semibold">{partialCount} partial</span>
+                </>
+              ) : (
+                ''
+              )}
               {missedCount > 0 ? (
                 <>
                   {', '}
