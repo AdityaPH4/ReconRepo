@@ -159,7 +159,12 @@ export type {
 } from './justification/types.js';
 export { appliedApplicationIdsOf, emptyJustificationState } from './justification/types.js';
 
-export { SUBMISSION_MODULES, SUBMISSION_MODULE_LABELS, moduleForEntry } from './justification/submissionModules.js';
+export {
+  SUBMISSION_MODULES,
+  SUBMISSION_MODULE_LABELS,
+  moduleForEntry,
+  moduleForResolvableId,
+} from './justification/submissionModules.js';
 export type { SubmissionModule } from './justification/submissionModules.js';
 
 export { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';

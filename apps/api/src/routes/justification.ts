@@ -19,6 +19,7 @@ import type {
   SessionDTO,
   ToggleSquareOffRequest,
 } from '@toit/contracts';
+import { moduleForEntry } from '@toit/recon-core';
 import { Router } from 'express';
 import { outletScope } from '../middleware/auth.js';
 import {
@@ -26,10 +27,13 @@ import {
   addBohStaging,
   addEntry,
   applyAdvance,
+  assertModuleEditable,
   buildAllItems,
   buildExplanationItems,
   clearBoh,
   computeSubmitGate,
+  moduleOfEntry,
+  moduleOfSquareOffPartner,
   recordAdvance,
   recordTds,
   removeBohStaging,
@@ -74,6 +78,7 @@ justificationRouter.post('/entries', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as AddJustificationEntryRequest;
+    assertModuleEditable(session.meta.submittedModules ?? [], moduleForEntry(body));
     const justification = addEntry(session.justification, body, buildAllItems(session));
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
@@ -85,6 +90,7 @@ justificationRouter.post('/entries', async (req, res, next) => {
 justificationRouter.delete('/entries/:entryId', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
+    assertModuleEditable(session.meta.submittedModules ?? [], moduleOfEntry(session.justification, req.params.entryId!));
     const justification = removeEntry(session.justification, req.params.entryId!);
     const updated = await persist({ ...session, justification });
     res.json(updated);
@@ -97,6 +103,9 @@ justificationRouter.post('/square-off', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as ToggleSquareOffRequest;
+    const submittedModules = session.meta.submittedModules ?? [];
+    assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.a));
+    assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.b));
     const justification = setSquareOff(session.justification, body.a, body.b, true);
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
@@ -109,6 +118,9 @@ justificationRouter.delete('/square-off', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as ToggleSquareOffRequest;
+    const submittedModules = session.meta.submittedModules ?? [];
+    assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.a));
+    assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.b));
     const justification = setSquareOff(session.justification, body.a, body.b, false);
     const updated = await persist({ ...session, justification });
     res.json(updated);
@@ -121,6 +133,7 @@ justificationRouter.post('/advances', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as RecordAdvanceRequest;
+    assertModuleEditable(session.meta.submittedModules ?? [], 'advances');
     const justification = recordAdvance(session.justification, body, {
       sessionId: session.meta.id,
       outlet: session.meta.outlet,
@@ -138,6 +151,7 @@ justificationRouter.post('/advances/apply', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as ApplyAdvanceRequest;
+    assertModuleEditable(session.meta.submittedModules ?? [], 'advances');
     const outlet = session.meta.outlet;
     const [committedAdvances, committedApplications] = await Promise.all([
       getAdvanceStore().list(outlet),
@@ -160,6 +174,7 @@ justificationRouter.post('/boh-staging', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as AddBohStagingRequest;
+    assertModuleEditable(session.meta.submittedModules ?? [], 'bills');
     const justification = addBohStaging(session.justification, body);
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
@@ -171,6 +186,7 @@ justificationRouter.post('/boh-staging', async (req, res, next) => {
 justificationRouter.delete('/boh-staging/:stagingId', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
+    assertModuleEditable(session.meta.submittedModules ?? [], 'bills');
     const justification = removeBohStaging(session.justification, req.params.stagingId!);
     const updated = await persist({ ...session, justification });
     res.json(updated);
@@ -183,6 +199,7 @@ justificationRouter.post('/boh/clear', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as ClearBohRequest;
+    assertModuleEditable(session.meta.submittedModules ?? [], 'bills');
     const outlet = session.meta.outlet;
     const entries = await getBohStore().list(outlet);
     const justification = clearBoh(session.justification, body, {
@@ -202,6 +219,7 @@ justificationRouter.post('/tds', async (req, res, next) => {
   try {
     const session = await loadDraftSession(req);
     const body = req.body as RecordTdsRequest;
+    assertModuleEditable(session.meta.submittedModules ?? [], moduleForEntry({ source: body.source, remark: 'TDS Deducted' }));
     const justification = recordTds(session.justification, body, {
       sessionId: session.meta.id,
       outlet: session.meta.outlet,

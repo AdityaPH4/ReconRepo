@@ -42,6 +42,10 @@ export interface SubmitGateResult {
     upi: boolean;
     bank: boolean;
     hdfcLink: boolean;
+    /** No orphaned "Advance Applied" entries. */
+    advances: boolean;
+    /** Always `true` — nothing about recording/clearing a bill on hold ever blocks submission today. */
+    bills: boolean;
   };
 }
 
@@ -176,6 +180,8 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
       upi: upiResolved,
       bank: bankResolved,
       hdfcLink: hdfcLinkResolved,
+      advances: orphaned.length === 0,
+      bills: true,
     },
   };
 }

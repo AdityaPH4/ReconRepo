@@ -61,3 +61,17 @@ export function moduleForEntry(entry: Pick<JustificationEntry, 'source' | 'remar
   if (entry.remark === 'Bill on Hold Cleared') return 'bills';
   return SOURCE_MODULE[entry.source] ?? null;
 }
+
+/**
+ * Which module a transaction-level `ResolvableItem.globalId` (a square-off
+ * pairing endpoint) belongs to, purely from its id prefix — `items.ts`'s
+ * own globalId scheme already partitions this cleanly: HDFC Static UPI ids
+ * always start with `U` (UPOS/USTMT/UMM/UDUP), HDFC Link ids always start
+ * with `L` (LPOS/LSTMT/LMM/LDUP), and every Pinelabs id (POS/PL/MM/DUP/
+ * ADP/ADPL) starts with neither — so no item lookup is needed.
+ */
+export function moduleForResolvableId(globalId: string): SubmissionModule {
+  if (globalId.startsWith('U')) return 'upi';
+  if (globalId.startsWith('L')) return 'hdfc_link';
+  return 'pinelabs';
+}
