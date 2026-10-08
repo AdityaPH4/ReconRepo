@@ -583,6 +583,46 @@ describe('canSubmit', () => {
     assert.ok(result.blockers.some((b) => b.includes('Pinelabs')));
   });
 
+  it('a locked ("submitted") module\'s blocker is skipped, but perSource still reports the true unresolved state', () => {
+    const pinelabs = pinelabsResult({ reconRows: [reconRow({ rrn: 'R1', diff: 250 })] as never });
+    const result = canSubmit({
+      pinelabs,
+      upiHdfc: null,
+      justification: emptyJustificationState(),
+      grandDiff: 250,
+      hasSummary: false,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 0,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications: [],
+      submittedModules: ['pinelabs'],
+    });
+    assert.ok(!result.blockers.some((b) => b.includes('Pinelabs')));
+    assert.equal(result.perSource.pinelabs, false);
+  });
+
+  it('locking every per-source module still leaves the global residual/threshold check in force', () => {
+    const result = canSubmit({
+      pinelabs: pinelabsResult(),
+      upiHdfc: null,
+      justification: emptyJustificationState(),
+      grandDiff: THRESHOLD + 50,
+      hasSummary: false,
+      cashDiff: 0,
+      bankDiff: 0,
+      hdfcLinkDiff: 0,
+      hdfcAggregateDiff: 0,
+      kotakDiff: 0,
+      applications: [],
+      submittedModules: ['pinelabs', 'cash', 'upi', 'bank', 'hdfc_link', 'bills', 'advances'],
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 'needs_explanation');
+    assert.ok(result.blockers.some((b) => b.includes('Net unexplained')));
+  });
+
   it('blocks on net unexplained exceeding THRESHOLD even when every source individually looks fine', () => {
     const result = canSubmit({
       pinelabs: pinelabsResult(),

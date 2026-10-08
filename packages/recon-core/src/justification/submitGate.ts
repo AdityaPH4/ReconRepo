@@ -24,6 +24,7 @@ import {
 } from './completeness.js';
 import { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './items.js';
 import { collectExplained, explainedTotals } from './residual.js';
+import type { SubmissionModule } from './submissionModules.js';
 import { appliedApplicationIdsOf, type AdvanceApplication, type JustificationState } from './types.js';
 
 export type SubmitStatus = 'balanced' | 'within_threshold' | 'needs_explanation';
@@ -64,6 +65,15 @@ export interface CanSubmitInput {
   kotakDiff: number;
   /** Every application — committed repository rows plus this session's own drafts — for the orphan check. */
   applications: readonly AdvanceApplication[];
+  /**
+   * Modules already locked in by a prior partial submission this session —
+   * their blockers are skipped (they can no longer be edited, so they can
+   * never become resolved) but `perSource` still reports the true
+   * underlying booleans, and the global residual/threshold check below is
+   * completely untouched regardless of any module's lock state. Defaults to
+   * none locked.
+   */
+  submittedModules?: readonly SubmissionModule[];
 }
 
 export function canSubmit(input: CanSubmitInput): SubmitGateResult {
@@ -80,33 +90,37 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
     hdfcAggregateDiff,
     kotakDiff,
     applications,
+    submittedModules = [],
   } = input;
   const { entries, squareOff } = justification;
   const blockers: string[] = [];
+  const locked = (m: SubmissionModule) => submittedModules.includes(m);
 
   const plCompleteness = pinelabsCompleteness(pinelabs, entries, squareOff);
-  if (!plCompleteness.allResolved) {
+  if (!plCompleteness.allResolved && !locked('pinelabs')) {
     blockers.push(
       `${plCompleteness.unresolvedCount} Pinelabs transaction${plCompleteness.unresolvedCount === 1 ? '' : 's'} still need a remark or square-off.`,
     );
   }
 
   const hdfcCompleteness = hdfcUpiCompleteness(upiHdfc, entries, squareOff);
-  if (hdfcCompleteness && !hdfcCompleteness.allResolved) {
+  if (hdfcCompleteness && !hdfcCompleteness.allResolved && !locked('upi')) {
     blockers.push(
       `${hdfcCompleteness.unresolvedCount} HDFC Static UPI transaction${hdfcCompleteness.unresolvedCount === 1 ? '' : 's'} still need a remark or square-off.`,
     );
   }
 
   const cashResolved = cashOk(cashDiff, entries);
-  if (!cashResolved) blockers.push(`Cash difference exceeds the ₹${THRESHOLD} threshold and is not fully justified.`);
+  if (!cashResolved && !locked('cash')) {
+    blockers.push(`Cash difference exceeds the ₹${THRESHOLD} threshold and is not fully justified.`);
+  }
 
   const bankResolved = bankOk(hasSummary, bankDiff, entries);
-  if (!bankResolved) blockers.push('Bank transfer difference is not fully justified.');
+  if (!bankResolved && !locked('bank')) blockers.push('Bank transfer difference is not fully justified.');
 
   const linkCompleteness = hdfcLinkCompleteness(linkStmt, entries, squareOff);
   const hdfcLinkResolved = hdfcLinkOk({ hasSummary, linkCompleteness, hdfcLinkDiff, entries });
-  if (!hdfcLinkResolved) {
+  if (!hdfcLinkResolved && !locked('hdfc_link')) {
     blockers.push(
       linkCompleteness
         ? `${linkCompleteness.unresolvedCount} HDFC Link transaction${linkCompleteness.unresolvedCount === 1 ? '' : 's'} still need a remark or square-off.`
@@ -115,7 +129,7 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
   }
 
   const upiResolved = upiOk({ hasSummary, hdfcCompleteness, hdfcAggregateDiff, kotakDiff, entries });
-  if (!upiResolved) blockers.push('Static UPI difference is not fully justified.');
+  if (!upiResolved && !locked('upi')) blockers.push('Static UPI difference is not fully justified.');
 
   // An entry orphans if it has no backing application at all, or if ANY of
   // its (possibly several, for a multi-advance apply) applications no
@@ -126,7 +140,7 @@ export function canSubmit(input: CanSubmitInput): SubmitGateResult {
     const ids = appliedApplicationIdsOf(e);
     return ids.length === 0 || ids.some((id) => !applications.some((a) => a.id === id));
   });
-  if (orphaned.length) {
+  if (orphaned.length && !locked('advances')) {
     blockers.push(
       `${orphaned.length} "Advance Applied" entr${orphaned.length === 1 ? 'y' : 'ies'} no longer have a backing advance — remove or re-record before submitting.`,
     );
