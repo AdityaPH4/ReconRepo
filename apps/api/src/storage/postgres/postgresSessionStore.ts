@@ -6,6 +6,7 @@
  */
 
 import type { SessionDTO, SessionListItemDTO } from '@toit/contracts';
+import { ROUTINE_REMARKS } from '@toit/recon-core';
 import type { Pool } from 'pg';
 import type { SessionQuery, SessionStore } from '../types.js';
 
@@ -17,6 +18,8 @@ function toListItem(s: SessionDTO): SessionListItemDTO {
     businessDate: s.meta.businessDate,
     createdAt: s.meta.createdAt,
     grandDiff: s.frs.grandDiff,
+    submittedModules: s.meta.submittedModules ?? [],
+    allExplainedRoutine: s.justification.entries.every((e) => (ROUTINE_REMARKS as readonly string[]).includes(e.remark)),
   };
 }
 
