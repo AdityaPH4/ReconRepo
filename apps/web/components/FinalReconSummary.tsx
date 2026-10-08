@@ -19,8 +19,17 @@
 
 import { useState } from 'react';
 import type { ExplainedItemDTO, FrsRowDTO, PinelabsBreakdownDTO, SessionDTO } from '@toit/contracts';
-import { AMOUNT_EPSILON, THRESHOLD, entryNet, fmt, hdfcLinkCompleteness, hdfcUpiCompleteness } from '@toit/recon-core/display';
-import { ApiError, reportUrl, snapshotUrl, submitSession } from '@/lib/api';
+import {
+  AMOUNT_EPSILON,
+  SUBMISSION_MODULE_LABELS,
+  THRESHOLD,
+  entryNet,
+  fmt,
+  hdfcLinkCompleteness,
+  hdfcUpiCompleteness,
+} from '@toit/recon-core/display';
+import { reportUrl, snapshotUrl } from '@/lib/api';
+import { PartialSubmitModal } from './justification/PartialSubmitModal';
 
 export function FinalReconSummary({
   session,
@@ -30,8 +39,7 @@ export function FinalReconSummary({
   onSessionUpdate: (session: SessionDTO) => void;
 }) {
   const { frs, submitGate, meta, pinelabsBreakdown, explanation, totals, justification } = session;
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
 
   const excessItems = explanation.filter((x) => x.diff > AMOUNT_EPSILON);
   const shortItems = explanation.filter((x) => x.diff < -AMOUNT_EPSILON);
@@ -39,23 +47,7 @@ export function FinalReconSummary({
   const totalShortage = shortItems.reduce((s, x) => s + Math.abs(x.diff), 0);
 
   const locked = meta.status === 'submitted';
-
-  async function handleSubmit() {
-    const confirmed = window.confirm(
-      `Submit reconciliation session?\n\nNet difference: ${fmt(frs.grandDiff)}\nStatus: ${submitGate.status.replace('_', ' ')}\n\nThe session will be locked.`,
-    );
-    if (!confirmed) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const updated = await submitSession(session.meta.id);
-      onSessionUpdate(updated);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Submit failed.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const lockedModules = meta.submittedModules ?? [];
 
   return (
     <div className="frs-section pt-6">
@@ -100,13 +92,6 @@ export function FinalReconSummary({
           </div>
         </div>
 
-        {error && (
-          <div className="alert alert-warn mt-4">
-            <span>⚠</span>
-            <span>{error}</span>
-          </div>
-        )}
-
         <div className="panel px-6 py-5 mt-4">
           {locked ? (
             <>
@@ -126,32 +111,46 @@ export function FinalReconSummary({
                 </a>
               </div>
             </>
-          ) : !submitGate.ok ? (
-            <>
-              <p className="font-semibold text-err text-body mb-2">✗ Cannot submit — resolve all source issues first</p>
-              <div className="text-tiny text-ink-3 mb-4 leading-loose">
-                {submitGate.blockers.map((b, i) => (
-                  <p key={i}>• {b}</p>
-                ))}
-              </div>
-              <button type="button" className="btn btn-primary" disabled>
-                ✓ Submit Session
-              </button>
-            </>
           ) : (
             <>
-              <p className="font-semibold text-ok text-body mb-2">✓ All sources reconciled — ready to submit</p>
+              {submitGate.ok ? (
+                <p className="font-semibold text-ok text-body mb-2">✓ All sources reconciled — ready to submit</p>
+              ) : (
+                <>
+                  <p className="font-semibold text-err text-body mb-2">✗ Not everything is reconciled yet</p>
+                  <div className="text-tiny text-ink-3 mb-2 leading-loose">
+                    {submitGate.blockers.map((b, i) => (
+                      <p key={i}>• {b}</p>
+                    ))}
+                  </div>
+                </>
+              )}
+              {lockedModules.length > 0 && (
+                <p className="text-tiny text-ink-3 mb-2">
+                  Already submitted: {lockedModules.map((m) => SUBMISSION_MODULE_LABELS[m]).join(', ')}.
+                </p>
+              )}
               <p className="text-tiny text-ink-3 mb-4">
-                Persists the settlement snapshot (settlement ledger + full audit) and makes the printable report
-                available.
+                Choose which modules to submit now — anything left unchecked stays open for later.
               </p>
-              <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
-                {submitting ? 'Submitting…' : '✓ Submit Session'}
+              <button type="button" className="btn btn-primary" onClick={() => setShowSubmitModal(true)}>
+                ✓ Submit…
               </button>
             </>
           )}
         </div>
       </div>
+
+      {showSubmitModal && (
+        <PartialSubmitModal
+          session={session}
+          onClose={() => setShowSubmitModal(false)}
+          onSubmitted={(updated) => {
+            setShowSubmitModal(false);
+            onSessionUpdate(updated);
+          }}
+        />
+      )}
     </div>
   );
 }
