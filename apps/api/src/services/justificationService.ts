@@ -26,6 +26,7 @@ import type {
 import {
   AMOUNT_EPSILON,
   NO_RRN_REMARKS,
+  SUBMISSION_MODULES,
   advanceBalance,
   appliedApplicationIdsOf,
   buildHdfcLinkItems,
@@ -35,6 +36,8 @@ import {
   isAdvanceClosed,
   isAdvanceExhausted,
   isSquareOffGroupKey,
+  moduleForEntry,
+  moduleForResolvableId,
   squareOffGroupKey,
   squareOffNetByGroupKey,
   toggleSquareOff as coreToggleSquareOff,
@@ -51,11 +54,85 @@ import {
   type HdfcStatementRow,
   type PaymentLinkRow,
   type ResolvableItem,
+  type SubmissionModule,
   type TdsEntry,
 } from '@toit/recon-core';
 
 export class JustificationError extends Error {
   readonly status = 400;
+}
+
+// ── Partial submission — module locking ───────────────────────────────────
+
+/** Throws if `module` (or, for an entry with no module of its own, nothing) is already locked by a prior partial submission. */
+export function assertModuleEditable(submittedModules: readonly SubmissionModule[], module: SubmissionModule | null): void {
+  if (module !== null && submittedModules.includes(module)) {
+    throw new JustificationError('This module has already been submitted and can no longer be edited.');
+  }
+}
+
+/** Module ownership of an existing entry, for a route editing/removing it (e.g. `DELETE /entries/:id`). */
+export function moduleOfEntry(state: JustificationState, entryId: string): SubmissionModule | null {
+  const entry = state.entries.find((e) => e.id === entryId);
+  return entry ? moduleForEntry(entry) : null;
+}
+
+/** Module ownership of a square-off endpoint — see `moduleForResolvableId`'s own doc comment for the id-prefix scheme this relies on. */
+export function moduleOfSquareOffPartner(id: string): SubmissionModule {
+  return moduleForResolvableId(id);
+}
+
+/**
+ * Exactly what committing `module` right now would move out of this
+ * session's own draft state into the cross-session repositories — "Advances"
+ * and "Bills on Hold" are self-contained cross-cutting buckets (every draft
+ * advance/application, or every staged BOH row/clearance, belongs to them
+ * regardless of which tab recorded it), while a TDS entry belongs to
+ * whichever module its own recording entry maps to (in practice always
+ * `'bank'` — TDS is only ever offered from the Bank tab's shortage dropdown
+ * — but resolved generically rather than hardcoded).
+ */
+export interface ModuleCommitPlan {
+  advances: Advance[];
+  applications: AdvanceApplication[];
+  bohStaging: BohStagingEntry[];
+  bohClearances: BohClearance[];
+  tdsEntries: TdsEntry[];
+}
+
+export function planModuleCommit(state: JustificationState, module: SubmissionModule): ModuleCommitPlan {
+  const tdsIdsForModule = new Set(
+    state.entries.filter((e) => e.createdTdsEntryId && moduleForEntry(e) === module).map((e) => e.createdTdsEntryId!),
+  );
+  return {
+    advances: module === 'advances' ? state.draftAdvances : [],
+    applications: module === 'advances' ? state.draftApplications : [],
+    bohStaging: module === 'bills' ? state.bohStaging : [],
+    bohClearances: module === 'bills' ? state.draftBohClearances : [],
+    tdsEntries: state.draftTdsEntries.filter((t) => tdsIdsForModule.has(t.id)),
+  };
+}
+
+/** Strips exactly the items `planModuleCommit` just returned out of the session's own draft state, now that they've been committed to the repository. */
+export function removeCommittedFromState(state: JustificationState, plan: ModuleCommitPlan): JustificationState {
+  const advanceIds = new Set(plan.advances.map((a) => a.id));
+  const applicationIds = new Set(plan.applications.map((a) => a.id));
+  const bohStagingIds = new Set(plan.bohStaging.map((b) => b.id));
+  const bohClearanceIds = new Set(plan.bohClearances.map((c) => c.id));
+  const tdsIds = new Set(plan.tdsEntries.map((t) => t.id));
+  return {
+    ...state,
+    draftAdvances: state.draftAdvances.filter((a) => !advanceIds.has(a.id)),
+    draftApplications: state.draftApplications.filter((a) => !applicationIds.has(a.id)),
+    bohStaging: state.bohStaging.filter((b) => !bohStagingIds.has(b.id)),
+    draftBohClearances: state.draftBohClearances.filter((c) => !bohClearanceIds.has(c.id)),
+    draftTdsEntries: state.draftTdsEntries.filter((t) => !tdsIds.has(t.id)),
+  };
+}
+
+/** Every module locked once this commit also goes through — used to decide whether a partial submit should auto-promote to a full submit. */
+export function isEverySubmissionModuleLocked(submittedModules: readonly SubmissionModule[]): boolean {
+  return SUBMISSION_MODULES.every((m) => submittedModules.includes(m));
 }
 
 /** Every Pinelabs + HDFC-UPI + HDFC Link resolvable item for a session — what a square-off group's net is computed against. */
@@ -594,8 +671,17 @@ export function computeSubmitGate(session: SessionDTO): SubmitGateDTO {
     // A draft session's own "Advance Applied" entries always point at a
     // draft application recorded in the same request that created them (see
     // `applyAdvance` above) — nothing committed is relevant to the orphan
-    // check until submit, at which point the session is locked anyway.
+    // check until submit, at which point the session is locked anyway. Once
+    // the 'advances' module itself has been partially-submitted, its
+    // draftApplications are cleared (moved to the repository — see
+    // `planModuleCommit`/`removeCommittedFromState`), so this orphan check
+    // would otherwise flag every one of its own now-committed entries as
+    // orphaned; the blocker itself is suppressed once `submittedModules`
+    // (below) includes `'advances'`, and frontend display always prefers a
+    // "submitted" badge over `perSource.advances` once a module is locked,
+    // so this stale `false` is never actually seen.
     applications: session.justification.draftApplications,
+    submittedModules: session.meta.submittedModules ?? [],
   });
 }
 

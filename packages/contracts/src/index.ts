@@ -25,6 +25,7 @@ import type {
   Remark,
   Snapshot,
   SquareOffMap,
+  SubmissionModule,
   SubmitStatus,
   SummaryData,
   TdsEntry,
@@ -137,6 +138,23 @@ export interface SessionMetaDTO {
   discardedAt: string | null;
   /** The session that superseded this one — set alongside `discardedAt`. */
   supersededBySessionId: string | null;
+  /**
+   * Set once this session's `Snapshot` has been folded into a completed
+   * automated MPR (Layer 2) run — the id of that `MprSessionDTO`. Absent/null
+   * means still eligible for the next automated run; every pre-existing
+   * submitted session predates this field and is correctly treated as
+   * eligible too, with nothing to backfill.
+   */
+  mprIncludedInSessionId?: string | null;
+  /**
+   * Modules ("KPI tiles") already locked in via partial submission — each
+   * one's own draft advances/applications/BOH/TDS have already been
+   * committed to the repository and it can no longer be edited. Absent/`[]`
+   * for every pre-existing session (nothing to backfill — `[]` is exactly
+   * the state a session starts in). Once every entry in `SUBMISSION_MODULES`
+   * is present here, the session auto-promotes to a full submit.
+   */
+  submittedModules?: SubmissionModule[];
 }
 
 // ── Final Recon Summary ───────────────────────────────────────────────────
@@ -327,6 +345,7 @@ export type BohClearanceDTO = BohClearance;
 export type BohStagingEntryDTO = BohStagingEntry;
 export type TdsEntryDTO = TdsEntry;
 export type SnapshotDTO = Snapshot;
+export type SubmissionModuleDTO = SubmissionModule;
 
 /**
  * An open, non-exhausted advance pickable from the "Advance Applied" modal.
@@ -367,7 +386,14 @@ export interface SubmitGateDTO {
     upi: boolean;
     bank: boolean;
     hdfcLink: boolean;
+    advances: boolean;
+    bills: boolean;
   };
+}
+
+/** `POST /:id/submit-partial` — locks in a subset of this session's modules ("KPI tiles"), committing each one's own draft repository rows immediately rather than waiting for the whole session to submit. */
+export interface PartialSubmitRequest {
+  moduleIds: SubmissionModule[];
 }
 
 // ── Justification request bodies ──────────────────────────────────────────
