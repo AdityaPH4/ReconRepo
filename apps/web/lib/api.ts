@@ -21,6 +21,7 @@ import type {
   DashboardDTO,
   EligibleAdvanceDTO,
   EligibleBohEntryDTO,
+  PartialSubmitRequest,
   RecordAdvanceRequest,
   RecordTdsRequest,
   RequestApprovalRequest,
@@ -222,6 +223,11 @@ export async function listEligibleBoh(
 
 export function submitSession(sessionId: string): Promise<SessionDTO> {
   return postJson(`${API_BASE}/api/sessions/${sessionId}/submit`, undefined);
+}
+
+/** Locks in a subset of this session's modules right now — see `PartialSubmitRequest`'s own doc comment. */
+export function submitPartial(sessionId: string, moduleIds: PartialSubmitRequest['moduleIds']): Promise<SessionDTO> {
+  return postJson(`${API_BASE}/api/sessions/${sessionId}/submit-partial`, { moduleIds } satisfies PartialSubmitRequest);
 }
 
 /**
