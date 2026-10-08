@@ -46,6 +46,15 @@ export const CASH_REMARKS_SHORTAGE = ['Paid Out', ...REMARKS_SHORTAGE] as const;
  */
 export const REMARKS_SHORTAGE_WITH_TDS = [...REMARKS_SHORTAGE, 'TDS Deducted'] as const;
 
+/**
+ * Remarks treated as routine, day-to-day bookkeeping rather than something
+ * needing a second look — a submitted session carrying only these (or none
+ * at all) colors green on the submission calendar; any other remark present
+ * (Short Collection, Other, TDS Deducted, Paid In/Out, Extra Payment
+ * Received) colors it yellow instead, flagging it for review.
+ */
+export const ROUTINE_REMARKS = ['Tips', 'Advance Received', 'Advance Applied', 'Bill on Hold Cleared'] as const;
+
 /** Remarks that require the Bill Number / Reason fields (Cash tab only). */
 export const CASH_BILL_REMARKS = ['Paid In', 'Paid Out'] as const;
 

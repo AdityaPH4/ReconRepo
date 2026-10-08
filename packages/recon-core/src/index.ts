@@ -64,6 +64,7 @@ export {
   REMARKS_EXCESS,
   REMARKS_SHORTAGE,
   REMARKS_SHORTAGE_WITH_TDS,
+  ROUTINE_REMARKS,
   STORE_OUTLET_MAP,
   SWIGGY_NAMES,
   THRESHOLD,
@@ -157,6 +158,9 @@ export type {
   TdsEntry,
 } from './justification/types.js';
 export { appliedApplicationIdsOf, emptyJustificationState } from './justification/types.js';
+
+export { SUBMISSION_MODULES, SUBMISSION_MODULE_LABELS, moduleForEntry } from './justification/submissionModules.js';
+export type { SubmissionModule } from './justification/submissionModules.js';
 
 export { buildHdfcLinkItems, buildHdfcUpiItems, buildPinelabsItems } from './justification/items.js';
 
