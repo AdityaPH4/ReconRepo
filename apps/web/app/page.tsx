@@ -43,6 +43,12 @@ export default function HomePage() {
           description="Close out advances that were returned to the POC outside of recon — e.g. full payment settled on the company card — so they stop showing as outstanding."
         />
         <ModuleCard
+          href="/boh"
+          icon="🧊"
+          title="Bills on Hold"
+          description="Every outstanding and cleared bill-on-hold entry across outlets — admins can reopen a mistaken clearance within 7 days."
+        />
+        <ModuleCard
           href="/tds"
           icon="🗂️"
           title="Unreconciled TDS"

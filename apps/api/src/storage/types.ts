@@ -102,6 +102,8 @@ export interface BohStore {
   list(outlet: OutletCode): Promise<BohEntry[]>;
   /** Flips a row from `open` to `cleared` — the durable fix over legacy (see README/plan). */
   clear(id: string, clearedAt: string, clearedBySessionId: string): Promise<BohEntry>;
+  /** Undoes a mistaken clearance — back to `open`, clearing `clearedAt`/`clearedBySessionId`. Mirrors `AdvanceStore.reopen()`; the reopen-window eligibility is enforced by the route, not here. */
+  reopen(id: string): Promise<BohEntry>;
 }
 
 // ── Unreconciled TDS repository — outlet-scoped, admin closes cross-outlet ──

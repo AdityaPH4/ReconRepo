@@ -46,5 +46,16 @@ export function createPostgresBohStore(pool: Pool): BohStore {
       await pool.query(`UPDATE recon.boh_entries SET status = 'cleared', data = $2 WHERE id = $1`, [id, cleared]);
       return cleared;
     },
+
+    async reopen(id) {
+      const { rows } = await pool.query<{ data: BohEntry }>('SELECT data FROM recon.boh_entries WHERE id = $1', [
+        id,
+      ]);
+      const entry = rows[0]?.data;
+      if (!entry) throw new Error(`BOH entry not found: ${id}`);
+      const reopened: BohEntry = { ...entry, status: 'open', clearedAt: null, clearedBySessionId: null };
+      await pool.query(`UPDATE recon.boh_entries SET status = 'open', data = $2 WHERE id = $1`, [id, reopened]);
+      return reopened;
+    },
   };
 }

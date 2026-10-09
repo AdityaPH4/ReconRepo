@@ -14,6 +14,7 @@ import type {
   ApiErrorDTO,
   ApplyAdvanceRequest,
   ApprovalRequestDTO,
+  BohEntryDTO,
   ClearBohRequest,
   CloseAdvanceRequest,
   CloseTdsRequest,
@@ -219,6 +220,19 @@ export async function listEligibleBoh(
   if (opts.amount !== undefined) params.set('amount', String(opts.amount));
   const res = await fetch(`${API_BASE}/api/boh/eligible?${params}`, { cache: 'no-store', headers: authHeaders() });
   return unwrap(res);
+}
+
+// ── Bills on Hold management — outside of any recon session ──────────────
+
+export async function listBoh(outlet?: OutletCode): Promise<BohEntryDTO[]> {
+  const params = outlet ? `?outlet=${outlet}` : '';
+  const res = await fetch(`${API_BASE}/api/boh${params}`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap(res);
+}
+
+/** Admin-only, and only within 7 days of the original clearance date — see the route's own doc comment. */
+export function reopenBoh(id: string): Promise<BohEntryDTO> {
+  return postJson(`${API_BASE}/api/boh/${id}/reopen`, {});
 }
 
 export function submitSession(sessionId: string): Promise<SessionDTO> {

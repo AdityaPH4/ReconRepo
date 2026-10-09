@@ -36,5 +36,13 @@ export function createMemoryBohStore(): BohStore {
       entries.set(id, cleared);
       return cleared;
     },
+
+    async reopen(id) {
+      const entry = entries.get(id);
+      if (!entry) throw new Error(`BOH entry not found: ${id}`);
+      const reopened: BohEntry = { ...entry, status: 'open', clearedAt: null, clearedBySessionId: null };
+      entries.set(id, reopened);
+      return reopened;
+    },
   };
 }
