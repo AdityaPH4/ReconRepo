@@ -260,19 +260,17 @@ function PinelabsBreakdown({ breakdown }: { breakdown: PinelabsBreakdownDTO }) {
               <th>Acquirer</th>
               <th className="num">Count</th>
               <th className="num">Pinelabs</th>
-              <th className="num">Payment Report total</th>
-              <th className="num">Diff</th>
             </tr>
           </thead>
           <tbody>
-            {breakdown.rows.map((r) => {
+            {breakdown.rows
               // The "Only in POS" plug row (see `pinelabsBreakdown.ts`'s own
-              // doc comment) has nothing on the Pinelabs side by
-              // construction — muted the same way "Other" is, so it reads
-              // as a reconciling footnote rather than another real acquirer.
-              const isMuted = r.acquirer === 'Other' || r.pinelabsTotal === 0;
-              return (
-                <tr key={r.acquirer} className={isMuted ? 'text-ink-3' : undefined}>
+              // doc comment) exists purely to reconcile the now-removed
+              // Payment Report/Diff columns — with nothing on the Pinelabs
+              // side either, it has nothing left to show here.
+              .filter((r) => r.pinelabsTotal !== 0)
+              .map((r) => (
+                <tr key={r.acquirer} className={r.acquirer === 'Other' ? 'text-ink-3' : undefined}>
                   <td className="whitespace-nowrap">
                     {r.acquirer}
                     {r.acquirer === 'AMEX' && breakdown.amexDupCount > 0 && (
@@ -280,34 +278,15 @@ function PinelabsBreakdown({ breakdown }: { breakdown: PinelabsBreakdownDTO }) {
                     )}
                   </td>
                   <td className="num">{r.count}</td>
-                  <td className="num font-semibold">{r.pinelabsTotal === 0 ? '—' : fmt(r.pinelabsTotal)}</td>
-                  <td className="num">{r.prTotal === null ? '—' : fmt(r.prTotal)}</td>
-                  <td className={`num ${r.diff === null ? '' : diffColor(r.diff)}`}>
-                    {r.diff === null
-                      ? '—'
-                      : Math.abs(r.diff) < AMOUNT_EPSILON
-                        ? // Legacy reserves the "✓ Balanced" label for the AMEX row only —
-                          // HDFC/Kotak just show "—" on a near-zero diff.
-                          r.acquirer === 'AMEX'
-                          ? '✓ Balanced'
-                          : '—'
-                        : (r.diff > 0 ? '+' : '') + fmt(Math.abs(r.diff))}
-                  </td>
+                  <td className="num font-semibold">{fmt(r.pinelabsTotal)}</td>
                 </tr>
-              );
-            })}
+              ))}
           </tbody>
           <tfoot>
             <tr className="total-row">
               <td>Total</td>
               <td className="num">{breakdown.totalCount}</td>
               <td className="num">{fmt(breakdown.totalPinelabs)}</td>
-              <td className="num">{fmt(breakdown.totalPR)}</td>
-              <td className={`num ${diffColor(breakdown.totalDiff)}`}>
-                {Math.abs(breakdown.totalDiff) < AMOUNT_EPSILON
-                  ? '✓ Balanced'
-                  : (breakdown.totalDiff > 0 ? '▲ +' : '▼ ') + fmt(Math.abs(breakdown.totalDiff))}
-              </td>
             </tr>
           </tfoot>
         </table>
