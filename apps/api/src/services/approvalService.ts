@@ -1,21 +1,23 @@
 /**
  * Two gates on re-running an already-submitted day, stacked — both must
- * pass, in this order:
+ * pass, in this order. Both are called GM-only by `routes/sessions.ts` — an
+ * admin's own "submit" never actually writes anything real (see
+ * `finalizeSubmit`'s `persist` flag; admin is a test/support identity here),
+ * so neither gate has anything left to protect for that role.
  *
  * 1. `assertNotLockedByNextDay` — a hard, absolute lock: once the very next
  *    calendar day has itself been submitted, this day can never be
- *    resubmitted by anyone, admin included. There is no approval path
- *    around it (unlike gate 2 below) — once time has moved past a day, its
- *    books are sealed. A day that was never submitted, or whose next day
- *    hasn't been submitted (yet, or ever — days can now be done out of
- *    order, see the removed sequential date gate), has nothing to lock.
+ *    resubmitted again. There is no approval path around it (unlike gate 2
+ *    below) — once time has moved past a day, its books are sealed. A day
+ *    that was never submitted, or whose next day hasn't been submitted
+ *    (yet, or ever — days can now be done out of order, see the removed
+ *    sequential date gate), has nothing to lock.
  *
  * 2. `assertReconAllowed` — the softer, approvable gate: re-running
  *    reconciliation for the same outlet+business-date is always allowed
  *    while nothing has been submitted yet. The gate only fires once a
- *    session for that exact pair has already been *submitted*: a GM (never
- *    an admin — admins are the approvers) is then blocked from submitting
- *    again without sign-off, which guards against uploading the wrong
+ *    session for that exact pair has already been *submitted*, blocking
+ *    submission again without sign-off — guards against uploading the wrong
  *    files, not noticing, submitting, and only then wanting a redo. Once an
  *    admin approves a request for that exact pair, it stays unlocked — not
  *    single-use — so a GM fixing a genuine mistake isn't gated again on the
@@ -60,8 +62,8 @@ function addDays(iso: string, n: number): string {
 /**
  * Throws `ResubmissionLockedError` if `businessDate` has already been
  * submitted AND the day right after it has also already been submitted.
- * Checked for every role, including admin — this is the one gate in this
- * file with no approval path around it.
+ * This is the one gate in this file with no approval path around it — see
+ * this module's own doc comment for why callers only check it for GMs.
  */
 export async function assertNotLockedByNextDay(outlet: OutletCode, businessDate: string | null): Promise<void> {
   if (!businessDate) return;

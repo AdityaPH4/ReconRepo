@@ -139,17 +139,17 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
 
     // Resubmitting an already-submitted date goes through two stacked
     // gates — parsing is pure (nothing written yet), so both throw before
-    // anything is persisted. First, an absolute lock checked for every
-    // role, admin included: once the very next calendar day has itself
-    // been submitted, this day can never be resubmitted again, by anyone.
-    // Second (GM only — admins are the approvers), the existing softer
-    // approval gate. (There is deliberately no day-*order* gate for a
-    // first-time submission — with partial submission, a GM can work any
-    // date at any time; the submissions calendar is what surfaces which
-    // past days are still outstanding, not a hard block on uploading out
-    // of order. The lock above is about *resubmitting*, not ordering.)
-    await assertNotLockedByNextDay(outcome.outlet, outcome.businessDate);
+    // anything is persisted. Both are GM-only: an admin's own "submit" no
+    // longer writes anything real (see `finalizeSubmit`'s `persist` flag —
+    // admin is a test/support identity here, not a real reconciler), so
+    // neither gate has anything left to protect for that role. (There is
+    // deliberately no day-*order* gate for a first-time submission — with
+    // partial submission, a GM can work any date at any time; the
+    // submissions calendar is what surfaces which past days are still
+    // outstanding, not a hard block on uploading out of order. The lock
+    // below is about *resubmitting*, not ordering.)
     if (req.user.role === 'gm') {
+      await assertNotLockedByNextDay(outcome.outlet, outcome.businessDate);
       await assertReconAllowed(outcome.outlet, outcome.businessDate);
     }
 
@@ -326,14 +326,22 @@ sessionsRouter.get('/:id/files/:role', async (req, res, next) => {
  * commit leaves every module locked) — re-derives the gate independently
  * rather than trusting whatever the caller last saw (mirrors legacy's own
  * re-derivation at submit time, now unified with the display gate through
- * one `canSubmit()` — see the plan). On success: commits whatever's left of
- * this session's draft advances/applications/BOH staging/clearances/TDS
- * entries into the cross-session repositories (already empty for any module
- * a prior partial submit locked — see `removeCommittedFromState`), builds
- * the snapshot, and locks the session. Ported from `reconciliation (68).html`
+ * one `canSubmit()` — see the plan). Ported from `reconciliation (68).html`
  * lines 4895–4999 (`initiateSubmit`).
+ *
+ * `persist` is `false` for an admin's own submit — admins are a test/
+ * support identity here, not real reconcilers (confirmed: GMs are the only
+ * ones who actually reconcile), so an admin submitting still builds the
+ * real snapshot and still fires the BGK email (so the trigger itself stays
+ * testable end to end), but commits nothing to any repository and never
+ * touches the session store — the session stays exactly as it was, as if
+ * nothing happened. `true` (GM, the normal path) commits whatever's left of
+ * this session's draft advances/applications/BOH staging/clearances/TDS
+ * entries into the cross-session repositories (already empty for any
+ * module a prior partial submit locked — see `removeCommittedFromState`),
+ * then persists and locks the session.
  */
-async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<SessionDTO> {
+async function finalizeSubmit(session: SessionDTO, userEmail: string, persist: boolean): Promise<SessionDTO> {
   const gate = computeSubmitGate(session);
   if (!gate.ok) {
     const err = new Error('Cannot submit: not fully justified.') as Error & { status?: number; details?: unknown };
@@ -347,26 +355,80 @@ async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<S
   const advanceStore = getAdvanceStore();
   const bohStore = getBohStore();
   const tdsStore = getTdsStore();
+  const submittedAt = new Date().toISOString();
 
-  // Commit draft advances and applications.
-  for (const advance of justification.draftAdvances) {
-    await advanceStore.create(advance);
-  }
-  for (const application of justification.draftApplications) {
-    await advanceStore.recordApplication(application);
-  }
+  let allAdvances: Awaited<ReturnType<typeof advanceStore.list>>;
+  let allApplications: Awaited<ReturnType<typeof advanceStore.listApplications>>;
+  let bohOpen: Awaited<ReturnType<typeof bohStore.list>>;
+  let bohClearedThisSession: Array<{ clearance: (typeof justification.draftBohClearances)[number]; entry: NonNullable<Awaited<ReturnType<typeof bohStore.get>>> }>;
 
-  // Commit draft TDS entries — stays `open` in the repository independent
-  // of this session's own submit state; only an admin closing it later
-  // (once verified in Form 26AS) flips it.
-  for (const tds of justification.draftTdsEntries) {
-    await tdsStore.create(tds);
-  }
+  if (persist) {
+    // Commit draft advances and applications.
+    for (const advance of justification.draftAdvances) {
+      await advanceStore.create(advance);
+    }
+    for (const application of justification.draftApplications) {
+      await advanceStore.recordApplication(application);
+    }
 
-  // Commit staged BOH additions — reusing the staging id so a queued
-  // clearance referencing it still resolves after commit.
-  for (const staged of justification.bohStaging) {
-    await bohStore.create({
+    // Commit draft TDS entries — stays `open` in the repository independent
+    // of this session's own submit state; only an admin closing it later
+    // (once verified in Form 26AS) flips it.
+    for (const tds of justification.draftTdsEntries) {
+      await tdsStore.create(tds);
+    }
+
+    // Commit staged BOH additions — reusing the staging id so a queued
+    // clearance referencing it still resolves after commit.
+    for (const staged of justification.bohStaging) {
+      await bohStore.create({
+        id: staged.id,
+        outlet,
+        orderNo: staged.orderNo,
+        custName: staged.custName,
+        phone: staged.phone,
+        amount: staged.amount,
+        bohDate: staged.bohDate,
+        notes: staged.notes,
+        recordedDate: new Date().toISOString().slice(0, 10),
+        status: 'open',
+        clearedAt: null,
+        clearedBySessionId: null,
+      });
+    }
+    // Commit clearances — flips the row to `cleared`, durably (the port's
+    // fix over legacy; see README/plan).
+    for (const clearance of justification.draftBohClearances) {
+      await bohStore.clear(clearance.bohEntryId, clearance.clearedDate, session.meta.id);
+    }
+
+    [allAdvances, allApplications, bohOpen] = await Promise.all([
+      advanceStore.list(outlet),
+      advanceStore.listApplications(outlet),
+      bohStore.list(outlet),
+    ]);
+    const bohEntryById = new Map(bohOpen.map((b) => [b.id, b] as const));
+    // A cleared entry no longer shows in `bohOpen` (status flipped above), so
+    // fetch it directly for the snapshot's "cleared this session" section.
+    bohClearedThisSession = await Promise.all(
+      justification.draftBohClearances.map(async (clearance) => {
+        const entry = bohEntryById.get(clearance.bohEntryId) ?? (await bohStore.get(clearance.bohEntryId));
+        return { clearance, entry: entry! };
+      }),
+    );
+  } else {
+    // Dry run — read-only. Builds the exact same snapshot shape by unioning
+    // the real repository with this session's own not-yet-committed drafts
+    // in memory, same pattern `/eligible` already uses for live display —
+    // nothing is ever written anywhere.
+    const [committedAdvances, committedApplications, committedBoh] = await Promise.all([
+      advanceStore.list(outlet),
+      advanceStore.listApplications(outlet),
+      bohStore.list(outlet),
+    ]);
+    allAdvances = [...committedAdvances, ...justification.draftAdvances];
+    allApplications = [...committedApplications, ...justification.draftApplications];
+    const stagedAsOpen = justification.bohStaging.map((staged) => ({
       id: staged.id,
       outlet,
       orderNo: staged.orderNo,
@@ -376,32 +438,19 @@ async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<S
       bohDate: staged.bohDate,
       notes: staged.notes,
       recordedDate: new Date().toISOString().slice(0, 10),
-      status: 'open',
+      status: 'open' as const,
       clearedAt: null,
       clearedBySessionId: null,
-    });
+    }));
+    const combinedBoh = [...committedBoh, ...stagedAsOpen];
+    const clearedIds = new Set(justification.draftBohClearances.map((c) => c.bohEntryId));
+    bohOpen = combinedBoh.filter((b) => !clearedIds.has(b.id));
+    const bohEntryById = new Map(combinedBoh.map((b) => [b.id, b] as const));
+    bohClearedThisSession = justification.draftBohClearances.map((clearance) => ({
+      clearance,
+      entry: bohEntryById.get(clearance.bohEntryId)!,
+    }));
   }
-  // Commit clearances — flips the row to `cleared`, durably (the port's
-  // fix over legacy; see README/plan).
-  const submittedAt = new Date().toISOString();
-  for (const clearance of justification.draftBohClearances) {
-    await bohStore.clear(clearance.bohEntryId, clearance.clearedDate, session.meta.id);
-  }
-
-  const [allAdvances, allApplications, bohOpen] = await Promise.all([
-    advanceStore.list(outlet),
-    advanceStore.listApplications(outlet),
-    bohStore.list(outlet),
-  ]);
-  const bohEntryById = new Map(bohOpen.map((b) => [b.id, b] as const));
-  // A cleared entry no longer shows in `bohOpen` (status flipped above), so
-  // fetch it directly for the snapshot's "cleared this session" section.
-  const bohClearedThisSession = await Promise.all(
-    justification.draftBohClearances.map(async (clearance) => {
-      const entry = bohEntryById.get(clearance.bohEntryId) ?? (await bohStore.get(clearance.bohEntryId));
-      return { clearance, entry: entry! };
-    }),
-  );
 
   const snapshot = buildSnapshot({
     outlet,
@@ -451,32 +500,42 @@ async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<S
     submitGate: { ...gate },
     explanation: buildExplanationItems(session),
   };
-  const saved = await getSessionStore().update(session.meta.id, submitted);
-  // Discards both a leftover sibling draft (never submitted, same day) and
-  // a prior submitted session for this same outlet+date (an approved
-  // re-run) — this newly-submitted one is now the definitive record.
-  await supersedeSessions(session.meta.outlet, session.meta.businessDate, session.meta.id, ['draft', 'submitted']);
+
+  let result: SessionDTO;
+  if (persist) {
+    result = await getSessionStore().update(session.meta.id, submitted);
+    // Discards both a leftover sibling draft (never submitted, same day) and
+    // a prior submitted session for this same outlet+date (an approved
+    // re-run) — this newly-submitted one is now the definitive record.
+    await supersedeSessions(session.meta.outlet, session.meta.businessDate, session.meta.id, ['draft', 'submitted']);
+  } else {
+    // Dry run — the full computed result, exactly as a real submit would
+    // return it, just never written to the session store or any repository.
+    result = submitted;
+  }
 
   // Best-effort — awaited so a delivery failure is logged before the
   // response goes out, but `sendEmail` never throws, so it can never turn
-  // a successful submit into a failed one.
-  if (saved.snapshot) {
-    const snapshot = saved.snapshot as never;
+  // a successful submit into a failed one. Fires in dry-run mode too — the
+  // whole point of keeping this reachable for admin is to test the BGK
+  // trigger itself end to end.
+  if (result.snapshot) {
+    const reportSnapshot = result.snapshot as never;
     await sendEmail({
       to: [...config.email.bgkEmails],
-      subject: `Reconciliation submitted — ${outletName(saved.meta.outlet)} — ${saved.meta.businessDate ?? 'no business date'}`,
-      html: buildReportHtml(snapshot),
+      subject: `Reconciliation submitted — ${outletName(result.meta.outlet)} — ${result.meta.businessDate ?? 'no business date'}`,
+      html: buildReportHtml(reportSnapshot),
       attachments: [
         {
-          filename: `Recon-${saved.meta.outlet}-${saved.meta.businessDate ?? 'no-date'}.xlsx`,
-          content: buildReportXlsx(snapshot),
+          filename: `Recon-${result.meta.outlet}-${result.meta.businessDate ?? 'no-date'}.xlsx`,
+          content: buildReportXlsx(reportSnapshot),
           contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         },
       ],
     });
   }
 
-  return saved;
+  return result;
 }
 
 sessionsRouter.post('/:id/submit', async (req, res, next) => {
@@ -496,7 +555,7 @@ sessionsRouter.post('/:id/submit', async (req, res, next) => {
       return;
     }
 
-    const saved = await finalizeSubmit(session, req.user.email);
+    const saved = await finalizeSubmit(session, req.user.email, req.user.role !== 'admin');
     res.json(saved);
   } catch (err) {
     next(err);
@@ -571,31 +630,39 @@ sessionsRouter.post('/:id/submit-partial', async (req, res, next) => {
     const advanceStore = getAdvanceStore();
     const bohStore = getBohStore();
     const tdsStore = getTdsStore();
+    // Admin is a test/support identity here, not a real reconciler (see
+    // `finalizeSubmit`'s own doc comment) — nothing this route touches gets
+    // written anywhere for that role either, including these per-module
+    // repository commits that normally happen before every module ends up
+    // locked.
+    const persist = req.user.role !== 'admin';
 
     let justification = session.justification;
     for (const module of moduleIds) {
       const plan = planModuleCommit(justification, module);
-      for (const advance of plan.advances) await advanceStore.create(advance);
-      for (const application of plan.applications) await advanceStore.recordApplication(application);
-      for (const tds of plan.tdsEntries) await tdsStore.create(tds);
-      for (const staged of plan.bohStaging) {
-        await bohStore.create({
-          id: staged.id,
-          outlet,
-          orderNo: staged.orderNo,
-          custName: staged.custName,
-          phone: staged.phone,
-          amount: staged.amount,
-          bohDate: staged.bohDate,
-          notes: staged.notes,
-          recordedDate: new Date().toISOString().slice(0, 10),
-          status: 'open',
-          clearedAt: null,
-          clearedBySessionId: null,
-        });
-      }
-      for (const clearance of plan.bohClearances) {
-        await bohStore.clear(clearance.bohEntryId, clearance.clearedDate, session.meta.id);
+      if (persist) {
+        for (const advance of plan.advances) await advanceStore.create(advance);
+        for (const application of plan.applications) await advanceStore.recordApplication(application);
+        for (const tds of plan.tdsEntries) await tdsStore.create(tds);
+        for (const staged of plan.bohStaging) {
+          await bohStore.create({
+            id: staged.id,
+            outlet,
+            orderNo: staged.orderNo,
+            custName: staged.custName,
+            phone: staged.phone,
+            amount: staged.amount,
+            bohDate: staged.bohDate,
+            notes: staged.notes,
+            recordedDate: new Date().toISOString().slice(0, 10),
+            status: 'open',
+            clearedAt: null,
+            clearedBySessionId: null,
+          });
+        }
+        for (const clearance of plan.bohClearances) {
+          await bohStore.clear(clearance.bohEntryId, clearance.clearedDate, session.meta.id);
+        }
       }
       justification = removeCommittedFromState(justification, plan);
     }
@@ -608,8 +675,19 @@ sessionsRouter.post('/:id/submit-partial', async (req, res, next) => {
     };
 
     if (isEverySubmissionModuleLocked(nextSubmittedModules)) {
-      const saved = await finalizeSubmit(updatedSession, req.user.email);
+      const saved = await finalizeSubmit(updatedSession, req.user.email, persist);
       res.json(saved);
+      return;
+    }
+
+    if (!persist) {
+      // Dry run, not yet every module locked — same computed response a
+      // real partial submit would return, just never written anywhere.
+      res.json({
+        ...updatedSession,
+        submitGate: computeSubmitGate(updatedSession),
+        explanation: buildExplanationItems(updatedSession),
+      });
       return;
     }
 
