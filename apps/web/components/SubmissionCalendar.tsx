@@ -19,13 +19,19 @@
 import { useState } from 'react';
 import type { OutletSubmissionsDTO, SubmissionDayStatus } from '@toit/contracts';
 
-/** Solid fills with white text — a pale `tag-*` background reads as washed-out at this size; a day's status needs to register at a glance. */
+/**
+ * A tinted fill (the solid color at partial opacity, over the panel's own
+ * white background) with its matching dark `-ink` text — the original pale
+ * `tag-*-soft` background read as washed-out at this size, but the full
+ * solid fill (an earlier pass at this) read as too flashy across a whole
+ * month grid. This is the middle ground.
+ */
 const DAY_TAG: Record<SubmissionDayStatus, string> = {
-  green: 'bg-ok text-white',
-  yellow: 'bg-warn text-white',
-  orange: 'bg-orange text-white',
-  red: 'bg-err text-white',
-  today: 'bg-accent text-white',
+  green: 'bg-ok/35 text-ok-ink',
+  yellow: 'bg-warn/35 text-warn-ink',
+  orange: 'bg-orange/35 text-orange-ink',
+  red: 'bg-err/35 text-err-ink',
+  today: 'bg-accent/35 text-accent-ink',
 };
 
 const LEGEND_DOT: Record<SubmissionDayStatus, string> = {
