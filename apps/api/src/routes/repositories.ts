@@ -9,7 +9,13 @@
  * `[...S.bohRepo, ...S.bohRepoStaging]` read).
  */
 
-import type { AdvanceWithBalanceDTO, CloseAdvanceRequest, EligibleAdvanceDTO, EligibleBohEntryDTO } from '@toit/contracts';
+import type {
+  AdvanceWithBalanceDTO,
+  BohEntryDTO,
+  CloseAdvanceRequest,
+  EligibleAdvanceDTO,
+  EligibleBohEntryDTO,
+} from '@toit/contracts';
 import {
   OUTLET_CODES,
   advanceBalance,
@@ -23,8 +29,8 @@ import { Router } from 'express';
 import { outletScope, requireAdmin } from '../middleware/auth.js';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 
-/** How long after a GM's own closure an admin can still undo it — see the reopen route below. */
-const ADVANCE_REOPEN_WINDOW_DAYS = 7;
+/** How long after a GM's own closure/clearance an admin can still undo it — shared by both the advance and BOH reopen routes below. */
+const REOPEN_WINDOW_DAYS = 7;
 
 /** Whole-calendar-day difference, IST-anchored — same convention as `bohAging.ts`'s own `daysBetween`, not raw UTC/millisecond math on a full timestamp. */
 function daysBetween(earlierIso: string, laterIso: string): number {
@@ -139,7 +145,7 @@ advancesRouter.post('/:id/close', async (req, res, next) => {
 
 // POST /api/advances/:id/reopen — admin-only (unlike close, which a GM does
 // for their own outlet). Undoes a mistaken closure, but only within
-// ADVANCE_REOPEN_WINDOW_DAYS of the closing date — enforced here, not just
+// REOPEN_WINDOW_DAYS of the closing date — enforced here, not just
 // hidden client-side, same as every other admin mutation's authorization in
 // this codebase.
 advancesRouter.post('/:id/reopen', requireAdmin, async (req, res, next) => {
@@ -160,9 +166,9 @@ advancesRouter.post('/:id/reopen', requireAdmin, async (req, res, next) => {
     }
     const closedCivilDate = todayIsoIST(new Date(advance.closedAt));
     const ageDays = daysBetween(closedCivilDate, todayIsoIST());
-    if (ageDays > ADVANCE_REOPEN_WINDOW_DAYS) {
+    if (ageDays > REOPEN_WINDOW_DAYS) {
       res.status(409).json({
-        error: `This advance was closed ${ageDays} days ago — reopening is only allowed within ${ADVANCE_REOPEN_WINDOW_DAYS} days of closing.`,
+        error: `This advance was closed ${ageDays} days ago — reopening is only allowed within ${REOPEN_WINDOW_DAYS} days of closing.`,
       });
       return;
     }
@@ -214,6 +220,68 @@ bohRouter.get('/eligible', async (req, res, next) => {
       exactAmount: amount,
     });
     res.json(eligible satisfies EligibleBohEntryDTO[]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/boh — every committed bill-on-hold entry for the caller's outlet
+// (open + cleared), no sessionId and no draft-state merge — mirrors
+// `GET /api/advances`, for the standalone Bills on Hold management page.
+bohRouter.get('/', async (req, res, next) => {
+  try {
+    let outlet: OutletCode | null;
+    if (req.user.role === 'admin') {
+      const requested = typeof req.query.outlet === 'string' ? (req.query.outlet as OutletCode) : undefined;
+      outlet = requested && (OUTLET_CODES as string[]).includes(requested) ? requested : null;
+    } else {
+      outlet = req.user.outlet;
+      if (!outlet) {
+        res.status(400).json({ error: 'No outlet to show bills on hold for.' });
+        return;
+      }
+    }
+    const entries =
+      outlet === null
+        ? (await Promise.all(OUTLET_CODES.map((code) => getBohStore().list(code)))).flat()
+        : await getBohStore().list(outlet);
+    res.json(entries satisfies BohEntryDTO[]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/boh/:id/reopen — admin-only, same REOPEN_WINDOW_DAYS discipline
+// as the advance reopen route above. Undoes a mistaken clearance — there is
+// no "reopen against multiple payments" concept to carry over from the
+// multi-advance-apply feature: a bill on hold is cleared (or reopened) as
+// one whole row, always has been.
+bohRouter.post('/:id/reopen', requireAdmin, async (req, res, next) => {
+  try {
+    const store = getBohStore();
+    const entry = await store.get(req.params.id!);
+    if (!entry) {
+      res.status(404).json({ error: 'Bill on hold entry not found' });
+      return;
+    }
+    if (entry.status === 'open') {
+      res.status(409).json({ error: 'This bill is already open.' });
+      return;
+    }
+    if (!entry.clearedAt) {
+      res.status(409).json({ error: 'This bill has no cleared date on record.' });
+      return;
+    }
+    const clearedCivilDate = todayIsoIST(new Date(entry.clearedAt));
+    const ageDays = daysBetween(clearedCivilDate, todayIsoIST());
+    if (ageDays > REOPEN_WINDOW_DAYS) {
+      res.status(409).json({
+        error: `This bill was cleared ${ageDays} days ago — reopening is only allowed within ${REOPEN_WINDOW_DAYS} days of clearing.`,
+      });
+      return;
+    }
+    const reopened = await store.reopen(entry.id);
+    res.json(reopened);
   } catch (err) {
     next(err);
   }
