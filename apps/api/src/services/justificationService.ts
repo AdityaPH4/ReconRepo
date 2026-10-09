@@ -437,7 +437,15 @@ export function applyAdvance(
 
   const advances = advanceIds.map((id) => {
     const advance = ctx.advances.find((a) => a.id === id);
-    if (!advance) throw new JustificationError('Advance not found.');
+    if (!advance) {
+      // Diagnostic-only — this branch's error is swallowed as an ordinary
+      // 400 upstream (app.ts's error handler only logs unexpected/500s), so
+      // without this a real occurrence leaves no trace to investigate.
+      console.error(
+        `[applyAdvance] id ${id} not found in candidate pool (sessionId=${ctx.sessionId}, pool size=${ctx.advances.length}, pool ids=${JSON.stringify(ctx.advances.map((a) => ({ id: a.id, outlet: a.outlet, custName: a.custName, status: a.status })))})`,
+      );
+      throw new JustificationError('Advance not found.');
+    }
     if (isAdvanceClosed(advance)) {
       throw new JustificationError(`${advance.custName}'s advance has been closed and can no longer be applied.`);
     }
