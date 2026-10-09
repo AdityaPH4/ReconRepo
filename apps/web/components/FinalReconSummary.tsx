@@ -266,9 +266,13 @@ function PinelabsBreakdown({ breakdown }: { breakdown: PinelabsBreakdownDTO }) {
           </thead>
           <tbody>
             {breakdown.rows.map((r) => {
-              const isOther = r.acquirer === 'Other';
+              // The "Only in POS" plug row (see `pinelabsBreakdown.ts`'s own
+              // doc comment) has nothing on the Pinelabs side by
+              // construction — muted the same way "Other" is, so it reads
+              // as a reconciling footnote rather than another real acquirer.
+              const isMuted = r.acquirer === 'Other' || r.pinelabsTotal === 0;
               return (
-                <tr key={r.acquirer} className={isOther ? 'text-ink-3' : undefined}>
+                <tr key={r.acquirer} className={isMuted ? 'text-ink-3' : undefined}>
                   <td className="whitespace-nowrap">
                     {r.acquirer}
                     {r.acquirer === 'AMEX' && breakdown.amexDupCount > 0 && (
@@ -276,7 +280,7 @@ function PinelabsBreakdown({ breakdown }: { breakdown: PinelabsBreakdownDTO }) {
                     )}
                   </td>
                   <td className="num">{r.count}</td>
-                  <td className="num font-semibold">{fmt(r.pinelabsTotal)}</td>
+                  <td className="num font-semibold">{r.pinelabsTotal === 0 ? '—' : fmt(r.pinelabsTotal)}</td>
                   <td className="num">{r.prTotal === null ? '—' : fmt(r.prTotal)}</td>
                   <td className={`num ${r.diff === null ? '' : diffColor(r.diff)}`}>
                     {r.diff === null

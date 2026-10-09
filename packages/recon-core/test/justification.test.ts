@@ -34,6 +34,7 @@ import {
   isAdvanceExhausted,
   isEligibleSquareOffPartner,
   isSquareOffResolved,
+  pinelabsAcquirerBreakdown,
   pinelabsCompleteness,
   squareOffGroupKey,
   squareOffNet,
@@ -801,6 +802,55 @@ describe('canSubmit', () => {
     });
     assert.equal(unblocked.ok, true);
     assert.equal(unblocked.status, 'balanced');
+  });
+});
+
+describe('pinelabsAcquirerBreakdown()', () => {
+  it("every row's diff always sums to totalDiff, even with an unmatched ('Only in POS') amount the per-acquirer rows can't attribute to anyone", () => {
+    const reconRows = [
+      reconRow({ rrn: 'R1', plAmt: 1500, prAmt: 1000, diff: 500, zip: zip({ acquirer: 'HDFC', amount: 1500, rrn: 'R1' }), pr: pr({ amount: 1000, rrn: 'R1' }) }),
+      reconRow({ rrn: 'R2', plAmt: 9000, prAmt: 780, diff: 8220, zip: zip({ acquirer: 'Kotak', amount: 9000, rrn: 'R2' }), pr: pr({ amount: 780, rrn: 'R2' }) }),
+    ];
+    const pinelabs = pinelabsResult({
+      reconRows: reconRows as never,
+      onlyPOS: [{ orders: ['O-unmatched'], amount: 21120, rrn: '' }] as never,
+    });
+    const zipInside = [
+      zip({ acquirer: 'HDFC', amount: 1500, rrn: 'R1' }),
+      zip({ acquirer: 'Kotak', amount: 9000, rrn: 'R2' }),
+      zip({ acquirer: 'AMEX', amount: 300, rrn: 'R3' }),
+    ];
+    // A separate array from `reconRows`'s own embedded pr/zip — `totalPR` sums
+    // over this directly, same as the real engine does, so a PR row with no
+    // terminal match at all (the last one here) has nowhere else to go.
+    const prData = [
+      pr({ tab: 'pinelabs', amount: 1000, rrn: 'R1' }),
+      pr({ tab: 'pinelabs', amount: 780, rrn: 'R2' }),
+      pr({ tab: 'pinelabs', amount: 300, rrn: 'R3', isAmex: true }),
+      pr({ tab: 'pinelabs', amount: 21120, rrn: '', orderNo: 'O-unmatched' }),
+    ];
+
+    const result = pinelabsAcquirerBreakdown(prData as never, zipInside as never, pinelabs);
+
+    assert.equal(result.totalDiff, -12400);
+    const onlyPosRow = result.rows.find((r) => r.acquirer.startsWith('Only in POS'));
+    assert.ok(onlyPosRow, 'expected an "Only in POS" plug row');
+    assert.equal(onlyPosRow!.diff, -21120);
+
+    const summedRowDiffs = result.rows.reduce((s, r) => s + (r.diff ?? 0), 0);
+    assert.equal(summedRowDiffs, result.totalDiff, 'rows must always sum to the grand total — that is the whole point of the plug row');
+  });
+
+  it('omits the plug row entirely when every Payment Report row matched something', () => {
+    const reconRows = [
+      reconRow({ rrn: 'R1', plAmt: 500, prAmt: 500, diff: 0, zip: zip({ acquirer: 'HDFC', amount: 500, rrn: 'R1' }), pr: pr({ amount: 500, rrn: 'R1' }) }),
+    ];
+    const pinelabs = pinelabsResult({ reconRows: reconRows as never });
+    const zipInside = [zip({ acquirer: 'HDFC', amount: 500, rrn: 'R1' })];
+    const prData = [pr({ tab: 'pinelabs', amount: 500, rrn: 'R1' })];
+
+    const result = pinelabsAcquirerBreakdown(prData as never, zipInside as never, pinelabs);
+    assert.ok(!result.rows.some((r) => r.acquirer.startsWith('Only in POS')));
   });
 });
 
