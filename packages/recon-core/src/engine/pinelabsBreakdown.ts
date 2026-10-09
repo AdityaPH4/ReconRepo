@@ -6,8 +6,20 @@
  * A second view onto the same Pinelabs numbers as `pinelabsTerminalPR`
  * (`frs.ts`), split by acquirer (HDFC / Kotak-RBL / AMEX / everything else)
  * so a GM can see which acquirer is driving a Pinelabs-wide diff.
+ *
+ * Every acquirer row's own Payment Report figure only ever covers
+ * *matched* transactions (`pinelabs.reconRows`) — a Payment Report row with
+ * no corresponding Pinelabs terminal transaction at all ("Only in POS") has
+ * no ZIP-side acquirer to classify it by, so it can't appear in any
+ * acquirer's own row. The grand total's own Payment Report figure, though,
+ * is every Payment-Report row tagged Pinelabs, matched or not — so without
+ * an explicit plug row, the rows would visibly fail to add up to the total
+ * by exactly that unmatched amount (reads as "something's wrong" even
+ * though nothing is). The `'Only in POS'` row below is exactly that plug —
+ * by construction, every row's `diff` always sums to `totalDiff`.
  */
 
+import { AMOUNT_EPSILON } from '../constants.js';
 import type { PinelabsResult, PRRow, ZipRow } from '../types.js';
 
 export interface AcquirerGroupRow {
@@ -58,17 +70,18 @@ export function pinelabsAcquirerBreakdown(
     .reduce((s, r) => s + (Number.isNaN(r.amount) ? 0 : r.amount), 0);
 
   // Non-AMEX matched rows only — AMEX is matched separately (auth code /
-  // amount), never through `reconRows`.
-  const prForGroup = (grp: 'HDFC' | 'Kotak'): number =>
+  // amount), never through `reconRows`. `'Other'` included (unlike before)
+  // so a matched row whose acquirer is neither HDFC/Kotak/RBL/AMEX still
+  // ends up counted somewhere, rather than silently vanishing from both
+  // this group's own total and the unmatched plug row below.
+  const prForGroup = (grp: 'HDFC' | 'Kotak' | 'Other'): number =>
     pinelabs.reconRows
-      .filter((x) => {
-        const a = ((x.zip as ZipRow)?.acquirer || '').toUpperCase();
-        return grp === 'HDFC' ? a.includes('HDFC') : a.includes('KOTAK') || a.includes('RBL');
-      })
+      .filter((x) => classifyAcquirer((x.zip as ZipRow)?.acquirer) === grp)
       .reduce((s, x) => s + x.prAmt, 0);
 
   const hdfcPR = prForGroup('HDFC');
   const kotakPR = prForGroup('Kotak');
+  const otherPR = prForGroup('Other');
   const amexPR = prData.filter((r) => r.isAmex).reduce((s, r) => s + (Number.isNaN(r.amount) ? 0 : r.amount), 0);
 
   const rows: AcquirerGroupRow[] = [
@@ -86,7 +99,29 @@ export function pinelabsAcquirerBreakdown(
     { acquirer: 'AMEX', count: counts.AMEX, pinelabsTotal: amounts.AMEX, prTotal: amexPR, diff: amounts.AMEX - amexPR },
   ];
   if (amounts.Other > 0) {
-    rows.push({ acquirer: 'Other', count: counts.Other, pinelabsTotal: amounts.Other, prTotal: null, diff: null });
+    rows.push({
+      acquirer: 'Other',
+      count: counts.Other,
+      pinelabsTotal: amounts.Other,
+      prTotal: otherPR || null,
+      diff: amounts.Other - otherPR,
+    });
+  }
+
+  // Plug row — see this module's own doc comment. Whatever of `totalPR`
+  // isn't already accounted for above has no terminal transaction at all
+  // ("Only in POS"); without this row the table's own rows would fail to
+  // visibly add up to `totalDiff`, reading as a bug rather than the real,
+  // correctly-computed shortfall it is.
+  const unmatchedPR = totalPR - (hdfcPR + kotakPR + otherPR + amexPR);
+  if (Math.abs(unmatchedPR) > AMOUNT_EPSILON) {
+    rows.push({
+      acquirer: 'Only in POS (no terminal match)',
+      count: pinelabs.onlyPOS.length,
+      pinelabsTotal: 0,
+      prTotal: unmatchedPR,
+      diff: -unmatchedPR,
+    });
   }
 
   return {
