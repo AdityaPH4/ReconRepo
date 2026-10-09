@@ -1,9 +1,9 @@
 /**
- * The GM's dashboard: today's session status, the next business date due
- * (`nextExpectedReconDate` — see `reconSequenceGate.ts`, the same
- * computation the upload gate itself enforces against), a Tips-this-month
- * total, a Bills-on-Hold aging card, an Open-advances summary, and this
- * outlet's own submissions calendar.
+ * The GM's dashboard: today's session status, a Tips-this-month total, a
+ * Bills-on-Hold aging card, an Open-advances summary, and this outlet's own
+ * submissions calendar — which is what surfaces which past days are still
+ * outstanding (there is deliberately no single "next date due" concept any
+ * more: with partial submission, a day can be worked in any order, any time).
  *
  * Tips: summed from every justification entry with `remark === 'Tips'`,
  * regardless of source — `REMARKS_EXCESS` in
@@ -35,7 +35,6 @@ import type { OutletCode } from '@toit/recon-core';
 import { advanceBalance, isAdvanceExhausted, OUTLET_NAMES, todayIsoIST } from '@toit/recon-core';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 import { buildBohAging } from './bohAging.js';
-import { nextExpectedReconDate } from './reconSequenceGate.js';
 import { buildOutletSubmissionDays } from './submissionCalendar.js';
 
 /** The calendar month immediately before `month` (`yyyy-mm`) — wraps Jan back to December of the prior year via `Date`'s own rollover. */
@@ -70,9 +69,6 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
   const todayStatus = todaySession
     ? { sessionId: todaySession.id, status: todaySession.status, grandDiff: todaySession.grandDiff }
     : { sessionId: null, status: null, grandDiff: null };
-
-  // ── Next date due ─────────────────────────────────────────────────────
-  const nextReconDate = await nextExpectedReconDate(outlet);
 
   // ── Tips: 4 half-month periods ───────────────────────────────────────
   const periodRanges = [...halfMonthRanges(prevMonth(month)), ...halfMonthRanges(month)];
@@ -136,7 +132,6 @@ export async function buildDashboard(outlet: OutletCode): Promise<DashboardDTO> 
   return {
     outlet,
     today,
-    nextReconDate,
     todayStatus,
     tipsMonth,
     bohAging,

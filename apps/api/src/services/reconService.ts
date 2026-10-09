@@ -91,9 +91,7 @@ export interface RunInputFiles {
    * when the file itself yields no date — it never overrides a
    * successfully file-derived one, so an ordinary upload can carry a
    * stale/irrelevant value here with no effect. Unlike `outletOverride`,
-   * not admin-only: a closed-outlet day is a GM's own call to make, and the
-   * resulting date is still fully subject to `assertNoDateGap` in
-   * `routes/sessions.ts`, exactly like a file-derived date.
+   * not admin-only: a closed-outlet day is a GM's own call to make.
    */
   businessDateOverride?: string;
 }
