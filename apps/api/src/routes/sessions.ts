@@ -13,6 +13,7 @@ import {
   appliedApplicationIdsOf,
   autoStageBohRows,
   buildReportHtml,
+  buildReportXlsx,
   buildSnapshot,
   emptyJustificationState,
   OUTLET_CODES,
@@ -460,10 +461,18 @@ async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<S
   // response goes out, but `sendEmail` never throws, so it can never turn
   // a successful submit into a failed one.
   if (saved.snapshot) {
+    const snapshot = saved.snapshot as never;
     await sendEmail({
       to: [...config.email.bgkEmails],
       subject: `Reconciliation submitted — ${outletName(saved.meta.outlet)} — ${saved.meta.businessDate ?? 'no business date'}`,
-      html: buildReportHtml(saved.snapshot as never),
+      html: buildReportHtml(snapshot),
+      attachments: [
+        {
+          filename: `Recon-${saved.meta.outlet}-${saved.meta.businessDate ?? 'no-date'}.xlsx`,
+          content: buildReportXlsx(snapshot),
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        },
+      ],
     });
   }
 

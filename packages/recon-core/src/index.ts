@@ -212,5 +212,6 @@ export { buildSnapshot } from './justification/snapshot.js';
 export type { BuildSnapshotInput, Snapshot, SettlementLedgerRow, TaxesSummary } from './justification/snapshot.js';
 
 export { buildReportHtml } from './justification/report.js';
+export { buildReportXlsx } from './justification/reportXlsx.js';
 
 export type { FrsRowDTOLike } from './justification/reportTypes.js';

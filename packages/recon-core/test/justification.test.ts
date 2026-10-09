@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import * as XLSX from 'xlsx';
 
 import {
   AMOUNT_EPSILON,
@@ -17,6 +18,7 @@ import {
   buildHdfcUpiItems,
   buildPinelabsItems,
   buildReportHtml,
+  buildReportXlsx,
   buildSnapshot,
   canSubmit,
   cashOk,
@@ -1470,5 +1472,41 @@ describe('buildReportHtml()', () => {
     const taxesSection = html.slice(html.indexOf('<h2>Taxes</h2>'));
     assert.match(taxesSection, /<th class=ra>VAT<\/th>/);
     assert.match(taxesSection, /₹0\.00/);
+  });
+
+  describe('buildReportXlsx()', () => {
+    function readSheetNames(buf: Buffer): string[] {
+      return XLSX.read(buf, { type: 'buffer' }).SheetNames;
+    }
+
+    it('produces a readable workbook with one sheet per report section, including optional ones when present', () => {
+      const buf = buildReportXlsx(fullSnapshot());
+      const names = readSheetNames(buf);
+      assert.deepEqual(names, ['Summary', 'Settlement Ledger', 'Pinelabs Breakdown', 'Variances', 'Bills on Hold', 'Advances', 'Taxes']);
+    });
+
+    it('omits the Pinelabs Breakdown and Taxes sheets when the snapshot predates/lacks them', () => {
+      const full = fullSnapshot();
+      const old: Snapshot = {
+        ...full,
+        pinelabs: { squareOffPairs: full.pinelabs.squareOffPairs },
+        taxes: undefined,
+      };
+      const names = readSheetNames(buildReportXlsx(old));
+      assert.ok(!names.includes('Pinelabs Breakdown'));
+      assert.ok(!names.includes('Taxes'));
+      assert.ok(names.includes('Summary'));
+      assert.ok(names.includes('Settlement Ledger'));
+    });
+
+    it('writes amounts as real numbers, not pre-formatted currency strings — the whole point of an xlsx over the HTML report', () => {
+      const buf = buildReportXlsx(fullSnapshot());
+      const wb = XLSX.read(buf, { type: 'buffer' });
+      const taxesSheet = wb.Sheets['Taxes']!;
+      const rows = XLSX.utils.sheet_to_json<number[]>(taxesSheet, { header: 1 });
+      // Header row, then one data row: Net Sales 250000, Net CGST 4500, Net SGST 4500, VAT 100, Total 9100.
+      assert.equal(typeof rows[1]![0], 'number');
+      assert.equal(rows[1]![0], 250000);
+    });
   });
 });

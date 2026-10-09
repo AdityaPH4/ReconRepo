@@ -27,10 +27,17 @@ function getTransporter(): Transporter {
   return transporter;
 }
 
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
+}
+
 export interface EmailMessage {
   to: readonly string[];
   subject: string;
   html: string;
+  attachments?: readonly EmailAttachment[];
 }
 
 /**
@@ -54,6 +61,7 @@ export async function sendEmail(message: EmailMessage): Promise<void> {
       to: message.to.join(', '),
       subject: message.subject,
       html: message.html,
+      attachments: message.attachments ? [...message.attachments] : undefined,
     });
     console.log(`[email] Sent "${message.subject}" to ${message.to.join(', ')}`);
   } catch (err) {
