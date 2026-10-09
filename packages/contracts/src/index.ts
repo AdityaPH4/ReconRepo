@@ -842,9 +842,11 @@ export interface ApiErrorDTO {
    * can react without string-matching `error`: `APPROVAL_REQUIRED` on the
    * "already reconciled today" block; `BUSINESS_DATE_REQUIRED` when a
    * zero-transaction Payment Report has no date of its own and no manual
-   * override was given either.
+   * override was given either; `RESUBMISSION_LOCKED` when the day right
+   * after this one has already been submitted — unlike `APPROVAL_REQUIRED`,
+   * there is no request-approval path out of this one, for anyone.
    */
-  code?: 'APPROVAL_REQUIRED' | 'BUSINESS_DATE_REQUIRED';
+  code?: 'APPROVAL_REQUIRED' | 'BUSINESS_DATE_REQUIRED' | 'RESUBMISSION_LOCKED';
   outlet?: OutletCode;
   businessDate?: string;
 }

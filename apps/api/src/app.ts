@@ -18,7 +18,7 @@ import { justificationRouter } from './routes/justification.js';
 import { mprSessionsRouter } from './routes/mprSessions.js';
 import { sessionsRouter } from './routes/sessions.js';
 import { tdsRouter } from './routes/tds.js';
-import { ApprovalRequiredError } from './services/approvalService.js';
+import { ApprovalRequiredError, ResubmissionLockedError } from './services/approvalService.js';
 import { BadRequestError, BusinessDateRequiredError } from './services/reconService.js';
 
 export const app = express();
@@ -74,6 +74,15 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(err.status).json({
       error: err.message,
       code: 'APPROVAL_REQUIRED',
+      outlet: err.outlet,
+      businessDate: err.businessDate,
+    } satisfies ApiErrorDTO);
+    return;
+  }
+  if (err instanceof ResubmissionLockedError) {
+    res.status(err.status).json({
+      error: err.message,
+      code: 'RESUBMISSION_LOCKED',
       outlet: err.outlet,
       businessDate: err.businessDate,
     } satisfies ApiErrorDTO);

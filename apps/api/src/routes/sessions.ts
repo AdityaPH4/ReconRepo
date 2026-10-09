@@ -24,7 +24,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
 import { outletScope } from '../middleware/auth.js';
-import { assertReconAllowed } from '../services/approvalService.js';
+import { assertNotLockedByNextDay, assertReconAllowed } from '../services/approvalService.js';
 import {
   buildExplanationItems,
   computeSubmitGate,
@@ -135,13 +135,18 @@ sessionsRouter.post('/', upload.fields([...UPLOAD_FIELDS]), async (req, res, nex
       ...(businessDateOverride ? { businessDateOverride } : {}),
     });
 
-    // A GM can't re-reconcile an already-submitted date without an admin's
-    // approval — parsing is pure (nothing written yet), so this throws
-    // before anything is persisted. Admins are exempt; they're the
-    // approvers. (There is deliberately no day-order gate here — with
-    // partial submission, a GM can work any date at any time; the
-    // submissions calendar is what surfaces which past days are still
-    // outstanding, not a hard block on uploading out of order.)
+    // Resubmitting an already-submitted date goes through two stacked
+    // gates — parsing is pure (nothing written yet), so both throw before
+    // anything is persisted. First, an absolute lock checked for every
+    // role, admin included: once the very next calendar day has itself
+    // been submitted, this day can never be resubmitted again, by anyone.
+    // Second (GM only — admins are the approvers), the existing softer
+    // approval gate. (There is deliberately no day-*order* gate for a
+    // first-time submission — with partial submission, a GM can work any
+    // date at any time; the submissions calendar is what surfaces which
+    // past days are still outstanding, not a hard block on uploading out
+    // of order. The lock above is about *resubmitting*, not ordering.)
+    await assertNotLockedByNextDay(outcome.outlet, outcome.businessDate);
     if (req.user.role === 'gm') {
       await assertReconAllowed(outcome.outlet, outcome.businessDate);
     }
