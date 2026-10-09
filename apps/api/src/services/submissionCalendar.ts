@@ -12,20 +12,15 @@ export function daysInMonth(month: string): number {
   return new Date(Date.UTC(year!, mon!, 0)).getUTCDate();
 }
 
-/**
- * One session per date — `supersedeSessions()` discards any sibling the
- * moment one session for an outlet+date is submitted (or a GM starts
- * fresh), so `sessions` (already filtered to non-discarded by the store's
- * default `list()`) never carries more than one entry per date here.
- */
-export function buildOutletSubmissionDays(
-  sessions: readonly SessionListItemDTO[],
-  outlet: OutletCode,
-  outletName: string,
-  month: string,
-  today: string,
-  assignedGms: readonly string[] = [],
-): OutletSubmissionsDTO {
+/** The calendar month immediately before `month` (`yyyy-mm`) — wraps Jan back to December of the prior year via `Date`'s own rollover. Shared with `dashboardService.ts`'s Tips half-month ranges. */
+export function prevMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(Date.UTC(y!, m! - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** One calendar month's day-by-day status, given every session relevant to it. */
+function buildMonthDays(sessions: readonly SessionListItemDTO[], month: string, today: string): SubmissionDayDTO[] {
   const byDate = new Map<string, SessionListItemDTO>();
   for (const s of sessions) {
     if (s.businessDate?.startsWith(month)) byDate.set(s.businessDate, s);
@@ -54,5 +49,35 @@ export function buildOutletSubmissionDays(
     }
     days.push({ date, status });
   }
-  return { outlet, outletName, days, assignedGms: [...assignedGms] };
+  return days;
+}
+
+/**
+ * One session per date — `supersedeSessions()` discards any sibling the
+ * moment one session for an outlet+date is submitted (or a GM starts
+ * fresh), so `sessions` (already filtered to non-discarded by the store's
+ * default `list()`) never carries more than one entry per date here.
+ *
+ * Bundles the current month and the one right before it in a single call —
+ * the dashboard's back-arrow navigates between exactly these two, client
+ * side, with no second request.
+ */
+export function buildOutletSubmissionDays(
+  sessions: readonly SessionListItemDTO[],
+  outlet: OutletCode,
+  outletName: string,
+  month: string,
+  today: string,
+  assignedGms: readonly string[] = [],
+): OutletSubmissionsDTO {
+  const previousMonth = prevMonth(month);
+  return {
+    outlet,
+    outletName,
+    month,
+    days: buildMonthDays(sessions, month, today),
+    previousMonth,
+    previousMonthDays: buildMonthDays(sessions, previousMonth, today),
+    assignedGms: [...assignedGms],
+  };
 }

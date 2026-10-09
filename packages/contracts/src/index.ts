@@ -731,7 +731,12 @@ export interface SubmissionDayDTO {
 export interface OutletSubmissionsDTO {
   outlet: OutletCode;
   outletName: string;
+  /** `yyyy-mm` — the current calendar month `days` covers. */
+  month: string;
   days: SubmissionDayDTO[];
+  /** `yyyy-mm` — the calendar month right before `month`, for the dashboard's back-arrow. */
+  previousMonth: string;
+  previousMonthDays: SubmissionDayDTO[];
   /** This outlet's `GM_OUTLETS`-assigned emails — empty when none are configured. Admin dashboard only; always `[]` on the GM dashboard's own single-outlet call. */
   assignedGms: string[];
 }

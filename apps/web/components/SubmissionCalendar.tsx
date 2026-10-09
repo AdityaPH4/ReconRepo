@@ -8,19 +8,26 @@
  * Monday-first grid. Shared by the GM dashboard (its own outlet) and the
  * admin dashboard (every outlet, one of these per card, with the outlet's
  * assigned GM email(s) shown — empty on the GM dashboard's own call).
+ *
+ * Defaults to the current month; a left arrow next to the month label steps
+ * back to the previous one (the only other month the API sends — see
+ * `OutletSubmissionsDTO.previousMonth`/`previousMonthDays`), and a right
+ * arrow appears to step back to the current month. No further history is
+ * fetched or shown — exactly these two months.
  */
 
+import { useState } from 'react';
 import type { OutletSubmissionsDTO, SubmissionDayStatus } from '@toit/contracts';
 
+/** Solid fills with white text — a pale `tag-*` background reads as washed-out at this size; a day's status needs to register at a glance. */
 const DAY_TAG: Record<SubmissionDayStatus, string> = {
-  green: 'tag-ok',
-  yellow: 'tag-warn',
-  orange: 'tag-orange',
-  red: 'tag-err',
-  today: 'tag-accent',
+  green: 'bg-ok text-white',
+  yellow: 'bg-warn text-white',
+  orange: 'bg-orange text-white',
+  red: 'bg-err text-white',
+  today: 'bg-accent text-white',
 };
 
-/** Solid fills for the legend's small dots — `tag-*`'s own pale `-soft` backgrounds read as washed-out at 8px, unlike on a full pill. */
 const LEGEND_DOT: Record<SubmissionDayStatus, string> = {
   green: 'bg-ok',
   yellow: 'bg-warn',
@@ -60,12 +67,25 @@ function dayLabel(iso: string, status: SubmissionDayStatus | null): string {
   return status ? `${d} — ${STATUS_LABEL[status]}` : d;
 }
 
+/** `yyyy-mm` → "October 2026". */
+function monthLabel(month: string): string {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-IN', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
+
 export function SubmissionCalendar({ outlet }: { outlet: OutletSubmissionsDTO }) {
-  const leadingBlanks = outlet.days.length > 0 ? mondayFirstWeekday(outlet.days[0]!.date) : 0;
-  const doneCount = outlet.days.filter((d) => d.status === 'green' || d.status === 'yellow').length;
-  const flaggedCount = outlet.days.filter((d) => d.status === 'yellow').length;
-  const partialCount = outlet.days.filter((d) => d.status === 'orange').length;
-  const missedCount = outlet.days.filter((d) => d.status === 'red').length;
+  const [showPrevious, setShowPrevious] = useState(false);
+  const activeMonth = showPrevious ? outlet.previousMonth : outlet.month;
+  const activeDays = showPrevious ? outlet.previousMonthDays : outlet.days;
+
+  const leadingBlanks = activeDays.length > 0 ? mondayFirstWeekday(activeDays[0]!.date) : 0;
+  const doneCount = activeDays.filter((d) => d.status === 'green' || d.status === 'yellow').length;
+  const flaggedCount = activeDays.filter((d) => d.status === 'yellow').length;
+  const partialCount = activeDays.filter((d) => d.status === 'orange').length;
+  const missedCount = activeDays.filter((d) => d.status === 'red').length;
 
   return (
     <div className="panel">
@@ -108,6 +128,27 @@ export function SubmissionCalendar({ outlet }: { outlet: OutletSubmissionsDTO })
         </div>
       </div>
       <div className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-label="Previous month"
+            onClick={() => setShowPrevious(true)}
+            disabled={showPrevious}
+          >
+            ◀
+          </button>
+          <span className="font-semibold text-body min-w-36 text-center">{monthLabel(activeMonth)}</span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            aria-label="Current month"
+            onClick={() => setShowPrevious(false)}
+            disabled={!showPrevious}
+          >
+            ▶
+          </button>
+        </div>
         <div className="flex items-center gap-3 mb-3 text-tiny text-ink-3">
           {LEGEND.map(({ status, label }) => (
             <span key={status} className="inline-flex items-center gap-1">
@@ -125,13 +166,13 @@ export function SubmissionCalendar({ outlet }: { outlet: OutletSubmissionsDTO })
           {Array.from({ length: leadingBlanks }).map((_, i) => (
             <span key={`blank-${i}`} />
           ))}
-          {outlet.days.map((day) => {
+          {activeDays.map((day) => {
             const dayNum = Number(day.date.slice(-2));
             return (
               <span
                 key={day.date}
                 title={dayLabel(day.date, day.status)}
-                className={`inline-flex items-center justify-center rounded-full text-tiny h-7 w-7 mx-auto ${
+                className={`inline-flex items-center justify-center rounded-full text-tiny font-semibold h-7 w-7 mx-auto ${
                   day.status ? DAY_TAG[day.status] : 'text-ink-3'
                 }`}
               >

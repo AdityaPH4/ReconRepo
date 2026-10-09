@@ -35,14 +35,7 @@ import type { OutletCode } from '@toit/recon-core';
 import { advanceBalance, isAdvanceExhausted, OUTLET_NAMES, todayIsoIST } from '@toit/recon-core';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 import { buildBohAging } from './bohAging.js';
-import { buildOutletSubmissionDays } from './submissionCalendar.js';
-
-/** The calendar month immediately before `month` (`yyyy-mm`) — wraps Jan back to December of the prior year via `Date`'s own rollover. */
-function prevMonth(month: string): string {
-  const [y, m] = month.split('-').map(Number);
-  const d = new Date(Date.UTC(y!, m! - 2, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
+import { buildOutletSubmissionDays, prevMonth } from './submissionCalendar.js';
 
 function daysInMonth(month: string): number {
   const [y, m] = month.split('-').map(Number);
