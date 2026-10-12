@@ -6,12 +6,13 @@
  * Two things this does, together:
  *
  *  1. Suppresses a `pending` row this run produced if an *earlier* run
- *     already resolved the exact same row (same source session + RRN, or
- *     + Transaction Date/Card for AMEX). Without this, a session that gets
- *     retried in a later run would wrongly show an already-settled row as
- *     `pending` again — the bank file that settled it has since been
- *     relocated out of the pending S3 prefix, so this run's own fresh
- *     match has nothing to re-find it with.
+ *     already resolved the exact same row (same source session + RRN, +
+ *     Transaction Date/Card for AMEX, or + order number(s) for HDFC
+ *     Static UPI). Without this, a session that gets retried in a later
+ *     run would wrongly show an already-settled row as `pending` again —
+ *     the bank file that settled it has since been relocated out of the
+ *     pending S3 prefix, so this run's own fresh match has nothing to
+ *     re-find it with.
  *
  *  2. Reports which source sessions still have at least one genuinely
  *     open row after that suppression. The caller must NOT flag those as
@@ -27,7 +28,7 @@
  * resolve an ambiguity, only a human can.
  */
 
-import type { AmexResult, MatchResult, PendingRow, ReconciledDay, ReconciledItem } from '../types.js';
+import type { AmexResult, MatchResult, PendingRow, ReconciledDay, ReconciledItem, TaggedUpiTransaction, UpiResult } from '../types.js';
 
 export interface ReconcileRetryOutcome {
   result: MatchResult;
@@ -125,8 +126,47 @@ export function applyReconciledAccumulator(
     stillAmex.push(r);
   }
 
+  // HDFC Static UPI — `_retryKey` is only ever set by the matcher for a row
+  // backed by a real `TaggedUpiTransaction` (Pass 1 RRN match, Pass 2
+  // amount+timestamp fallback), so `pr` is guaranteed to be that shape
+  // whenever it's present. A justification-synthetic row (no stable id to
+  // key a later lookup on) never has `_retryKey` set, so it always falls
+  // through to the last branch unchanged — same standing-open-item
+  // treatment as "No RRN" pending elsewhere.
+  const stillUpi: UpiResult[] = [];
+  for (const r of result.upiResults) {
+    if ((r._match === 'settled' || r._match === 'mismatch' || r._match === 'partial') && r._retryKey && r._sourceSessionId && r._businessDate && r.mpr) {
+      const prRows = r.pr as TaggedUpiTransaction[];
+      pushItem(newItemsByBusinessDate, r._businessDate, {
+        key: r._retryKey,
+        sourceSessionId: r._sourceSessionId,
+        rrn: prRows[0]?.rrn ?? r.mpr.rrn ?? null,
+        acquirer: 'HDFC_UPI',
+        outlet: '', // TaggedUpiTransaction carries no outlet field
+        plAmount: prRows.reduce((s, p) => s + (p.amount || 0), 0),
+        mprAmount: r.mpr.grossAmount,
+        diff: r._diff ?? 0,
+        matchStatus: r._match,
+        mprFile: r.mpr._file ?? null,
+        resolvedInMprSessionId: mprSessionId,
+        resolvedAt,
+      });
+      stillUpi.push(r);
+      continue;
+    }
+
+    if (r._match === 'pending' && r._retryKey && r._sourceSessionId && r._businessDate) {
+      if (accumulatorHas(accumulatorsByDate.get(r._businessDate), r._retryKey)) continue; // already resolved by an earlier run
+      stillUpi.push(r);
+      stillOpenSessionIds.add(r._sourceSessionId);
+      continue;
+    }
+
+    stillUpi.push(r);
+  }
+
   return {
-    result: { ...result, pending: stillPending, amexResults: stillAmex },
+    result: { ...result, pending: stillPending, amexResults: stillAmex, upiResults: stillUpi },
     newItemsByBusinessDate,
     stillOpenSessionIds,
   };

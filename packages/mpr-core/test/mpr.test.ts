@@ -716,4 +716,61 @@ describe('applyReconciledAccumulator()', () => {
 
     assert.ok(!out.stillOpenSessionIds.has('sess-amex-2')); // ambiguous never keeps a session open — a human has to resolve it
   });
+
+  it('HDFC Static UPI: suppresses a Pass-2 pending row already resolved in an earlier run, keyed by session + order number', () => {
+    const upiPRRows = [
+      { orderNo: '1013', date: '01-Aug-2026 22:30:00', amount: 350, paymentName: 'HDFC Static UPI', source: 'HDFC' as const, rrn: '', employee: 'E5', _businessDate: '2026-08-01', _sourceSessionId: 'sess-upi' },
+    ];
+    const result = runMatch(emptyInput({ upiPRRows })); // no HDFC_UPI bank rows this run — stays pending without the accumulator
+
+    const accumulators = new Map([
+      [
+        '2026-08-01',
+        reconciledDay('2026-08-01', {
+          items: [
+            {
+              key: 'sess-upi|upi|1013', sourceSessionId: 'sess-upi', rrn: null, acquirer: 'HDFC_UPI', outlet: '',
+              plAmount: 350, mprAmount: 350, diff: 0, matchStatus: 'settled',
+              mprFile: 'hdfc.xlsx', resolvedInMprSessionId: 'mpr-run-0', resolvedAt: '2026-08-02T00:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    const out = applyReconciledAccumulator(result, accumulators, 'mpr-run-1', '2026-08-03T00:00:00.000Z');
+    assert.equal(out.result.upiResults.length, 0); // suppressed, not re-reported
+    assert.ok(!out.stillOpenSessionIds.has('sess-upi'));
+  });
+
+  it('HDFC Static UPI: a new settled row records a reconciled item; a genuinely new pending row keeps its session open', () => {
+    const upiPRRows = [
+      { orderNo: '1013', date: '01-Aug-2026 22:30:00', amount: 350, paymentName: 'HDFC Static UPI', source: 'HDFC' as const, rrn: '300000000001', employee: 'E5', _businessDate: '2026-08-01', _sourceSessionId: 'sess-upi' },
+      { orderNo: '1014', date: '01-Aug-2026 23:00:00', amount: 500, paymentName: 'HDFC Static UPI', source: 'HDFC' as const, rrn: '', employee: 'E5', _businessDate: '2026-08-01', _sourceSessionId: 'sess-upi' },
+    ];
+    const result = runMatch(
+      emptyInput({
+        upiPRRows,
+        mprParsed: [
+          {
+            source: 'HDFC_UPI', matchStrategy: 'rrn',
+            rows: [mprRow({ rrn: '300000000001', grossAmount: 350, _source: 'HDFC_UPI', _file: 'hdfc.xlsx' })],
+            filename: 'hdfc.xlsx',
+          },
+        ],
+      }),
+    );
+
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-1', '2026-08-03T00:00:00.000Z');
+
+    const items = out.newItemsByBusinessDate.get('2026-08-01') ?? [];
+    assert.equal(items.length, 1);
+    assert.equal(items[0]!.key, 'sess-upi|upi|1013');
+    assert.equal(items[0]!.matchStatus, 'settled');
+
+    // Both rows stay visible in this run's own result — 1013 settled (new this run), 1014 still pending.
+    assert.equal(out.result.upiResults.length, 2);
+    assert.equal(out.result.upiResults.find((r) => r._retryKey === 'sess-upi|upi|1014')!._match, 'pending');
+    assert.ok(out.stillOpenSessionIds.has('sess-upi'));
+  });
 });

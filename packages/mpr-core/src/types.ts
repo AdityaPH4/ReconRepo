@@ -48,6 +48,7 @@ export interface TaggedUpiTransaction {
   rrn: string;
   employee: string;
   _businessDate: string;
+  _sourceSessionId?: string | null;
 }
 
 export interface TaggedUpiJustification {
@@ -59,6 +60,7 @@ export interface TaggedUpiJustification {
   amount: number;
   source: string;
   _businessDate: string;
+  _sourceSessionId?: string | null;
   /** Set during matching once this justification has explained one MPR row — prevents reuse. */
   _usedForMPR?: boolean;
 }
@@ -212,6 +214,19 @@ export interface UpiResult {
   _dateAdjusted?: boolean;
   _timeDiffSec?: number | null;
   _gmNote?: string;
+  /** Business date / source session this came from — used for cross-run retry (see `reconcileRetry.ts`). */
+  _businessDate?: string;
+  _sourceSessionId?: string | null;
+  /**
+   * Stable retry/accumulator key for this specific match — only set for a
+   * row backed by a real `TaggedUpiTransaction` (an RRN can be absent, or
+   * shared across a multi-RRN MPR cell, so it's not reliable as a key on
+   * its own; `orderNo` always exists). Left unset for a justification-
+   * synthetic row (no real transaction behind it) — those are excluded
+   * from retry/accumulator tracking in this pass, same as "No RRN"
+   * pending and ambiguous rows elsewhere.
+   */
+  _retryKey?: string;
 }
 
 export interface MatchResult {
@@ -232,7 +247,7 @@ export interface MatchResult {
 // back to `pending` just because the bank file that settled it has since
 // moved out of the pending pool.
 
-export type ReconciledMatchStatus = 'settled' | 'amountMismatch' | 'mismatch';
+export type ReconciledMatchStatus = 'settled' | 'amountMismatch' | 'mismatch' | 'partial';
 
 export interface ReconciledItem {
   /** Unique within a business date: `${sourceSessionId}|${rrn}` (RRN-based), or `${sourceSessionId}|amex|${date}|${cardLast4}` (AMEX, which has no RRN). */
