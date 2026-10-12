@@ -39,14 +39,29 @@ async function streamToString(stream: unknown): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** Reads one business date's accumulator, or an empty one if it's never been written. */
+/**
+ * Reads one business date's accumulator, or an empty one if it's never
+ * been written.
+ *
+ * The S3 credentials this app uses are deliberately scoped to only
+ * `s3:GetObject`/`s3:PutObject` on this bucket's objects — no
+ * `s3:ListBucket` (least privilege; it never needs to enumerate the
+ * bucket). Without `s3:ListBucket`, S3's own documented behavior is to
+ * return `403 AccessDenied` for a `GetObject` on a key that doesn't
+ * exist, instead of the usual `404 NoSuchKey` — it deliberately avoids
+ * confirming or denying existence to a caller who can't list the bucket
+ * either way. So here, `AccessDenied` reads the same as `NoSuchKey`: the
+ * day's accumulator simply hasn't been created yet, same as every
+ * business date's very first ingest run ever hits.
+ */
 export async function loadReconciledDay(s3: S3Client, businessDate: string): Promise<ReconciledDay> {
   try {
     const res = await s3.send(new GetObjectCommand({ Bucket: config.objectStore.bucket, Key: keyFor(businessDate) }));
     const text = await streamToString(res.Body);
     return text ? (JSON.parse(text) as ReconciledDay) : emptyDay(businessDate);
   } catch (err) {
-    if ((err as { name?: string })?.name === 'NoSuchKey') return emptyDay(businessDate);
+    const name = (err as { name?: string })?.name;
+    if (name === 'NoSuchKey' || name === 'AccessDenied') return emptyDay(businessDate);
     throw err;
   }
 }
