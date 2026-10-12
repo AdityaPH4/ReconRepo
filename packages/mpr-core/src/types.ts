@@ -65,14 +65,19 @@ export interface TaggedUpiJustification {
 
 export type AdapterKey = 'KOTAK' | 'PINELABS' | 'AMEX' | 'HDFC_UPI' | 'HDFC_LINK';
 
+/**
+ * Closed shape, deliberately no index signature — `normaliseTransactionRows()`
+ * only ever resolves these four column roles, regardless of adapter. An
+ * adapter config listing any other alias (previously: `netAmount`, `fee`,
+ * `mid`, `tid`, `store`, `channel`, `cardType`, `cardNetwork`, `foreign`,
+ * `merchantVPA`, `merchantName`) would silently do nothing — this type now
+ * catches that at compile time instead of letting it rot as dead config.
+ */
 export interface TransactionFields {
   rrn: string[];
   grossAmount: string[];
-  netAmount: string[];
   txnDate: string[];
   settlementDate: string[];
-  fee: string[];
-  [extra: string]: string[];
 }
 
 export interface BatchFields {
@@ -107,12 +112,10 @@ export interface AdapterDef {
 export interface MprRow {
   rrn: string | null;
   grossAmount: number;
-  netAmount: number | null;
   txnDate: string | null;
   /** Raw source string, kept for timestamp parsing (Pass 2 UPI matching). */
   txnDateRaw: string | null;
   settlementDate: string | null;
-  fee: number;
   _source: AdapterKey;
   _file: string;
 }
