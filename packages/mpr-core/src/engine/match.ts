@@ -302,6 +302,7 @@ function runUpiMatch(
     usedHdfcUpiIdxs.add(mi);
     for (const g of matchedGroups) upiPRMatchedRRNs.add(g.rrn);
 
+    const first = allPRRows[0];
     result.upiResults.push({
       pr: allPRRows,
       mpr: mprRow,
@@ -312,6 +313,11 @@ function runUpiMatch(
       _invalidRRNs: invalidRRNs,
       _dateAdjusted: false,
       _timeDiffSec: null,
+      _businessDate: first?._businessDate,
+      _sourceSessionId: first?._sourceSessionId,
+      _retryKey: first?._sourceSessionId
+        ? `${first._sourceSessionId}|upi|${allPRRows.map((p) => p.orderNo).sort().join(',')}`
+        : undefined,
     });
   }
 
@@ -341,6 +347,8 @@ function runUpiMatch(
       }
     }
 
+    const retryKey = pr._sourceSessionId ? `${pr._sourceSessionId}|upi|${pr.orderNo}` : undefined;
+
     if (bestIdx >= 0) {
       usedHdfcUpiIdxs.add(bestIdx);
       const mprRow = mprHdfcUpi[bestIdx]!;
@@ -356,6 +364,9 @@ function runUpiMatch(
         _invalidRRNs: [],
         _dateAdjusted: adjusted,
         _timeDiffSec: Math.round(bestDiff),
+        _businessDate: pr._businessDate,
+        _sourceSessionId: pr._sourceSessionId,
+        _retryKey: retryKey,
       });
     } else {
       result.upiResults.push({
@@ -364,6 +375,9 @@ function runUpiMatch(
         _match: 'pending',
         _diff: null,
         _matchBy: null,
+        _businessDate: pr._businessDate,
+        _sourceSessionId: pr._sourceSessionId,
+        _retryKey: retryKey,
       });
     }
   }
@@ -406,6 +420,11 @@ function runUpiMatch(
         _diff: null,
         _matchBy: null,
         _gmNote: j.remark + (j.description ? ': ' + j.description : ''),
+        _businessDate: j._businessDate,
+        _sourceSessionId: j._sourceSessionId,
+        // No `_retryKey` — a justification has no stable id in the snapshot
+        // to key a later run's lookup on, so this stays a standing open
+        // item for a human, same as "No RRN" pending elsewhere.
       });
     }
   }
@@ -433,6 +452,8 @@ function runUpiMatch(
         _dateAdjusted: false,
         _timeDiffSec: null,
         _gmNote: justByRRN.remark + (justByRRN.description ? ': ' + justByRRN.description : ''),
+        _businessDate: justByRRN._businessDate,
+        _sourceSessionId: justByRRN._sourceSessionId,
       });
       continue;
     }
@@ -451,6 +472,8 @@ function runUpiMatch(
         _dateAdjusted: false,
         _timeDiffSec: null,
         _gmNote: justByAmt.remark + (justByAmt.description ? ': ' + justByAmt.description : ''),
+        _businessDate: justByAmt._businessDate,
+        _sourceSessionId: justByAmt._sourceSessionId,
       });
     } else {
       result.unexpected.push({

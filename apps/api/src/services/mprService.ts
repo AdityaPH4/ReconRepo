@@ -120,10 +120,10 @@ export function runMprReconciliation(
     const justs = data.upi?.justifications ?? [];
     for (const t of txns as Array<Record<string, unknown>>) {
       // Kotak Static UPI has no per-transaction MPR format — only HDFC is matched transaction-by-transaction.
-      if (t.source === 'HDFC') upiPRRows.push({ ...t, _businessDate: biz } as TaggedUpiTransaction);
+      if (t.source === 'HDFC') upiPRRows.push({ ...t, _businessDate: biz, _sourceSessionId: sourceSessionId } as TaggedUpiTransaction);
     }
     for (const j of justs as Array<Record<string, unknown>>) {
-      upiJustifications.push({ ...j, _businessDate: biz } as TaggedUpiJustification);
+      upiJustifications.push({ ...j, _businessDate: biz, _sourceSessionId: sourceSessionId } as TaggedUpiJustification);
     }
   }
 
