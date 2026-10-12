@@ -21,6 +21,9 @@ export type {
   MprRow,
   ParsedMprFile,
   PendingRow,
+  ReconciledDay,
+  ReconciledItem,
+  ReconciledMatchStatus,
   SettledRow,
   TaggedLedgerRow,
   TaggedUpiJustification,
@@ -49,3 +52,4 @@ export { parseAmexCSV } from './parsers/amexCsv.js';
 
 export { runMatch } from './engine/match.js';
 export { buildExportRows, rowsToCsv } from './engine/csvExport.js';
+export { applyReconciledAccumulator, type ReconcileRetryOutcome } from './engine/reconcileRetry.js';

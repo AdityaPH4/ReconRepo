@@ -35,6 +35,8 @@ export interface TaggedLedgerRow {
   l1Remark?: string | null;
   l1Diff?: number;
   _businessDate: string;
+  /** The automated pipeline's source session id — `null`/absent for a manually-uploaded JSON file, which has no session to re-check later. Lets a later ingest run tell which still-open rows belong to which session. */
+  _sourceSessionId?: string | null;
 }
 
 export interface TaggedUpiTransaction {
@@ -191,6 +193,9 @@ export interface AmexResult {
   _diff?: number | null;
   /** Set on `ambiguous` rows — which side the duplicate key was found on. */
   _note?: string;
+  /** Business date / source session of the ledger row this came from — absent on a pure `unexpected` row, which has no ledger counterpart at all. */
+  _businessDate?: string;
+  _sourceSessionId?: string | null;
 }
 
 export type UpiMatchStatus = 'settled' | 'mismatch' | 'pending' | 'partial';
@@ -217,4 +222,37 @@ export interface MatchResult {
   unexpected: UnexpectedMprRow[];
   amexResults: AmexResult[];
   upiResults: UpiResult[];
+}
+
+// ── Cross-run reconciliation memory ─────────────────────────────────────
+// See `engine/reconcileRetry.ts` for why this exists: a session with
+// genuinely-open rows stays eligible for a later ingest run to retry, and
+// this is the durable record of what an *earlier* run already resolved for
+// that same business date, so a retry can't regress an already-settled row
+// back to `pending` just because the bank file that settled it has since
+// moved out of the pending pool.
+
+export type ReconciledMatchStatus = 'settled' | 'amountMismatch' | 'mismatch';
+
+export interface ReconciledItem {
+  /** Unique within a business date: `${sourceSessionId}|${rrn}` (RRN-based), or `${sourceSessionId}|amex|${date}|${cardLast4}` (AMEX, which has no RRN). */
+  key: string;
+  sourceSessionId: string;
+  rrn: string | null;
+  acquirer: string;
+  outlet: string;
+  plAmount: number;
+  mprAmount: number;
+  diff: number;
+  matchStatus: ReconciledMatchStatus;
+  mprFile: string | null;
+  /** Which automated MprSessionDTO run recorded this — the most recent write wins on a later upsert, not the first. */
+  resolvedInMprSessionId: string;
+  resolvedAt: string;
+}
+
+export interface ReconciledDay {
+  businessDate: string;
+  updatedAt: string;
+  items: ReconciledItem[];
 }

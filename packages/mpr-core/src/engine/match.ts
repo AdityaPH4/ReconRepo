@@ -201,6 +201,7 @@ function runAmexMatch(
     result.amexResults.push({
       date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
       mprRow: mpr, _match: 'settled', _diff: (row.plAmount ?? 0) - mpr.amount,
+      _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
     });
   });
 
@@ -208,19 +209,26 @@ function runAmexMatch(
     if (resolved[li]) return;
     const key = amexKey(date, card);
     if (!key) {
-      result.amexResults.push({ date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending' });
+      result.amexResults.push({
+        date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending',
+        _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
+      });
       return;
     }
 
     const candidates = amexCandidates(mprAmex, usedMprIdx, key);
     if (candidates.length === 0) {
-      result.amexResults.push({ date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending' });
+      result.amexResults.push({
+        date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending',
+        _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
+      });
       return;
     }
     if (candidates.length > 1) {
       result.amexResults.push({
         date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null,
         _match: 'ambiguous', _note: `Duplicate Transaction Date + Card in AMEX file (${date}, ${card})`,
+        _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
       });
       return;
     }
@@ -230,6 +238,7 @@ function runAmexMatch(
     result.amexResults.push({
       date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
       mprRow: mpr, _match: 'mismatch', _diff: (row.plAmount ?? 0) - mpr.amount,
+      _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
     });
   });
 
