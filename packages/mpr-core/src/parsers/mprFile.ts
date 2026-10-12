@@ -28,7 +28,7 @@
 
 import * as XLSX from 'xlsx';
 import { ADAPTERS, detectAdapter } from '../adapters.js';
-import type { AdapterDef, AdapterKey, MprRow, ParsedMprFile } from '../types.js';
+import type { AdapterDef, AdapterKey, MprRow, ParsedMprFile, TransactionFields } from '../types.js';
 import { normDate, normRRN } from '../util/normalize.js';
 import { parseAmexCSV } from './amexCsv.js';
 
@@ -113,13 +113,11 @@ function normaliseTransactionRows(
   key: AdapterKey,
   filename: string,
 ): ParsedMprFile {
-  const f = adp.fields as Record<string, string[]>;
+  const f = adp.fields as TransactionFields;
   const rrnCol = resolveField(f.rrn!, headers);
   const amtCol = resolveField(f.grossAmount!, headers);
-  const netCol = resolveField(f.netAmount!, headers);
   const txnCol = resolveField(f.txnDate!, headers);
   const settleCol = resolveField(f.settlementDate!, headers);
-  const feeCol = resolveField(f.fee!, headers);
 
   const missing: string[] = [];
   if (!rrnCol) missing.push('RRN');
@@ -132,11 +130,9 @@ function normaliseTransactionRows(
     .map((r) => ({
       rrn: normRRN(r[rrnCol!]),
       grossAmount: parseFloat(String(r[amtCol!] ?? '')) || 0,
-      netAmount: netCol ? parseFloat(String(r[netCol] ?? '')) || 0 : null,
       txnDate: normDate(r[txnCol!]),
       txnDateRaw: txnCol && r[txnCol] != null ? String(r[txnCol]).trim() : null,
       settlementDate: normDate(r[settleCol!]),
-      fee: feeCol ? parseFloat(String(r[feeCol] ?? '')) || 0 : 0,
       _source: key,
       _file: filename,
     }))
@@ -152,7 +148,7 @@ function applyFooterFilter(rows: Row[], headers: string[], adp: AdapterDef): Row
       if (firstVal != null && String(firstVal).includes(adp.nullRRNMarker)) return false;
     }
     if (adp.nullRRNStrategy === 'skip_null') {
-      const rrnCol = resolveField((adp.fields as Record<string, string[]>).rrn!, headers);
+      const rrnCol = resolveField((adp.fields as TransactionFields).rrn!, headers);
       return !!rrnCol && r[rrnCol] != null;
     }
     return true;

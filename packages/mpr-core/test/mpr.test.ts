@@ -251,11 +251,9 @@ function mprRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     rrn: '100000000001',
     grossAmount: 1000,
-    netAmount: 990,
     txnDate: '2026-08-01',
     txnDateRaw: '01-Aug-2026 21:00:00',
     settlementDate: '2026-08-02',
-    fee: 10,
     _source: 'KOTAK',
     _file: 'kotak.xlsx',
     ...overrides,

@@ -13,14 +13,8 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
     fields: {
       rrn: ['RRN No.', 'RRN Number', 'Retrieval Ref No', 'Ret Ref No'],
       grossAmount: ['Txn Amt', 'Transaction Amount', 'Gross Amount'],
-      netAmount: ['NET', 'Net Amount', 'Amount Paid'],
       txnDate: ['Txn Date', 'Transaction Date'],
       settlementDate: ['PAID Date', 'Settlement Date', 'Paid Date'],
-      mid: ['MID', 'Merchant ID'],
-      tid: ['TID', 'Terminal ID'],
-      channel: ['Channel Type', 'Channel'],
-      cardType: ['Card', 'Card Type'],
-      fee: ['MSF', 'MSF Amount'],
     },
     // Footer detection — a row containing this text ends the data.
     nullRRNMarker: 'Payout Summary',
@@ -39,15 +33,8 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
     fields: {
       rrn: ['RRN number', 'RRN No', 'Retrieval Reference Number'],
       grossAmount: ['Gross Txn Amount', 'Transaction Amount'],
-      netAmount: ['Paid to Merchant A/c', 'Net Amount'],
       txnDate: ['Txn Date', 'Transaction Date'],
       settlementDate: ['Settlement Date'],
-      store: ['Store Name', 'Store ID'],
-      tid: ['TID', 'Terminal ID'],
-      fee: ['Total Fee(including Taxes)', 'Total Fee'],
-      acquirer: ['Acquirer name/Netbanking name/wallet name/pbp name', 'Acquirer'],
-      cardNetwork: ['Card network'],
-      foreign: ['Foreign/ Domestic'],
     },
   },
   AMEX: {
@@ -74,13 +61,8 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
     fields: {
       rrn: ['Txn ref no. (RRN)', 'RRN', 'Reference No'],
       grossAmount: ['Transaction Amount', 'Txn Amount'],
-      netAmount: ['Net Amount'],
       txnDate: ['Transaction Req Date', 'Txn Date'],
       settlementDate: ['Settlement Date'],
-      merchantVPA: ['Merchant VPA'],
-      merchantName: ['Merchant Name'],
-      mid: ['External MID', 'MID'],
-      fee: ['MSF Amount', 'MSF'],
     },
     // Footer rows have a null RRN column — drop them.
     nullRRNStrategy: 'skip_null',
@@ -98,10 +80,8 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
       // `hdfcLinkSettlementLedger()` on the Layer-1 side, which does the same).
       rrn: ['Merchant Order ID'],
       grossAmount: ['Txn Amount'],
-      netAmount: ['Net Amount'],
       txnDate: ['Txn Date'],
       settlementDate: ['Settlement Date'],
-      fee: ['Txn Fee'],
     },
   },
 };
