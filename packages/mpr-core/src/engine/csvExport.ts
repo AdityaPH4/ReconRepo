@@ -119,18 +119,18 @@ export function buildExportRows(result: MatchResult): string[][] {
 
   for (const r of result.amexResults) {
     rows.push([
-      '',
+      r.cardLast4 ?? '', // AMEX has no RRN — card last-4 fills this slot instead.
       r.outlet,
       '',
       r.date ?? '',
       'AMEX',
-      r.timestamp ?? '',
+      r.mprRow?.txnDate ?? '',
       r.mprRow?.settlementDate ?? '',
-      r.l1Total != null ? String(r.l1Total) : '',
-      r.mprRow ? String(r.mprRow.submissionAmount) : '',
+      r.l1Amount != null ? String(r.l1Amount) : '',
+      r.mprRow ? String(r.mprRow.amount) : '',
       r._diff != null ? String(r._diff) : '',
       '',
-      '',
+      r._note ?? '',
       r._match,
       'AMEX',
       r.mprRow?._file ?? '',

@@ -19,6 +19,8 @@
 export interface TaggedLedgerRow {
   rrn: string;
   authCode?: string;
+  /** POS Payment Report card number — AMEX transaction matching only. */
+  cardNo?: string;
   acquirer?: string;
   mid?: string;
   invoice?: string;
@@ -115,15 +117,16 @@ export interface MprRow {
   _file: string;
 }
 
-/** Batch-level row (AMEX only). */
+/** One ROC (transaction-level) row from AMEX's settlement export (AMEX only). */
 export interface AmexMprRow {
-  mid: string;
-  submissionDate: string;
-  settlementDate: string;
-  submissionAmount: number;
-  transactionCount: number;
-  socNumber: string;
-  dbaName: string;
+  /** Transaction Timestamp, normalised to a calendar date. */
+  txnDate: string | null;
+  /** Last 4 digits of Card Number. */
+  cardLast4: string;
+  /** Charge Amount. */
+  amount: number;
+  /** Payment Date — when AMEX actually paid this out. */
+  settlementDate: string | null;
   _file: string;
 }
 
@@ -168,22 +171,23 @@ export interface UnexpectedMprRow {
   _file: string;
 }
 
-export type AmexMatchStatus = 'settled' | 'mismatch' | 'pending' | 'unexpected';
+/** `ambiguous` — the Transaction Date + Card (last 4) key collided on either side; never guessed. */
+export type AmexMatchStatus = 'settled' | 'mismatch' | 'pending' | 'unexpected' | 'ambiguous';
 
+/** One matched (or unmatched) AMEX transaction — Layer-1 ledger row ↔ AMEX ROC row. */
 export interface AmexResult {
-  mid: string;
+  /** Transaction date — from the ledger side when present, else the MPR row's. */
   date: string | null;
-  timestamp: string | null;
+  cardLast4: string;
+  /** `''` for an `unexpected` row — no ledger counterpart to attribute an outlet to. */
   outlet: string;
-  txnCount: number;
-  l1Total: number | null;
+  /** Ledger-side (Pinelabs terminal) amount; `null` for an `unexpected` MPR-only row. */
+  l1Amount: number | null;
   mprRow: AmexMprRow | null;
   _match: AmexMatchStatus;
   _diff?: number | null;
-  socNumber: string;
-  dbaName: string;
-  socExpected?: number | null;
-  socMatch?: boolean | null;
+  /** Set on `ambiguous` rows — which side the duplicate key was found on. */
+  _note?: string;
 }
 
 export type UpiMatchStatus = 'settled' | 'mismatch' | 'pending' | 'partial';

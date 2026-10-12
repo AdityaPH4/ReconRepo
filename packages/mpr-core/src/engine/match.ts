@@ -12,7 +12,7 @@
  * Layer 1 already decided about it.
  */
 
-import { adjustPRDate, amexNormDate, normDate, normRRN, parseTxnTimestamp, splitRRNs } from '../util/normalize.js';
+import { adjustPRDate, cardLast4, normDate, normRRN, parseTxnTimestamp, splitRRNs } from '../util/normalize.js';
 import type {
   AmbiguousMprRow,
   AmexMprRow,
@@ -26,7 +26,6 @@ import type {
 } from '../types.js';
 
 const AMOUNT_EPSILON = 0.5;
-const AMEX_EPSILON = 1;
 const UPI_DATE_WINDOW_SEC = 3600;
 
 const EXCESS_REMARKS = new Set(['Advance Received', 'Extra Payment Received', 'Bill on Hold Cleared', 'Tips', 'Valet Tips']);
@@ -136,128 +135,111 @@ export function runMatch(input: MatchInput): MatchResult {
   return result;
 }
 
+/** `null` once either half of the key is missing — such a row can never be joined. */
+function amexKey(date: string | null, card: string): string | null {
+  return date && card ? `${date}|${card}` : null;
+}
+
+interface AmexLedgerRow {
+  row: MatchInput['sessions'][number];
+  date: string | null;
+  card: string;
+}
+
+/** Index of every unused AMEX row whose Transaction Date + Card equal `key` — further filtered to an exact Charge Amount when `amount` is given. */
+function amexCandidates(mprAmex: readonly AmexMprRow[], usedMprIdx: ReadonlySet<number>, key: string, amount?: number): number[] {
+  const out: number[] = [];
+  mprAmex.forEach((m, i) => {
+    if (usedMprIdx.has(i)) return;
+    if (amexKey(m.txnDate, m.cardLast4) !== key) return;
+    if (amount != null && Math.abs(m.amount - amount) >= AMOUNT_EPSILON) return;
+    out.push(i);
+  });
+  return out;
+}
+
+/**
+ * Matches each AMEX ledger row to an AMEX ROC row by Transaction Date +
+ * Card (last 4) — AMEX settlement carries no RRN, so this pair is the join
+ * key. Two passes, same shape as the Layer-1 AMEX matcher's code-then-
+ * amount-fallback:
+ *
+ * Pass 1 — unique match on Transaction Date + Card + Charge Amount
+ * (±₹0.50). The strongest available key: two different transactions on the
+ * same card on the same calendar day essentially never also share the
+ * exact charge amount, so this alone resolves the common "same customer,
+ * same card, several orders in one day" case without any ambiguity.
+ *
+ * Pass 2 — whatever Pass 1 left unresolved, keyed by Transaction Date +
+ * Card alone (amount dropped). A unique leftover AMEX row there is very
+ * likely the same transaction with a genuine amount discrepancy
+ * (`mismatch`), distinct from no AMEX row at all (`pending`). Ambiguity is
+ * never guessed: a key still colliding more than once, on either side, is
+ * left unmatched rather than picking one arbitrarily.
+ */
 function runAmexMatch(
   sessions: MatchInput['sessions'],
   mprAmex: AmexMprRow[],
   result: MatchResult,
 ): void {
-  const amexRows = sessions.filter((r) => r.acquirer === 'AMEX');
+  const ledgerRows: AmexLedgerRow[] = sessions
+    .filter((r) => r.acquirer === 'AMEX')
+    .map((row) => ({ row, date: normDate(row.plDate), card: cardLast4(row.cardNo) }));
 
-  interface L1AmexGroup {
-    mid: string;
-    timestamp: string;
-    subDate: string | null;
-    rows: MatchInput['sessions'];
-    total: number;
-    maxInvoice: number;
-    socExpected: number | null;
-    outlet: string;
-  }
+  const usedMprIdx = new Set<number>();
+  const resolved = new Array<boolean>(ledgerRows.length).fill(false);
 
-  const l1Groups = new Map<string, L1AmexGroup>();
-  for (const r of amexRows) {
-    const mid = (r.mid ?? '').replace(/^'/, '');
-    const timestamp = r.plSettlementDate || '';
-    if (!mid || !timestamp) continue;
-    const key = mid + '|' + timestamp;
-    let g = l1Groups.get(key);
-    if (!g) {
-      g = {
-        mid,
-        timestamp,
-        subDate: amexNormDate(timestamp),
-        rows: [],
-        total: 0,
-        maxInvoice: 0,
-        socExpected: null,
-        outlet: r.outlet || '',
-      };
-      l1Groups.set(key, g);
-    }
-    g.rows.push(r);
-    g.total += r.plAmount || 0;
-    const inv = parseInt(r.invoice || '0', 10) || 0;
-    if (inv > 0 && inv > g.maxInvoice) {
-      g.maxInvoice = inv;
-      g.socExpected = inv + 1;
-    }
-  }
+  ledgerRows.forEach(({ row, date, card }, li) => {
+    const key = amexKey(date, card);
+    if (!key) return;
+    const candidates = amexCandidates(mprAmex, usedMprIdx, key, row.plAmount ?? 0);
+    if (candidates.length !== 1) return;
 
-  const usedMPRSubmissions = new Set<string>();
-
-  for (const l1 of l1Groups.values()) {
-    const candidates = mprAmex.filter((m) => {
-      const mKey = m.mid + '|' + m.submissionDate + '|' + m.socNumber;
-      return (
-        !usedMPRSubmissions.has(mKey) &&
-        m.mid === l1.mid &&
-        m.submissionDate === l1.subDate &&
-        Math.abs(m.submissionAmount - l1.total) < AMEX_EPSILON
-      );
+    usedMprIdx.add(candidates[0]!);
+    resolved[li] = true;
+    const mpr = mprAmex[candidates[0]!]!;
+    result.amexResults.push({
+      date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
+      mprRow: mpr, _match: 'settled', _diff: (row.plAmount ?? 0) - mpr.amount,
     });
+  });
 
-    let mprMatch: AmexMprRow | null = null;
-    if (l1.socExpected && candidates.length > 1) {
-      mprMatch = candidates.find((m) => parseInt(m.socNumber, 10) === l1.socExpected) ?? candidates[0] ?? null;
-    } else {
-      mprMatch = candidates[0] ?? null;
+  ledgerRows.forEach(({ row, date, card }, li) => {
+    if (resolved[li]) return;
+    const key = amexKey(date, card);
+    if (!key) {
+      result.amexResults.push({ date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending' });
+      return;
     }
 
-    if (mprMatch) {
-      const mKey = mprMatch.mid + '|' + mprMatch.submissionDate + '|' + mprMatch.socNumber;
-      usedMPRSubmissions.add(mKey);
-      const entry: AmexResult = {
-        mid: l1.mid,
-        date: l1.subDate,
-        timestamp: l1.timestamp,
-        outlet: l1.outlet,
-        txnCount: l1.rows.length,
-        l1Total: l1.total,
-        mprRow: mprMatch,
-        _match: 'settled',
-        socNumber: mprMatch.socNumber,
-        dbaName: mprMatch.dbaName,
-        socExpected: l1.socExpected,
-        socMatch: l1.socExpected ? parseInt(mprMatch.socNumber, 10) === l1.socExpected : null,
-      };
-      result.amexResults.push(entry);
-    } else {
-      const mprDiff = mprAmex.find((m) => m.mid === l1.mid && m.submissionDate === l1.subDate) ?? null;
-      const entry: AmexResult = {
-        mid: l1.mid,
-        date: l1.subDate,
-        timestamp: l1.timestamp,
-        outlet: l1.outlet,
-        txnCount: l1.rows.length,
-        l1Total: l1.total,
-        mprRow: mprDiff,
-        _match: mprDiff ? 'mismatch' : 'pending',
-        _diff: mprDiff ? mprDiff.submissionAmount - l1.total : null,
-        socNumber: mprDiff?.socNumber ?? '',
-        dbaName: mprDiff?.dbaName ?? '',
-        socExpected: l1.socExpected,
-      };
-      result.amexResults.push(entry);
+    const candidates = amexCandidates(mprAmex, usedMprIdx, key);
+    if (candidates.length === 0) {
+      result.amexResults.push({ date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending' });
+      return;
     }
-  }
-
-  for (const m of mprAmex) {
-    const mKey = m.mid + '|' + m.submissionDate + '|' + m.socNumber;
-    if (!usedMPRSubmissions.has(mKey)) {
+    if (candidates.length > 1) {
       result.amexResults.push({
-        mid: m.mid,
-        date: m.submissionDate,
-        timestamp: null,
-        outlet: '',
-        txnCount: m.transactionCount,
-        l1Total: null,
-        mprRow: m,
-        _match: 'unexpected',
-        socNumber: m.socNumber,
-        dbaName: m.dbaName,
+        date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null,
+        _match: 'ambiguous', _note: `Duplicate Transaction Date + Card in AMEX file (${date}, ${card})`,
       });
+      return;
     }
-  }
+
+    usedMprIdx.add(candidates[0]!);
+    const mpr = mprAmex[candidates[0]!]!;
+    result.amexResults.push({
+      date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
+      mprRow: mpr, _match: 'mismatch', _diff: (row.plAmount ?? 0) - mpr.amount,
+    });
+  });
+
+  // Every AMEX ROC row nothing above consumed — real bank money with no
+  // ledger counterpart (or one left ambiguous), surfaced rather than
+  // dropped, same principle as the Kotak/Pinelabs unexpected-credit fix above.
+  mprAmex.forEach((m, i) => {
+    if (usedMprIdx.has(i)) return;
+    result.amexResults.push({ date: m.txnDate, cardLast4: m.cardLast4, outlet: '', l1Amount: null, mprRow: m, _match: 'unexpected' });
+  });
 }
 
 function runUpiMatch(

@@ -54,14 +54,17 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
     label: 'AMEX MPR',
     color: '#0369a1',
     matchStrategy: 'batch',
-    headerFingerprint: ['Settlement date', 'Settlement number', 'Submission amount', 'DBA name'],
+    headerFingerprint: ['Record Type', 'Transaction Timestamp', 'Card Number', 'Charge Amount'],
+    // Unused by AMEX — `parseAmexCSV` resolves its own columns directly
+    // (same as before this adapter's export format changed). Kept only so
+    // `AdapterDef.fields` stays non-optional like every other adapter's.
     fields: {
-      settlementDate: ['Settlement date', 'Settlement Date'],
-      settlementNumber: ['Settlement number', 'Settlement No', 'Settlement No.'],
-      submissionAmount: ['Submission amount', 'Submission Amt', 'Total charges'],
-      merchantFees: ['Merchant Fees', 'Merchant Service Fee', 'MSF'],
-      settlementAmount: ['Settlement amount', 'Amount Paid To Bank'],
-      dbaName: ['DBA name', 'DBA Name', 'Branch', 'Merchant Name'],
+      settlementDate: ['Payment Date'],
+      settlementNumber: ['Settlement Number'],
+      submissionAmount: ['Charge Amount'],
+      merchantFees: [],
+      settlementAmount: [],
+      dbaName: [],
     },
   },
   HDFC_UPI: {

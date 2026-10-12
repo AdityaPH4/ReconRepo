@@ -13,7 +13,7 @@ import * as XLSX from 'xlsx';
 import {
   ADAPTERS,
   adjustPRDate,
-  amexNormDate,
+  cardLast4,
   detectAdapter,
   normDate,
   normRRN,
@@ -93,12 +93,13 @@ describe('adjustPRDate()', () => {
   });
 });
 
-describe('amexNormDate()', () => {
-  it('rolls a 23:50-23:59 Pinelabs submission to the next day', () => {
-    assert.equal(amexNormDate('01/08/2026 11:55:00 PM'), '2026-08-02');
+describe('cardLast4()', () => {
+  it('keeps only the last 4 digits, stripping any masking characters', () => {
+    assert.equal(cardLast4('374740XXXXX4000'), '4000');
   });
-  it('leaves an earlier submission on the same day', () => {
-    assert.equal(amexNormDate('01/08/2026 09:14:03 PM'), '2026-08-01');
+  it('returns an empty string for blank input', () => {
+    assert.equal(cardLast4(''), '');
+    assert.equal(cardLast4(null), '');
   });
 });
 
@@ -114,29 +115,35 @@ describe('parseTxnTimestamp()', () => {
 
 describe('parseAmexCSV()', () => {
   const csv = [
-    'Submissions',
-    'Settlement date,Submitting Merchant ID,Submission date,Submission amount,Transaction count,SOC invoice number,Submitting Business Name',
-    '02-08-26,1234567,01-08-26,"1,000.00",2,101,Toit Bengaluru',
-    '',
-    'Summary totals',
-    'some other summary row',
+    'Current Date,Payment Date,Settlement Number,Submission / Transaction Reference Number,Record Type,Transaction Timestamp,Card Number,Charge Amount',
+    '30/09/2026,29/09/2026,32711018,000000000000440,SOC,,,',
+    '30/09/2026,29/09/2026,,439,ROC,27/09/2026 19:51:38,379863XXXXX3000,"3,781.00"',
+    '30/09/2026,29/09/2026,,653,ROC,27/09/2026 16:52:45,377320XXXXX8845,"1,251.00"',
+    'Totals for Payment on 29/09/2026,,,,,,,',
   ].join('\n');
 
-  it('extracts only the Submissions detail rows, handling Indian comma-grouped amounts', () => {
+  it('extracts only ROC rows, handling Indian comma-grouped amounts and masked card numbers', () => {
     const rows = parseAmexCSV(csv);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0]!.mid, '1234567');
-    assert.equal(rows[0]!.submissionAmount, 1000);
-    assert.equal(rows[0]!.socNumber, '101');
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]!.cardLast4, '3000');
+    assert.equal(rows[0]!.amount, 3781);
+    assert.equal(rows[0]!.txnDate, '2026-09-27');
+    assert.equal(rows[0]!.settlementDate, '2026-09-29');
+    assert.equal(rows[1]!.cardLast4, '8845');
   });
 
-  it('does not confuse the settlement-summary header (also starting "Settlement date") with the detail header', () => {
-    const summaryOnly = [
-      'Submissions',
-      'Settlement date,Settlement number,Settlement amount', // no "Submitting Merchant ID" — the summary header
-      '02-08-26,555,1000.00',
+  it('skips the SOC batch row and the "Totals for Payment" footer, neither of which is a Record Type === ROC row', () => {
+    const socOnly = [
+      'Current Date,Payment Date,Settlement Number,Record Type,Transaction Timestamp,Card Number,Charge Amount',
+      '30/09/2026,29/09/2026,32711018,SOC,,,',
+      'Totals for Payment on 29/09/2026,,,,,,',
     ].join('\n');
-    assert.deepEqual(parseAmexCSV(summaryOnly), []);
+    assert.deepEqual(parseAmexCSV(socOnly), []);
+  });
+
+  it('returns empty when the header is missing a required column', () => {
+    const noCardColumn = ['Record Type,Transaction Timestamp,Charge Amount', 'ROC,27/09/2026 19:51:38,"3,781.00"'].join('\n');
+    assert.deepEqual(parseAmexCSV(noCardColumn), []);
   });
 });
 
@@ -215,9 +222,8 @@ describe('parseMprFile() — HDFC Link', () => {
 
   it('still resolves a genuine AMEX .csv to AMEX when no filename hint is given either', () => {
     const amexCsv = [
-      'Submissions',
-      'Settlement date,Submitting Merchant ID,Submission date,Submission amount,Transaction count,SOC invoice number,Submitting Business Name',
-      '02-08-26,1234567,01-08-26,"1,000.00",2,101,Toit Bengaluru',
+      'Current Date,Payment Date,Record Type,Transaction Timestamp,Card Number,Charge Amount',
+      '30/09/2026,29/09/2026,ROC,27/09/2026 19:51:38,379863XXXXX3000,"3,781.00"',
     ].join('\n');
     const parsed = parseMprFile('daily_export.csv', Buffer.from(amexCsv, 'utf8'), null);
     assert.equal(parsed.source, 'AMEX');
@@ -353,66 +359,97 @@ describe('runMatch() — primary RRN match', () => {
   });
 });
 
-describe('runMatch() — AMEX batch matching', () => {
-  it('settles a batch when MID + submission date + amount (±₹1) all agree', () => {
-    const session = ledgerRow({
-      acquirer: 'AMEX',
-      mid: '1234567',
-      plSettlementDate: '01/08/2026 09:14:03 PM',
-      plAmount: 1500,
-      invoice: '10',
-    });
+function amexMprRow(overrides: Partial<{ txnDate: string | null; cardLast4: string; amount: number; settlementDate: string | null; _file: string }> = {}) {
+  return { txnDate: '2026-09-27', cardLast4: '3000', amount: 3781, settlementDate: '2026-09-29', _file: 'amex.csv', ...overrides };
+}
+
+describe('runMatch() — AMEX transaction matching', () => {
+  it('settles when Transaction Date + Card (last 4) + Amount (±₹0.50) all agree', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781 });
     const result = runMatch(
       emptyInput({
         sessions: [session],
-        mprParsed: [
-          {
-            source: 'AMEX',
-            matchStrategy: 'batch',
-            rows: [{ mid: '1234567', submissionDate: '2026-08-01', settlementDate: '2026-08-03', submissionAmount: 1500, transactionCount: 1, socNumber: '11', dbaName: 'Toit', _file: 'amex.csv' }],
-            filename: 'amex.csv',
-          },
-        ],
+        mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow()], filename: 'amex.csv' }],
       }),
     );
     assert.equal(result.amexResults.length, 1);
     assert.equal(result.amexResults[0]!._match, 'settled');
-    assert.equal(result.amexResults[0]!.socMatch, true); // maxInvoice(10)+1 === socNumber(11)
+    assert.equal(result.amexResults[0]!.cardLast4, '3000');
   });
 
-  it('rolls a batch submitted in the last 10 minutes of the day to the next calendar day', () => {
-    const session = ledgerRow({ acquirer: 'AMEX', mid: '1234567', plSettlementDate: '01/08/2026 11:55:00 PM', plAmount: 500 });
+  it('flags a mismatch when the date and card match but the amount does not', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3700 });
     const result = runMatch(
       emptyInput({
         sessions: [session],
-        mprParsed: [
-          {
-            source: 'AMEX',
-            matchStrategy: 'batch',
-            rows: [{ mid: '1234567', submissionDate: '2026-08-02', settlementDate: '', submissionAmount: 500, transactionCount: 1, socNumber: '1', dbaName: '', _file: 'amex.csv' }],
-            filename: 'amex.csv',
-          },
-        ],
+        mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 3781 })], filename: 'amex.csv' }],
       }),
     );
-    assert.equal(result.amexResults[0]!._match, 'settled');
+    assert.equal(result.amexResults[0]!._match, 'mismatch');
+    assert.equal(result.amexResults[0]!._diff, 3700 - 3781);
   });
 
-  it('flags an unmatched MPR AMEX batch as unexpected', () => {
+  it('is pending when the ledger row has no AMEX row sharing its date + card', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781 });
+    const result = runMatch(emptyInput({ sessions: [session] }));
+    assert.equal(result.amexResults[0]!._match, 'pending');
+  });
+
+  it('flags an unmatched AMEX row as unexpected rather than silently dropped', () => {
     const result = runMatch(
-      emptyInput({
-        mprParsed: [
-          {
-            source: 'AMEX',
-            matchStrategy: 'batch',
-            rows: [{ mid: '999', submissionDate: '2026-08-01', settlementDate: '', submissionAmount: 200, transactionCount: 1, socNumber: '1', dbaName: '', _file: 'amex.csv' }],
-            filename: 'amex.csv',
-          },
-        ],
-      }),
+      emptyInput({ mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow()], filename: 'amex.csv' }] }),
     );
     assert.equal(result.amexResults.length, 1);
     assert.equal(result.amexResults[0]!._match, 'unexpected');
+    assert.equal(result.amexResults[0]!.outlet, '');
+  });
+
+  it('resolves two ledger rows on the same card and day via their distinct amounts, rather than flagging them ambiguous (the realistic repeat-customer case)', () => {
+    const sessions = [
+      ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781 }),
+      ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 500 }),
+    ];
+    const result = runMatch(
+      emptyInput({
+        sessions,
+        mprParsed: [
+          { source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 3781 }), amexMprRow({ amount: 500 })], filename: 'amex.csv' },
+        ],
+      }),
+    );
+    assert.equal(result.amexResults.length, 2);
+    assert.ok(result.amexResults.every((r) => r._match === 'settled'));
+  });
+
+  it('never guesses when two AMEX rows share the same date + card and neither matches the ledger amount', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 999 });
+    const result = runMatch(
+      emptyInput({
+        sessions: [session],
+        mprParsed: [
+          { source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 3781 }), amexMprRow({ amount: 500 })], filename: 'amex.csv' },
+        ],
+      }),
+    );
+    // The ledger row can't be attributed to either AMEX row, and both AMEX rows stay visible as unexpected rather than vanishing.
+    assert.equal(result.amexResults.length, 3);
+    assert.equal(result.amexResults.filter((r) => r._match === 'ambiguous').length, 1);
+    assert.equal(result.amexResults.filter((r) => r._match === 'unexpected').length, 2);
+  });
+
+  it('never guesses when the full Transaction Date + Card + Amount key itself collides on both sides', () => {
+    const sessions = [
+      ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781 }),
+      ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781 }),
+    ];
+    const result = runMatch(
+      emptyInput({
+        sessions,
+        mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 3781 }), amexMprRow({ amount: 3781 })], filename: 'amex.csv' }],
+      }),
+    );
+    assert.equal(result.amexResults.filter((r) => r._match === 'ambiguous').length, 2);
+    assert.equal(result.amexResults.filter((r) => r._match === 'unexpected').length, 2);
   });
 });
 
@@ -524,14 +561,7 @@ describe('buildExportRows()', () => {
   it('includes AMEX rows in the export (the fix over legacy)', () => {
     const result = runMatch(
       emptyInput({
-        mprParsed: [
-          {
-            source: 'AMEX',
-            matchStrategy: 'batch',
-            rows: [{ mid: '999', submissionDate: '2026-08-01', settlementDate: '', submissionAmount: 200, transactionCount: 1, socNumber: '1', dbaName: '', _file: 'amex.csv' }],
-            filename: 'amex.csv',
-          },
-        ],
+        mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow()], filename: 'amex.csv' }],
       }),
     );
     const rows = buildExportRows(result);
