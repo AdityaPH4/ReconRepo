@@ -563,6 +563,7 @@ const AMEX_STATUS: Record<
   mismatch: { tag: 'tag-warn', label: '⚠ Mismatch' },
   unexpected: { tag: 'tag-pur', label: '❓ Unexpected' },
   pending: { tag: 'tag-accent', label: '⏳ Pending' },
+  ambiguous: { tag: 'tag-warn', label: '⚠ Ambiguous' },
 };
 
 function AmexTab({
@@ -578,63 +579,47 @@ function AmexTab({
   const mismatch = rows.filter((r) => r._match === 'mismatch');
   const pending = rows.filter((r) => r._match === 'pending');
   const unexpected = rows.filter((r) => r._match === 'unexpected');
-  const notReconciled = [...mismatch, ...pending, ...unexpected];
+  const ambiguous = rows.filter((r) => r._match === 'ambiguous');
+  const notReconciled = [...mismatch, ...pending, ...unexpected, ...ambiguous];
 
   const table = (group: typeof rows) => (
     <table className="data-table">
       <thead>
         <tr>
           <th>Outlet</th>
-          <th>MID</th>
-          <th>DBA Name</th>
-          <th>Submission Date</th>
-          <th>L1 Timestamp</th>
-          <th className="num">Txn Count</th>
-          <th className="num">L1 Total</th>
+          <th>Txn Date</th>
+          <th>Card (last 4)</th>
+          <th className="num">L1 Amount</th>
           <th className="num">MPR Amount</th>
           <th className="num">Diff (Payment Report−MPR)</th>
-          <th>SOC No.</th>
-          <th>SOC Expected</th>
+          <th>MPR Settlement Date</th>
           <th>Status</th>
           <th />
         </tr>
       </thead>
       <tbody>
         {group.length === 0 ? (
-          <EmptyRow cols={13} message="None." />
+          <EmptyRow cols={9} message="None." />
         ) : (
           group.map((r, i) => {
-            const diff = r.mprRow ? (r.l1Total ?? 0) - r.mprRow.submissionAmount : null;
+            const diff = r.mprRow ? (r.l1Amount ?? 0) - r.mprRow.amount : null;
             const d = directionalFmt(diff);
             const status = AMEX_STATUS[r._match];
             return (
-              <tr key={`${r.mid}-${i}`}>
+              <tr key={`${r.cardLast4}-${r.date}-${i}`}>
                 <td>{r.outlet || '—'}</td>
-                <td className="mono">{r.mid || '—'}</td>
-                <td>{r.dbaName || r.mprRow?.dbaName || '—'}</td>
                 <td className="mono">{r.date ?? '—'}</td>
-                <td className="text-tiny text-ink-3">{r.timestamp ?? '—'}</td>
-                <td className="num">{r.txnCount ?? '—'}</td>
-                <td className="num">{r.l1Total != null ? fmt(r.l1Total) : '—'}</td>
-                <td className="num">{r.mprRow ? fmt(r.mprRow.submissionAmount) : '—'}</td>
+                <td className="mono">{r.cardLast4 || '—'}</td>
+                <td className="num">{r.l1Amount != null ? fmt(r.l1Amount) : '—'}</td>
+                <td className="num">{r.mprRow ? fmt(r.mprRow.amount) : '—'}</td>
                 <td className={`num ${diff != null && !d.ok ? (diff > 0 ? 'diff-excess' : 'diff-short') : ''}`}>
                   {d.ok ? <span className="diff-excess">✓</span> : d.text}
                 </td>
-                <td className="mono">{r.socNumber || '—'}</td>
+                <td className="mono">{r.mprRow?.settlementDate ?? '—'}</td>
                 <td>
-                  {r.socExpected == null ? (
-                    '—'
-                  ) : (
-                    <span className="text-tiny text-ink-3">
-                      {r.socExpected}
-                      {r.socMatch != null && (
-                        <span className={r.socMatch ? 'diff-excess' : 'diff-short'}> {r.socMatch ? '✓' : '✗'}</span>
-                      )}
-                    </span>
-                  )}
-                </td>
-                <td>
-                  <span className={`tag ${status.tag}`}>{status.label}</span>
+                  <span className={`tag ${status.tag}`} title={r._note}>
+                    {status.label}
+                  </span>
                 </td>
                 <td>
                   <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
@@ -644,16 +629,16 @@ function AmexTab({
           })
         )}
         {group.length > 0 && (() => {
-          const l1Sum = group.reduce((s, r) => s + (r.l1Total || 0), 0);
-          const mprSum = group.reduce((s, r) => s + (r.mprRow?.submissionAmount || 0), 0);
+          const l1Sum = group.reduce((s, r) => s + (r.l1Amount || 0), 0);
+          const mprSum = group.reduce((s, r) => s + (r.mprRow?.amount || 0), 0);
           const totalDiff = l1Sum - mprSum;
           return (
             <tr className="total-row">
-              <td colSpan={6}>Total</td>
+              <td colSpan={3}>Total</td>
               <td className="num">{fmt(l1Sum)}</td>
               <td className="num">{fmt(mprSum)}</td>
               <td className={`num ${diffClass(totalDiff)}`}>{signedFmt(totalDiff)}</td>
-              <td colSpan={4} />
+              <td colSpan={3} />
             </tr>
           );
         })()}
@@ -666,12 +651,12 @@ function AmexTab({
       <PanelSection
         title={`Reconciled (${reconciled.length})`}
       >
-        <p className="text-tiny text-ink-3 mb-2">matched by MID + Submission Date + Amount ±₹1</p>
+        <p className="text-tiny text-ink-3 mb-2">matched by Transaction Date + Card (last 4) + Amount ±₹0.50</p>
         {table(reconciled)}
       </PanelSection>
       <PanelSection title={`Not reconciled (${notReconciled.length})`}>
         <p className="text-tiny text-ink-3 mb-2">
-          {mismatch.length} mismatch · {pending.length} pending · {unexpected.length} unexpected
+          {mismatch.length} mismatch · {pending.length} pending · {unexpected.length} unexpected · {ambiguous.length} ambiguous
         </p>
         {table(notReconciled)}
       </PanelSection>

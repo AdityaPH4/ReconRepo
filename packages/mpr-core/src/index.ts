@@ -36,7 +36,7 @@ export { ADAPTERS, detectAdapter } from './adapters.js';
 
 export {
   adjustPRDate,
-  amexNormDate,
+  cardLast4,
   fmt,
   normDate,
   normRRN,

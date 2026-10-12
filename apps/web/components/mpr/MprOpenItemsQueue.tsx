@@ -22,14 +22,14 @@ const BUCKET_LABELS: Record<MprOpenRowDTO['bucket'], string> = {
   upiResults: 'HDFC Static UPI',
 };
 
-function rowRrn(item: MprOpenRowDTO): string {
-  const row = item.row as { rrn?: string; mpr?: { rrn?: string }; mid?: string };
-  return row.rrn || row.mpr?.rrn || row.mid || '—';
+export function rowRrn(item: MprOpenRowDTO): string {
+  const row = item.row as { rrn?: string; mpr?: { rrn?: string }; cardLast4?: string };
+  return row.rrn || row.mpr?.rrn || row.cardLast4 || '—';
 }
 
-function rowAmount(item: MprOpenRowDTO): number | null {
-  const row = item.row as { plAmount?: number; mprAmount?: number; l1Total?: number };
-  return row.plAmount ?? row.mprAmount ?? row.l1Total ?? null;
+export function rowAmount(item: MprOpenRowDTO): number | null {
+  const row = item.row as { plAmount?: number; mprAmount?: number; l1Amount?: number };
+  return row.plAmount ?? row.mprAmount ?? row.l1Amount ?? null;
 }
 
 export function MprOpenItemsQueue() {
