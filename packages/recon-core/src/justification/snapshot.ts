@@ -32,6 +32,8 @@ import type {
 export interface SettlementLedgerRow {
   rrn: string;
   authCode: string;
+  /** POS Payment Report card number — only ever set on an AMEX row; AMEX's bank settlement export has no RRN, so Layer 2 matches on this plus date/amount instead. */
+  cardNo?: string;
   acquirer: string;
   mid: string | null;
   invoice: string | null;
@@ -337,6 +339,7 @@ function pinelabsSettlementLedger(
     rows.push({
       rrn: x.zip?.rrn || '',
       authCode: x.pr?.authCode || '',
+      cardNo: x.pr?.cardNo || '',
       acquirer: 'AMEX',
       mid: x.zip?.mid || null,
       invoice: x.zip?.invoice || null,

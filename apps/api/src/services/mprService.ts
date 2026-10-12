@@ -154,7 +154,8 @@ export function runMprReconciliation(
  * already correctly reconciled, so they start closed with nothing to do;
  * `amountMismatch`/`pending`/`ambiguous`/`unexpected` always start open.
  * AMEX/UPI rows carry their own `_match` status (`'settled' | 'mismatch' |
- * 'pending' | 'unexpected' | 'partial'`) — only `'settled'` starts closed.
+ * 'pending' | 'unexpected' | 'partial' | 'ambiguous'`, the last AMEX-only) —
+ * only `'settled'` starts closed.
  */
 export function enrichMprMatchResult(result: MatchResult): MprMatchResultDTO {
   const closed = (): MprRowClosureDTO => ({
