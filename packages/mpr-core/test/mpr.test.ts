@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import {
   ADAPTERS,
   adjustPRDate,
+  applyReconciledAccumulator,
   cardLast4,
   detectAdapter,
   normDate,
@@ -24,6 +25,8 @@ import {
   splitRRNs,
   buildExportRows,
   type MatchInput,
+  type MatchResult,
+  type ReconciledDay,
   type TaggedLedgerRow,
 } from '../dist/index.js';
 
@@ -574,5 +577,143 @@ describe('buildExportRows()', () => {
     const rows = buildExportRows(result);
     assert.ok(rows.some((r) => r.includes('pending')));
     assert.equal(rows.length, 2); // header + the one pending row
+  });
+});
+
+// ── applyReconciledAccumulator() — cross-run retry memory ─────────────────
+
+function reconciledDay(businessDate: string, overrides: Partial<ReconciledDay> = {}): ReconciledDay {
+  return { businessDate, updatedAt: '2026-08-01T00:00:00.000Z', items: [], ...overrides };
+}
+
+describe('applyReconciledAccumulator()', () => {
+  it('leaves a genuinely new "Not in MPR" pending row pending, and flags its session still-open', () => {
+    const result = runMatch(emptyInput({ sessions: [ledgerRow({ rrn: '999999999999', _sourceSessionId: 'sess-1' })] }));
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-1', '2026-08-02T00:00:00.000Z');
+
+    assert.equal(out.result.pending.length, 1);
+    assert.equal(out.result.pending[0]!._reason, 'Not in MPR');
+    assert.ok(out.stillOpenSessionIds.has('sess-1'));
+    assert.equal(out.newItemsByBusinessDate.size, 0);
+  });
+
+  it('suppresses a "Not in MPR" pending row an earlier run already resolved, and does not re-flag its session', () => {
+    const result = runMatch(emptyInput({ sessions: [ledgerRow({ rrn: '999999999999', _sourceSessionId: 'sess-1' })] }));
+    const accumulators = new Map([
+      [
+        '2026-08-01',
+        reconciledDay('2026-08-01', {
+          items: [
+            {
+              key: 'sess-1|999999999999', sourceSessionId: 'sess-1', rrn: '999999999999', acquirer: 'Pinelabs',
+              outlet: 'BLRT', plAmount: 1000, mprAmount: 1000, diff: 0, matchStatus: 'settled',
+              mprFile: 'kotak.xlsx', resolvedInMprSessionId: 'mpr-run-0', resolvedAt: '2026-08-01T12:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    const out = applyReconciledAccumulator(result, accumulators, 'mpr-run-1', '2026-08-02T00:00:00.000Z');
+
+    assert.equal(out.result.pending.length, 0);
+    assert.ok(!out.stillOpenSessionIds.has('sess-1'));
+  });
+
+  it('never treats "No RRN" pending as retry-worthy, accumulator or not', () => {
+    const result = runMatch(emptyInput({ sessions: [ledgerRow({ rrn: '000000000000', _sourceSessionId: 'sess-1' })] }));
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-1', '2026-08-02T00:00:00.000Z');
+
+    assert.equal(out.result.pending.length, 1); // stays visible...
+    assert.ok(!out.stillOpenSessionIds.has('sess-1')); // ...but never keeps the session open for a retry that can't help
+  });
+
+  it('records a new settled RRN row as a reconciled item, keyed by session + RRN', () => {
+    const result = runMatch(
+      emptyInput({
+        sessions: [ledgerRow({ rrn: '100000000001', plAmount: 1000, _sourceSessionId: 'sess-1' })],
+        mprParsed: [{ source: 'KOTAK', matchStrategy: 'rrn', rows: [mprRow()], filename: 'kotak.xlsx' }],
+      }),
+    );
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-1', '2026-08-02T00:00:00.000Z');
+
+    const items = out.newItemsByBusinessDate.get('2026-08-01');
+    assert.equal(items?.length, 1);
+    assert.equal(items![0]!.key, 'sess-1|100000000001');
+    assert.equal(items![0]!.matchStatus, 'settled');
+  });
+
+  it('does not track a manually-uploaded row (no source session) in the accumulator at all', () => {
+    const result = runMatch(
+      emptyInput({
+        sessions: [ledgerRow({ rrn: '100000000001', plAmount: 1000, _sourceSessionId: null })],
+        mprParsed: [{ source: 'KOTAK', matchStrategy: 'rrn', rows: [mprRow()], filename: 'kotak.xlsx' }],
+      }),
+    );
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-1', '2026-08-02T00:00:00.000Z');
+    assert.equal(out.newItemsByBusinessDate.size, 0);
+  });
+
+  it('AMEX: suppresses a pending row already resolved in an earlier run, keyed by session + date + card', () => {
+    const session = ledgerRow({
+      acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781,
+      _sourceSessionId: 'sess-amex', _businessDate: '2026-09-27',
+    });
+    const result = runMatch(emptyInput({ sessions: [session] })); // no AMEX bank rows at all this run — stays pending without the accumulator
+
+    const accumulators = new Map([
+      [
+        '2026-09-27',
+        reconciledDay('2026-09-27', {
+          items: [
+            {
+              key: 'sess-amex|amex|2026-09-27|3000', sourceSessionId: 'sess-amex', rrn: null, acquirer: 'AMEX',
+              outlet: 'BLRT', plAmount: 3781, mprAmount: 3781, diff: 0, matchStatus: 'settled',
+              mprFile: 'amex.csv', resolvedInMprSessionId: 'mpr-run-0', resolvedAt: '2026-09-28T00:00:00.000Z',
+            },
+          ],
+        }),
+      ],
+    ]);
+
+    const out = applyReconciledAccumulator(result, accumulators, 'mpr-run-1', '2026-09-29T00:00:00.000Z');
+    assert.equal(out.result.amexResults.length, 0); // the pending row is suppressed, not re-reported
+    assert.ok(!out.stillOpenSessionIds.has('sess-amex'));
+  });
+
+  it('AMEX: a settled row this run produces a reconciled item; an ambiguous row produces none and never opens the session for retry', () => {
+    const settledSession = ledgerRow({
+      acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781, _sourceSessionId: 'sess-amex',
+    });
+    // Neither AMEX amount (9999/500) matches this ledger row's 999 — Pass 2 finds two date+card candidates, so it's ambiguous, not mismatch.
+    const ambiguousSession = ledgerRow({
+      acquirer: 'AMEX', plDate: '28/09/2026 07:00:00 PM', cardNo: '111111XXXXX1111', plAmount: 999, _sourceSessionId: 'sess-amex-2',
+    });
+    const result = runMatch(
+      emptyInput({
+        sessions: [settledSession, ambiguousSession],
+        mprParsed: [
+          {
+            source: 'AMEX',
+            matchStrategy: 'batch',
+            rows: [
+              { txnDate: '2026-09-27', cardLast4: '3000', amount: 3781, settlementDate: '2026-09-29', _file: 'amex.csv' },
+              { txnDate: '2026-09-28', cardLast4: '1111', amount: 9999, settlementDate: '2026-09-29', _file: 'amex.csv' },
+              { txnDate: '2026-09-28', cardLast4: '1111', amount: 500, settlementDate: '2026-09-29', _file: 'amex.csv' },
+            ],
+            filename: 'amex.csv',
+          },
+        ],
+      }),
+    );
+    assert.equal(result.amexResults.find((r) => r._sourceSessionId === 'sess-amex-2')!._match, 'ambiguous');
+
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-1', '2026-09-29T00:00:00.000Z');
+
+    const items = out.newItemsByBusinessDate.get('2026-08-01') ?? [];
+    assert.equal(items.length, 1);
+    assert.equal(items[0]!.key, 'sess-amex|amex|2026-09-27|3000');
+
+    assert.ok(!out.stillOpenSessionIds.has('sess-amex-2')); // ambiguous never keeps a session open — a human has to resolve it
   });
 });

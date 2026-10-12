@@ -18,12 +18,24 @@
  * outside any VPC instead.
  *
  * Ordering matters for safety under a crash/partial failure: persist the
- * `MprSessionDTO` first, THEN flag each source session's
- * `mprIncludedInSessionId`, THEN relocate the consumed S3 objects. A crash
- * at any point leaves the system safely retryable — worst case, a narrow
- * window produces a visible, auditable duplicate (an already-flagged
- * session reprocessed, or an already-moved S3 object re-read), never silent
- * wrong money. See the approved plan for the full reasoning.
+ * `MprSessionDTO` first, THEN save the updated per-day reconciled
+ * accumulators, THEN flag each source session's `mprIncludedInSessionId`,
+ * THEN relocate the consumed S3 objects. A crash at any point leaves the
+ * system safely retryable — worst case, a narrow window produces a
+ * visible, auditable duplicate (an already-flagged session reprocessed, an
+ * already-moved S3 object re-read, or an accumulator write repeated —
+ * upserts are idempotent by key), never silent wrong money. See the
+ * approved plan for the full reasoning.
+ *
+ * A session is only flagged `mprIncludedInSessionId` once every one of its
+ * rows has a conclusive outcome — settled, mismatched, ambiguous, or "No
+ * RRN" pending (a data problem no retry fixes). A row that's `pending`
+ * only because no bank file has arrived *yet* ("Not in MPR", or an AMEX
+ * row with no date+card match) leaves its session unflagged, so the next
+ * run's `listPendingMpr()` naturally offers it again — see
+ * `reconcileRetry.ts` in `@toit/mpr-core` for the matching logic, and
+ * `reconciledStore.ts` for the accumulator that stops a retry from
+ * regressing an already-settled row back to `pending`.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -35,8 +47,10 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3';
 import type { MprSessionDTO } from '@toit/contracts';
+import { applyReconciledAccumulator, type ReconciledDay } from '@toit/mpr-core';
 import { config } from '../config.js';
 import { enrichMprMatchResult, runMprReconciliation, type MprInputFile, type MprSnapshotInput } from './mprService.js';
+import { loadReconciledDay, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
 import { getMprSessionStore, getSessionStore } from '../storage/index.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
 
@@ -85,6 +99,8 @@ export interface MprIngestResult {
   bankFilesProcessed: number;
   jsonSnapshotsProcessed: number;
   sourceSessionsFlagged: number;
+  /** Sessions with at least one row still genuinely open (no bank file yet) — left unflagged so the next run retries them. */
+  sourceSessionsStillOpen: number;
 }
 
 export async function runMprIngest(): Promise<MprIngestResult> {
@@ -96,7 +112,10 @@ export async function runMprIngest(): Promise<MprIngestResult> {
 
   if (!pendingKeys.length && !pendingSessions.length) {
     console.log('[mpr-ingest] nothing pending on either side — no-op.');
-    return { ranReconciliation: false, mprSessionId: null, bankFilesProcessed: 0, jsonSnapshotsProcessed: 0, sourceSessionsFlagged: 0 };
+    return {
+      ranReconciliation: false, mprSessionId: null, bankFilesProcessed: 0,
+      jsonSnapshotsProcessed: 0, sourceSessionsFlagged: 0, sourceSessionsStillOpen: 0,
+    };
   }
 
   const mprInputs: MprInputFile[] = [];
@@ -116,28 +135,51 @@ export async function runMprIngest(): Promise<MprIngestResult> {
 
   const outcome = runMprReconciliation(jsonInputs, mprInputs);
 
+  const mprSessionId = randomUUID();
+  const now = new Date().toISOString();
+
+  // Load every touched business date's accumulator up front, then let the
+  // pure matcher-adjacent logic in @toit/mpr-core decide what's genuinely
+  // new vs. already resolved by an earlier run, and which sessions still
+  // have real work left for a future run to pick up.
+  const accumulatorsByDate = new Map<string, ReconciledDay>(
+    await Promise.all(outcome.businessDates.map(async (d) => [d, await loadReconciledDay(s3, d)] as const)),
+  );
+  const reconciled = applyReconciledAccumulator(outcome.result, accumulatorsByDate, mprSessionId, now);
+
   const mprSession: MprSessionDTO = {
     meta: {
-      id: randomUUID(),
-      createdAt: new Date().toISOString(),
+      id: mprSessionId,
+      createdAt: now,
       createdBy: AUTOMATION_ACTOR,
       jsonFiles: outcome.jsonFiles,
       mprFiles: outcome.mprFiles,
       businessDates: outcome.businessDates,
       outlets: outcome.outlets,
     },
-    result: enrichMprMatchResult(outcome.result),
+    result: enrichMprMatchResult(reconciled.result),
   };
 
   await getMprSessionStore().create(mprSession);
 
-  // Only after the MprSessionDTO is durably persisted — flag every source
-  // session that was actually folded in without error, so the next run's
-  // listPendingMpr() correctly excludes it.
+  // Only after the MprSessionDTO is durably persisted — merge this run's
+  // newly-resolved rows into each touched date's accumulator. An upsert by
+  // key is idempotent, so repeating this after a crash/retry is harmless.
+  for (const [businessDate, newItems] of reconciled.newItemsByBusinessDate) {
+    const existing = accumulatorsByDate.get(businessDate) ?? { businessDate, updatedAt: now, items: [] };
+    await saveReconciledDay(s3, { businessDate, updatedAt: now, items: mergeReconciledItems(existing.items, newItems) });
+  }
+
+  // Only after the accumulator is saved — flag every source session that
+  // was folded in without error AND has no row left genuinely open, so
+  // the next run's listPendingMpr() correctly excludes it. A session with
+  // a still-open row (no bank file for it *yet*) is deliberately left
+  // unflagged, so that same query naturally retries it next time.
   let sourceSessionsFlagged = 0;
   const byId = new Map(pendingSessions.map((s) => [s.meta.id, s] as const));
   for (const jf of outcome.jsonFiles) {
     if (!jf.sourceSessionId || jf.error) continue;
+    if (reconciled.stillOpenSessionIds.has(jf.sourceSessionId)) continue;
     const full = byId.get(jf.sourceSessionId);
     if (!full) continue;
     await sessionStore.update(full.meta.id, {
@@ -162,7 +204,8 @@ export async function runMprIngest(): Promise<MprIngestResult> {
   }
 
   console.log(
-    `[mpr-ingest] created MPR session ${mprSession.meta.id} — ${mprInputs.length} bank file(s), ${jsonInputs.length} snapshot(s), ${sourceSessionsFlagged} source session(s) flagged`,
+    `[mpr-ingest] created MPR session ${mprSession.meta.id} — ${mprInputs.length} bank file(s), ${jsonInputs.length} snapshot(s), ` +
+      `${sourceSessionsFlagged} source session(s) flagged, ${reconciled.stillOpenSessionIds.size} left open for retry`,
   );
 
   return {
@@ -171,5 +214,6 @@ export async function runMprIngest(): Promise<MprIngestResult> {
     bankFilesProcessed: mprInputs.length,
     jsonSnapshotsProcessed: jsonInputs.length,
     sourceSessionsFlagged,
+    sourceSessionsStillOpen: reconciled.stillOpenSessionIds.size,
   };
 }

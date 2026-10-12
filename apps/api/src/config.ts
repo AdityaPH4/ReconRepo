@@ -156,6 +156,8 @@ export const config = {
     /** S3 key prefixes within `objectStore.bucket` — Stage A writes under `pending`, Stage B relocates to `processed` once a file has been folded into a persisted MprSessionDTO. */
     s3PendingPrefix: str('MPR_S3_PENDING_PREFIX', 'mpr-inbound/pending/'),
     s3ProcessedPrefix: str('MPR_S3_PROCESSED_PREFIX', 'mpr-inbound/processed/'),
+    /** One JSON object per business date — see `reconciledStore.ts`. */
+    s3ReconciledPrefix: str('MPR_S3_RECONCILED_PREFIX', 'mpr-reconciled/'),
   },
 } as const;
 

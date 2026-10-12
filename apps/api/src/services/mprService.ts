@@ -113,7 +113,7 @@ export function runMprReconciliation(
     jsonFileMeta.push({ filename, businessDate: data.meta?.businessDate ?? null, outlet, sourceSessionId });
 
     for (const row of data.settlementLedger as Record<string, unknown>[]) {
-      sessions.push({ ...row, _businessDate: biz } as TaggedLedgerRow);
+      sessions.push({ ...row, _businessDate: biz, _sourceSessionId: sourceSessionId } as TaggedLedgerRow);
     }
 
     const txns = data.upi?.transactions ?? [];
