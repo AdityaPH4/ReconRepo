@@ -455,17 +455,6 @@ async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<S
   // re-run) — this newly-submitted one is now the definitive record.
   await supersedeSessions(session.meta.outlet, session.meta.businessDate, session.meta.id, ['draft', 'submitted']);
 
-  // Best-effort — awaited so a delivery failure is logged before the
-  // response goes out, but `sendEmail` never throws, so it can never turn
-  // a successful submit into a failed one.
-  if (saved.snapshot) {
-    await sendEmail({
-      to: [...config.email.bgkEmails],
-      subject: `Reconciliation submitted — ${outletName(saved.meta.outlet)} — ${saved.meta.businessDate ?? 'no business date'}`,
-      html: buildReportHtml(saved.snapshot as never),
-    });
-  }
-
   return saved;
 }
 
