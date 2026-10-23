@@ -3,7 +3,7 @@
  * business date's already-known-reconciled accumulator (see the API's
  * `reconciledStore.ts` for *why* that accumulator exists at all).
  *
- * Two things this does, together:
+ * Three things this does, together:
  *
  *  1. Suppresses a `pending` row this run produced if an *earlier* run
  *     already resolved the exact same row (same source session + RRN, +
@@ -14,10 +14,19 @@
  *     pending S3 prefix, so this run's own fresh match has nothing to
  *     re-find it with.
  *
- *  2. Reports which source sessions still have at least one genuinely
- *     open row after that suppression. The caller must NOT flag those as
- *     `mprIncludedInSessionId` yet, so `listPendingMpr()` naturally offers
- *     them to the next run.
+ *  2. Suppresses an `unexpected` bank row (Kotak/Pinelabs/HDFC-UPI's own,
+ *     or AMEX's `_match === 'unexpected'`) if its bare RRN (or, for AMEX,
+ *     its date+card) already appears in `recentSettledKeys` — a bank
+ *     simply resending a file it already sent produces rows with no
+ *     Layer-1 session to pair with this time (that session was already
+ *     folded in on the earlier run), so without this they'd be flagged as
+ *     new, real-money-with-no-record every time the same file resurfaces.
+ *     See `reconciledStore.ts`'s `loadRecentSettledKeys`.
+ *
+ *  3. Reports which source sessions still have at least one genuinely
+ *     open row after the `pending` suppression. The caller must NOT flag
+ *     those as `mprIncludedInSessionId` yet, so `listPendingMpr()`
+ *     naturally offers them to the next run.
  *
  * "No RRN" pending (missing/all-zero RRN) is deliberately excluded from
  * the retry check — a missing RRN is a data problem on the ledger side,
@@ -28,7 +37,7 @@
  * resolve an ambiguity, only a human can.
  */
 
-import type { AmexResult, MatchResult, PendingRow, ReconciledDay, ReconciledItem, TaggedUpiTransaction, UpiResult } from '../types.js';
+import type { AmexResult, MatchResult, PendingRow, ReconciledDay, ReconciledItem, TaggedUpiTransaction, UnexpectedMprRow, UpiResult } from '../types.js';
 
 export interface ReconcileRetryOutcome {
   result: MatchResult;
@@ -53,9 +62,12 @@ export function applyReconciledAccumulator(
   accumulatorsByDate: ReadonlyMap<string, ReconciledDay>,
   mprSessionId: string,
   resolvedAt: string,
+  recentSettledKeys: ReadonlySet<string> = new Set(),
 ): ReconcileRetryOutcome {
   const newItemsByBusinessDate = new Map<string, ReconciledItem[]>();
   const stillOpenSessionIds = new Set<string>();
+
+  const stillUnexpected: UnexpectedMprRow[] = result.unexpected.filter((r) => !(r.rrn && recentSettledKeys.has(r.rrn)));
 
   for (const [rows, matchStatus] of [
     [result.settled, 'settled'],
@@ -123,6 +135,8 @@ export function applyReconciledAccumulator(
       continue;
     }
 
+    if (r._match === 'unexpected' && r.date && r.cardLast4 && recentSettledKeys.has(`${r.date}|${r.cardLast4}`)) continue;
+
     stillAmex.push(r);
   }
 
@@ -166,7 +180,7 @@ export function applyReconciledAccumulator(
   }
 
   return {
-    result: { ...result, pending: stillPending, amexResults: stillAmex, upiResults: stillUpi },
+    result: { ...result, pending: stillPending, unexpected: stillUnexpected, amexResults: stillAmex, upiResults: stillUpi },
     newItemsByBusinessDate,
     stillOpenSessionIds,
   };
