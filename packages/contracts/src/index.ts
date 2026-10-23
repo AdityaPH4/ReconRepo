@@ -655,6 +655,20 @@ export interface CurrentUserDTO {
   outlet: OutletCode | null;
 }
 
+// ── Action log — a rolling audit trail, 10-day retention ──────────────────
+
+export interface ActionLogEntryDTO {
+  id: string;
+  role: UserRole;
+  /** `METHOD /path` — e.g. `POST /api/sessions/abc123/submit`. */
+  action: string;
+  /** `null` when the action's own outlet couldn't be determined (rare — see the logging middleware's own doc comment). */
+  outlet: OutletCode | null;
+  performedBy: string;
+  /** ISO timestamp — ui splits into date/time for display. */
+  createdAt: string;
+}
+
 // ── Approval workflow — a GM re-reconciling the same outlet+date needs an ──
 // admin to unblock it (guards against a wrong-file re-run going unnoticed).
 

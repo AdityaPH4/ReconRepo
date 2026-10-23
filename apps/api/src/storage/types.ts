@@ -7,6 +7,7 @@
  */
 
 import type {
+  ActionLogEntryDTO,
   ApprovalRequestDTO,
   ApprovalStatus,
   MprSessionDTO,
@@ -15,6 +16,7 @@ import type {
   SessionListItemDTO,
   SessionStatus,
   UploadRole,
+  UserRole,
 } from '@toit/contracts';
 import type { Advance, AdvanceApplication, BohEntry, OutletCode, TdsEntry } from '@toit/recon-core';
 
@@ -161,4 +163,14 @@ export interface ApprovalStore {
   get(id: string): Promise<ApprovalRequestDTO | null>;
   list(query: ApprovalQuery): Promise<ApprovalRequestDTO[]>;
   decide(id: string, status: 'approved' | 'denied', decidedBy: string, decidedAt: string): Promise<ApprovalRequestDTO>;
+}
+
+// ── Action log — a rolling audit trail of every mutating request, split by ──
+// role, 10-day retention. See `middleware/actionLog.ts`.
+
+export interface ActionLogStore {
+  readonly driver: 'memory' | 'postgres';
+  /** Also prunes anything past the retention window — self-cleaning, no separate scheduled job. */
+  record(entry: Omit<ActionLogEntryDTO, 'id'>): Promise<void>;
+  list(role: UserRole, limit?: number): Promise<ActionLogEntryDTO[]>;
 }

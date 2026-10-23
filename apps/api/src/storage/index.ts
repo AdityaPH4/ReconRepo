@@ -4,6 +4,7 @@
 
 import { config } from '../config.js';
 import { createLocalObjectStore } from './localObjectStore.js';
+import { createMemoryActionLogStore } from './memoryActionLogStore.js';
 import { createMemoryAdvanceStore } from './memoryAdvanceStore.js';
 import { createMemoryApprovalStore } from './memoryApprovalStore.js';
 import { createMemoryBohStore } from './memoryBohStore.js';
@@ -11,6 +12,7 @@ import { createMemoryMprSessionStore } from './memoryMprSessionStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
 import { createMemoryTdsStore } from './memoryTdsStore.js';
 import { getPool } from './postgres/pool.js';
+import { createPostgresActionLogStore } from './postgres/postgresActionLogStore.js';
 import { createPostgresAdvanceStore } from './postgres/postgresAdvanceStore.js';
 import { createPostgresApprovalStore } from './postgres/postgresApprovalStore.js';
 import { createPostgresBohStore } from './postgres/postgresBohStore.js';
@@ -19,6 +21,7 @@ import { createPostgresSessionStore } from './postgres/postgresSessionStore.js';
 import { createPostgresTdsStore } from './postgres/postgresTdsStore.js';
 import { createS3ObjectStore } from './s3ObjectStore.js';
 import type {
+  ActionLogStore,
   AdvanceStore,
   ApprovalStore,
   BohStore,
@@ -35,6 +38,7 @@ let bohStore: BohStore | null = null;
 let mprSessionStore: MprSessionStore | null = null;
 let approvalStore: ApprovalStore | null = null;
 let tdsStore: TdsStore | null = null;
+let actionLogStore: ActionLogStore | null = null;
 
 export function getObjectStore(): ObjectStore {
   if (objectStore) return objectStore;
@@ -126,7 +130,20 @@ export function getTdsStore(): TdsStore {
   return tdsStore;
 }
 
+export function getActionLogStore(): ActionLogStore {
+  if (actionLogStore) return actionLogStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    actionLogStore = createPostgresActionLogStore(getPool());
+    return actionLogStore;
+  }
+
+  actionLogStore = createMemoryActionLogStore();
+  return actionLogStore;
+}
+
 export type {
+  ActionLogStore,
   AdvanceStore,
   ApprovalStore,
   BohStore,
