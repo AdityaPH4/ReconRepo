@@ -8,6 +8,7 @@
 import type { SessionDTO, SessionListItemDTO } from '@toit/contracts';
 import { ROUTINE_REMARKS } from '@toit/recon-core';
 import type { Pool } from 'pg';
+import { config } from '../../config.js';
 import type { SessionQuery, SessionStore } from '../types.js';
 
 function toListItem(s: SessionDTO): SessionListItemDTO {
@@ -84,14 +85,20 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
     },
 
     async listPendingMpr() {
-      // `mprIncludedInSessionId` lives inside the JSONB blob, same reach-in
-      // pattern `businessDate` already uses above — no dedicated column, not
-      // a hot path. Oldest business dates first, so an automated run folds
-      // in older un-ingested snapshots before newer ones.
+      // `mprIncludedInSessionId`/`businessDate` live inside the JSONB blob,
+      // same reach-in pattern used elsewhere — no dedicated column, not a
+      // hot path. Oldest business dates first, so an automated run folds in
+      // older un-ingested snapshots before newer ones. A date before
+      // `config.mprMailbox.startDate` is out of MPR's scope entirely (a
+      // business decision, not a data problem) — excluded rather than ever
+      // surfacing as something awaiting resolution; so is a null date,
+      // since there's nothing to compare against the cutoff.
       const { rows } = await pool.query<{ data: SessionDTO }>(
         `SELECT data FROM recon.sessions
          WHERE status = 'submitted' AND (data->'meta'->>'mprIncludedInSessionId') IS NULL
+           AND (data->'meta'->>'businessDate') >= $1
          ORDER BY created_at ASC`,
+        [config.mprMailbox.startDate],
       );
       return rows.map((r) => r.data);
     },

@@ -8,6 +8,7 @@
 
 import type { SessionDTO, SessionListItemDTO } from '@toit/contracts';
 import { ROUTINE_REMARKS } from '@toit/recon-core';
+import { config } from '../config.js';
 import type { SessionQuery, SessionStore } from './types.js';
 
 export function createMemorySessionStore(): SessionStore {
@@ -60,7 +61,13 @@ export function createMemorySessionStore(): SessionStore {
 
     async listPendingMpr() {
       return [...sessions.values()]
-        .filter((s) => s.meta.status === 'submitted' && !s.meta.mprIncludedInSessionId)
+        .filter(
+          (s) =>
+            s.meta.status === 'submitted' &&
+            !s.meta.mprIncludedInSessionId &&
+            !!s.meta.businessDate &&
+            s.meta.businessDate >= config.mprMailbox.startDate,
+        )
         .sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
     },
   };

@@ -158,6 +158,8 @@ export const config = {
     s3ProcessedPrefix: str('MPR_S3_PROCESSED_PREFIX', 'mpr-inbound/processed/'),
     /** One JSON object per business date — see `reconciledStore.ts`. */
     s3ReconciledPrefix: str('MPR_S3_RECONCILED_PREFIX', 'mpr-reconciled/'),
+    /** `yyyy-mm-dd` — Layer-2 (MPR) reconciliation only covers business dates on or after this one; anything earlier is out of scope by business decision (pre-dates the MPR rollout) and should never surface as a session awaiting MPR resolution. See `SessionStore.listPendingMpr()`. */
+    startDate: str('MPR_START_DATE', '2026-10-01'),
   },
 } as const;
 
