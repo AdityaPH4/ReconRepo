@@ -50,7 +50,7 @@ import type { MprSessionDTO } from '@toit/contracts';
 import { applyReconciledAccumulator, type ReconciledDay } from '@toit/mpr-core';
 import { config } from '../config.js';
 import { enrichMprMatchResult, runMprReconciliation, type MprInputFile, type MprSnapshotInput } from './mprService.js';
-import { loadReconciledDay, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
+import { loadReconciledDay, loadRecentSettledKeys, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
 import { getMprSessionStore, getSessionStore } from '../storage/index.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
 
@@ -145,7 +145,13 @@ export async function runMprIngest(): Promise<MprIngestResult> {
   const accumulatorsByDate = new Map<string, ReconciledDay>(
     await Promise.all(outcome.businessDates.map(async (d) => [d, await loadReconciledDay(s3, d)] as const)),
   );
-  const reconciled = applyReconciledAccumulator(outcome.result, accumulatorsByDate, mprSessionId, now);
+  // Independent of `accumulatorsByDate` above (which only covers business
+  // dates *this run's own* JSON snapshots touch) — a resent bank file's
+  // rows have no Layer-1 session of their own, so recognizing them as
+  // "already reconciled" needs a broader, session-agnostic lookback. See
+  // `loadRecentSettledKeys`'s own doc comment.
+  const recentSettledKeys = await loadRecentSettledKeys(s3);
+  const reconciled = applyReconciledAccumulator(outcome.result, accumulatorsByDate, mprSessionId, now, recentSettledKeys);
 
   const mprSession: MprSessionDTO = {
     meta: {

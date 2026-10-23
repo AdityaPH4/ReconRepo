@@ -88,3 +88,38 @@ export function mergeReconciledItems(existing: readonly ReconciledItem[], incomi
   for (const item of incoming) byKey.set(item.key, item);
   return [...byKey.values()];
 }
+
+/** How many trailing calendar dates `loadRecentSettledKeys` checks — see its own doc comment. */
+export const RECENT_SETTLED_LOOKBACK_DAYS = 10;
+
+/**
+ * Every settled/mismatch item's lookup key — bare RRN, or (AMEX, which has
+ * none) its `date|cardLast4` composite, pulled from `item.key`'s own
+ * `sourceSessionId|...` suffix — across the trailing
+ * `RECENT_SETTLED_LOOKBACK_DAYS` calendar dates' accumulators.
+ *
+ * Why this is keyed independent of `sourceSessionId`, unlike every other
+ * read of this accumulator: a bank resending a file it already sent
+ * produces rows with no Layer-1 session of their own to pair with this
+ * time (that session was already folded in on the earlier run) — they're
+ * `unexpected` from the first line of matching, not merely `pending`. This
+ * is the one check that has to recognize "already reconciled" across runs
+ * with nothing but the bank row itself to go on.
+ */
+export async function loadRecentSettledKeys(s3: S3Client, today = new Date()): Promise<Set<string>> {
+  const keys = new Set<string>();
+  for (let i = 0; i < RECENT_SETTLED_LOOKBACK_DAYS; i++) {
+    const d = new Date(today);
+    d.setUTCDate(d.getUTCDate() - i);
+    const day = await loadReconciledDay(s3, d.toISOString().slice(0, 10));
+    for (const item of day.items) {
+      if (item.rrn) {
+        keys.add(item.rrn);
+      } else if (item.acquirer === 'AMEX') {
+        const [, date, card] = item.key.slice(item.sourceSessionId.length + 1).split('|');
+        if (date && card) keys.add(`${date}|${card}`);
+      }
+    }
+  }
+  return keys;
+}

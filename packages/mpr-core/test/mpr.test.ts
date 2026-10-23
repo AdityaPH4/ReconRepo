@@ -773,4 +773,36 @@ describe('applyReconciledAccumulator()', () => {
     assert.equal(out.result.upiResults.find((r) => r._retryKey === 'sess-upi|upi|1014')!._match, 'pending');
     assert.ok(out.stillOpenSessionIds.has('sess-upi'));
   });
+
+  it('suppresses an unexpected Kotak/Pinelabs row whose RRN was already settled in an earlier run — a bank resending a file it already sent, not new money', () => {
+    const result = runMatch(
+      emptyInput({
+        mprParsed: [{ source: 'KOTAK', matchStrategy: 'rrn', rows: [mprRow({ rrn: '888888888888', grossAmount: 250 })], filename: 'kotak.xlsx' }],
+      }),
+    );
+    assert.equal(result.unexpected.length, 1); // genuinely unexpected on its own, same as the plain runMatch() test
+
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-2', '2026-08-02T00:00:00.000Z', new Set(['888888888888']));
+    assert.equal(out.result.unexpected.length, 0);
+  });
+
+  it('leaves an unexpected row genuinely new when its RRN is not in the recent-settled lookup', () => {
+    const result = runMatch(
+      emptyInput({
+        mprParsed: [{ source: 'KOTAK', matchStrategy: 'rrn', rows: [mprRow({ rrn: '888888888888', grossAmount: 250 })], filename: 'kotak.xlsx' }],
+      }),
+    );
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-2', '2026-08-02T00:00:00.000Z', new Set(['111111111111']));
+    assert.equal(out.result.unexpected.length, 1);
+  });
+
+  it("AMEX: suppresses an unexpected row whose date+card was already settled in an earlier run", () => {
+    const result = runMatch(
+      emptyInput({ mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow()], filename: 'amex.csv' }] }),
+    );
+    assert.equal(result.amexResults[0]!._match, 'unexpected'); // genuinely unexpected on its own
+
+    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-2', '2026-09-29T00:00:00.000Z', new Set(['2026-09-27|3000']));
+    assert.equal(out.result.amexResults.length, 0);
+  });
 });
