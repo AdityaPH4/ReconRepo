@@ -99,3 +99,17 @@ CREATE TABLE IF NOT EXISTS recon.approval_requests (
   requested_at TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS approval_requests_outlet_status_idx ON recon.approval_requests (outlet, status);
+
+-- Rolling audit trail of every mutating request, split by role — 10-day
+-- retention, pruned by the app itself on every write (see
+-- postgresActionLogStore.ts), not a scheduled job. Flat columns, no JSONB —
+-- nothing here needs a richer per-row shape.
+CREATE TABLE IF NOT EXISTS recon.action_logs (
+  id TEXT PRIMARY KEY,
+  role TEXT NOT NULL,
+  action TEXT NOT NULL,
+  outlet TEXT,
+  performed_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS action_logs_role_created_at_idx ON recon.action_logs (role, created_at DESC);

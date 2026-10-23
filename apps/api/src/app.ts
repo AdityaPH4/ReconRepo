@@ -9,7 +9,9 @@ import express from 'express';
 import type { NextFunction, Request, Response } from 'express';
 import { MulterError } from 'multer';
 import { config } from './config.js';
+import { logActions } from './middleware/actionLog.js';
 import { attachUser } from './middleware/auth.js';
+import { actionLogsRouter } from './routes/actionLogs.js';
 import { adminDashboardRouter } from './routes/adminDashboard.js';
 import { approvalRequestsRouter } from './routes/approvalRequests.js';
 import { dashboardRouter } from './routes/dashboard.js';
@@ -40,11 +42,13 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use(attachUser);
+app.use(logActions);
 
 app.get('/api/me', (req, res) => {
   res.json(req.user);
 });
 
+app.use('/api/action-logs', actionLogsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/sessions/:id/justification', justificationRouter);
 app.use('/api/advances', advancesRouter);
