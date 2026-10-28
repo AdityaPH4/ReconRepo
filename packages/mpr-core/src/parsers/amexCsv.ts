@@ -19,20 +19,38 @@ function cleanAmt(s: unknown): number {
   return parseFloat(String(s ?? '').replace(/,/g, '').replace(/"/g, '') || '0') || 0;
 }
 
+/** Case-insensitive exact-match column lookup — real exports vary casing (e.g. "Card number" vs "Card Number"). */
+function indexOfCI(header: readonly string[], name: string): number {
+  return header.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+}
+
 export function parseAmexCSV(text: string): AmexMprRow[] {
   const lines = parseCSV(text);
   if (lines.length < 2) return [];
 
-  const header = lines[0]!.map((h) => h.trim());
-  const iRecordType = header.indexOf('Record Type');
-  const iPaymentDate = header.indexOf('Payment Date');
-  const iTxnTimestamp = header.indexOf('Transaction Timestamp');
-  const iCardNumber = header.indexOf('Card Number');
-  const iChargeAmount = header.indexOf('Charge Amount');
-  if (iRecordType < 0 || iTxnTimestamp < 0 || iCardNumber < 0 || iChargeAmount < 0) return [];
+  // The header isn't always the file's first line — some real exports lead
+  // with a couple of blank rows first. Scan for the row that actually has
+  // every column this parser needs, same as other adapters' header scans.
+  const headerIdx = lines.findIndex((line) => {
+    const header = line.map((h) => h.trim());
+    return (
+      indexOfCI(header, 'Record Type') >= 0 &&
+      indexOfCI(header, 'Transaction Timestamp') >= 0 &&
+      indexOfCI(header, 'Card Number') >= 0 &&
+      indexOfCI(header, 'Charge Amount') >= 0
+    );
+  });
+  if (headerIdx < 0) return [];
+
+  const header = lines[headerIdx]!.map((h) => h.trim());
+  const iRecordType = indexOfCI(header, 'Record Type');
+  const iPaymentDate = indexOfCI(header, 'Payment Date');
+  const iTxnTimestamp = indexOfCI(header, 'Transaction Timestamp');
+  const iCardNumber = indexOfCI(header, 'Card Number');
+  const iChargeAmount = indexOfCI(header, 'Charge Amount');
 
   const rows: AmexMprRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = headerIdx + 1; i < lines.length; i++) {
     const cols = lines[i]!;
     if ((cols[iRecordType] ?? '').trim() !== 'ROC') continue;
 
