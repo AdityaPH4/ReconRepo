@@ -15,7 +15,7 @@
 import type { CurrentUserDTO } from '@toit/contracts';
 import { usePathname } from 'next/navigation';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { getMe } from '@/lib/api';
+import { ApiError, getMe } from '@/lib/api';
 import { login } from '@/lib/auth';
 
 /** The callback page has no token yet when it first mounts — it must render unguarded so it can store the one arriving in the URL. */
@@ -33,27 +33,34 @@ export function useCurrentUser(): CurrentUserDTO {
   return ctx.user;
 }
 
-type State = { status: 'loading' } | { status: 'signed-out' } | { status: 'signed-in'; user: CurrentUserDTO };
+type State =
+  | { status: 'loading' }
+  | { status: 'signed-out' }
+  | { status: 'unreachable' }
+  | { status: 'signed-in'; user: CurrentUserDTO };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const unguarded = UNGUARDED_PATHS.has(pathname);
   const [state, setState] = useState<State>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (unguarded) return;
     let cancelled = false;
+    setState({ status: 'loading' });
     getMe()
       .then((user) => {
         if (!cancelled) setState({ status: 'signed-in', user });
       })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'signed-out' });
+      .catch((err) => {
+        // Only a real 401 means "not signed in". A dead or failing server must not look like a sign-out — that bounced straight back to sign-in and looped.
+        if (!cancelled) setState({ status: err instanceof ApiError && err.status === 401 ? 'signed-out' : 'unreachable' });
       });
     return () => {
       cancelled = true;
     };
-  }, [unguarded]);
+  }, [unguarded, attempt]);
 
   if (unguarded) return <>{children}</>;
 
@@ -61,6 +68,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return (
       <main className="app-main">
         <p className="text-body text-ink-3">Loading…</p>
+      </main>
+    );
+  }
+
+  if (state.status === 'unreachable') {
+    return (
+      <main className="app-main">
+        <div className="card" style={{ maxWidth: 420, margin: '4rem auto' }}>
+          <div className="card-body text-center">
+            <h1 className="text-lede font-semibold mb-2">Can&apos;t reach the server</h1>
+            <p className="text-body text-ink-3 mb-4">You&apos;re still signed in — the server isn&apos;t responding. Try again in a moment.</p>
+            <button type="button" className="btn btn-primary" onClick={() => setAttempt((n) => n + 1)}>
+              Retry
+            </button>
+          </div>
+        </div>
       </main>
     );
   }
