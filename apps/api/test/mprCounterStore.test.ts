@@ -108,6 +108,16 @@ function spec(name: string, make: () => Promise<MprCounterStore>) {
       assert.deepEqual((await store.rangeSummary(['2026-01-01'], null))[0], { date: '2026-01-01', total: 0, cleared: 0 });
     });
 
+    it('gives per-bank cleared/total for a range, with zeros for days that have nothing', async () => {
+      await fresh();
+      await store.applyRun([session()], [row(), row({ bank: 'amex', key: 'a#1', state: 'mismatch' })]);
+      const [d, none] = await store.rangeByBank([D, '2026-01-01'], 'BLRT');
+      assert.deepEqual(d!.counts.kotak, { total: 3, cleared: 1 });
+      assert.deepEqual(d!.counts.amex, { total: 2, cleared: 0 });
+      assert.deepEqual(none!.counts.kotak, { total: 0, cleared: 0 });
+      assert.equal((await store.rangeByBank([D], 'OTHER'))[0]!.counts.kotak.total, 0);
+    });
+
     it('reset empties everything', async () => {
       await fresh();
       await store.applyRun([session()], [row()]);

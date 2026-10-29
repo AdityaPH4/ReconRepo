@@ -154,6 +154,23 @@ export function createPostgresMprCounterStore(pool: Pool): MprCounterStore {
       return dates.map((date) => ({ date, total: total.get(date) ?? 0, cleared: done.get(date) ?? 0 }));
     },
 
+    async rangeByBank(dates, outlet) {
+      const { rows } = await pool.query<{ d: string; bank: CounterBank; total: number; cleared: number }>(
+        `SELECT t.business_date AS d, t.bank, sum(t.total)::int AS total, sum(least(t.total, coalesce(c.n, 0)))::int AS cleared
+         FROM (SELECT business_date, outlet, bank, total FROM recon.mpr_day_totals WHERE business_date = ANY($1) AND ($2::text IS NULL OR outlet = $2)) t
+         LEFT JOIN (SELECT business_date, outlet, bank, count(*) AS n FROM recon.mpr_day_cleared
+                    WHERE state IN ('settled','resolved') AND business_date = ANY($1) AND ($2::text IS NULL OR outlet = $2) GROUP BY 1,2,3) c
+           USING (business_date, outlet, bank)
+         GROUP BY 1, 2`,
+        [dates, outlet],
+      );
+      return dates.map((date) => {
+        const counts = Object.fromEntries(COUNTER_BANKS.map((b) => [b, { total: 0, cleared: 0 }])) as Record<CounterBank, { total: number; cleared: number }>;
+        for (const r of rows) if (r.d === date) counts[r.bank] = { total: r.total, cleared: r.cleared };
+        return { date, counts };
+      });
+    },
+
     async openTotal() {
       const { rows } = await pool.query<{ n: number | null }>(
         `SELECT sum(greatest(t.total - coalesce(c.n, 0), 0))::int AS n

@@ -18,6 +18,7 @@ import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { GmMprDashboard } from '@/components/mpr/GmMprDashboard';
 import { MprHeader } from '@/components/mpr/MprHeader';
+import { MprRangeStrip } from '@/components/mpr/MprRangeStrip';
 import { MprWorkspace } from '@/components/mpr/MprWorkspace';
 import { ApiError, getAdminMprDaySession, mprDayExportCsvUrl } from '@/lib/mprApi';
 
@@ -86,6 +87,8 @@ export function MprApp() {
             </button>
           )}
         </div>
+
+        <MprRangeStrip outlet={selectedOutlet} refreshKey={refreshNonce} selectedDate={selectedDate} onSelectDate={setSelectedDate} />
 
         {loading ? (
           <p className="text-body text-ink-3">Loading…</p>

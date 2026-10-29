@@ -19,6 +19,7 @@ import type {
   MprOpenBucket,
   MprOpenRowDTO,
   MprDayCountersDTO,
+  MprRangeCountersDTO,
   MprRowClosureDTO,
   MprRowCommentDTO,
   MprSessionDTO,
@@ -156,7 +157,18 @@ function last15DatesIST(now: Date = new Date()): string[] {
   return Array.from({ length: 15 }, (_, i) => todayIsoIST(new Date(now.getTime() - i * 86_400_000)));
 }
 
-// Registered before GET /:id, same reason as /open-rows above.
+// Registered before GET /:id, same reason as /open-rows above. Reads only the per-day counters (a few small indexed queries) — never the stored runs — so a month-long strip is cheap.
+mprSessionsRouter.get('/range-counters', requireAdmin, async (req, res, next) => {
+  try {
+    const outlet = typeof req.query.outlet === 'string' && req.query.outlet !== 'ALL' ? req.query.outlet : null;
+    const dates = Array.from({ length: 30 }, (_, i) => todayIsoIST(new Date(Date.now() - i * 86_400_000)));
+    const body: MprRangeCountersDTO = { days: await getMprCounterStore().rangeByBank(dates, outlet) };
+    res.json(body);
+  } catch (err) {
+    next(err);
+  }
+});
+
 mprSessionsRouter.get('/gm-status', async (req, res, next) => {
   try {
     const outlet = req.user.role === 'gm' ? req.user.outlet : null;

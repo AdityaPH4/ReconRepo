@@ -8,6 +8,7 @@ import type {
   AddMprRowCommentRequest,
   CloseMprRowRequest,
   GmMprStatusDTO,
+  MprRangeCountersDTO,
   MprOpenRowDTO,
   MprSessionDTO,
 } from '@toit/contracts';
@@ -58,6 +59,12 @@ export async function listOpenMprRows(): Promise<MprOpenRowDTO[]> {
 export async function getOpenMprCount(): Promise<number> {
   const res = await fetch(`${API_BASE}/api/mpr-sessions/open-count`, { cache: 'no-store', headers: authHeaders() });
   return (await unwrap<{ count: number }>(res)).count;
+}
+
+/** Last 30 days of per-bank cleared/total, from the counters only — admin-only, cheap enough to load with the page. */
+export async function getMprRangeCounters(outlet: string): Promise<MprRangeCountersDTO> {
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/range-counters?outlet=${encodeURIComponent(outlet)}`, { cache: 'no-store', headers: authHeaders() });
+  return unwrap<MprRangeCountersDTO>(res);
 }
 
 /** A GM's own outlet-scoped MPR status — replaces the upload/run screen for them, since MPR is now fully automated. */
