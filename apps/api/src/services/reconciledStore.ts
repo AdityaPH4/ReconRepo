@@ -90,7 +90,8 @@ export function mergeReconciledItems(existing: readonly ReconciledItem[], incomi
 }
 
 /** How many trailing calendar dates `loadRecentSettledKeys` checks — see its own doc comment. */
-export const RECENT_SETTLED_LOOKBACK_DAYS = 10;
+// shortcut: raised from 10 to 30 so the 1–14 Oct backfill's resent files are recognized; set back to 10 once that backfill is done.
+export const RECENT_SETTLED_LOOKBACK_DAYS = 30;
 
 /**
  * Every settled/mismatch item's lookup key — bare RRN, or (AMEX, which has

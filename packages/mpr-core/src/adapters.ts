@@ -90,10 +90,12 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
  * Filename-based adapter guess — tried first, at upload time. If it fails,
  * `parseMprFile` falls back to content sniffing (fingerprint-scanning every
  * sheet). `0790431`/`925792` are literal substrings observed in real bank
- * export filenames — brittle but intentional, ported as-is.
+ * export filenames — brittle but intentional, ported as-is. Kotak's real
+ * mail attachments are named starting with `0790` (one file per mail), so
+ * that's matched as a filename prefix, not just the old `0790431` substring.
  */
 export function detectAdapter(filename: string): AdapterKey | null {
-  if (/kotak.*mpr|mpr.*kotak|0790431/i.test(filename)) return 'KOTAK';
+  if (/kotak.*mpr|mpr.*kotak|0790431|^0790/i.test(filename)) return 'KOTAK';
   if (/pinelabs|pos.*authmerchan|merchantmpr|^mpr__/i.test(filename)) return 'PINELABS';
   if (/merchant_payout_report.*stid|925792/i.test(filename)) return 'HDFC_UPI';
   // Checked before the broad "any .csv named *settlement*" AMEX rule below —
