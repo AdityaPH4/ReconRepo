@@ -42,6 +42,11 @@ describe('dayTotalsFromSnapshot()', () => {
     assert.deepEqual(t, { amex: 1, kotak: 2, pinelabs: 1, hdfc_upi: 1, hdfc_dynamic: 1, hdfc_link: 1, hdfc_static: 2 });
   });
 
+  it('ignores Static UPI entries with no order number — they can never be matched or cleared', () => {
+    const t = dayTotalsFromSnapshot({ upi: { transactions: [{ source: 'HDFC' }, { source: 'HDFC', orderNo: '' }, { source: 'HDFC', orderNo: 'a' }] } });
+    assert.equal(t.hdfc_static, 1);
+  });
+
   it('is all zeros for a day with no snapshot data', () => {
     assert.equal(Object.values(dayTotalsFromSnapshot(null)).reduce((a, b) => a + b, 0), 0);
   });
@@ -72,6 +77,15 @@ describe('clearedRowsFromResult()', () => {
     r.settled.push(ledger(), ledger());
     const keys = clearedRowsFromResult(r, outlets).map((x) => x.key);
     assert.equal(new Set(keys).size, 2);
+  });
+
+  it('gives identical twins distinct keys even when one settled and the other is a mismatch', () => {
+    const r = empty();
+    r.settled.push(ledger());
+    r.amountMismatch.push(ledger({ status: 'open' }));
+    const rows = clearedRowsFromResult(r, outlets);
+    assert.equal(rows.length, 2);
+    assert.equal(new Set(rows.map((x) => x.key)).size, 2);
   });
 
   it('gives the same keys for the same result every time (re-applying a run is idempotent)', () => {

@@ -239,20 +239,21 @@ export interface DayCounterSession {
 export interface MprCounterStore {
   readonly driver: 'memory' | 'postgres';
   /**
-   * Records one ingest run: each session's totals (replacing any earlier
-   * ones for that outlet-day, and dropping cleared rows that belong to an
-   * older session of the same day), then every transaction the run cleared.
+   * Records one ingest run: each outlet-day's totals (summed over the run's
+   * sessions for it, replacing any earlier ones, and dropping cleared rows
+   * that belong to a session no longer in the day), then every transaction
+   * the run cleared.
    * Idempotent — applying the same run twice changes nothing.
    */
   applyRun(sessions: DayCounterSession[], cleared: ClearedRow[]): Promise<void>;
-  /** An admin resolved still-open transactions; each takes the next free slot among identical twins. */
+  /** An admin resolved still-open transactions; each takes the next free slot among identical twins. Rows from a session that isn't the day's current one are ignored. */
   markResolved(rows: ClearedRow[]): Promise<void>;
   /** Per-bank counters for one day, for one outlet or (null) all outlets pooled. */
   dayCounters(businessDate: string, outlet: string | null): Promise<Record<CounterBank, BankCounter>>;
   /** Total and cleared transaction counts per date, for one outlet or all. */
   rangeSummary(dates: string[], outlet: string | null): Promise<Array<{ date: string; total: number; cleared: number }>>;
-  /** Transactions still awaiting settlement across every day. */
-  openTotal(): Promise<number>;
+  /** Transactions still awaiting settlement across every day, or null when no day's totals have been recorded yet. */
+  openTotal(): Promise<number | null>;
   /** Empties both tables — only for a full rebuild. */
   reset(): Promise<void>;
 }

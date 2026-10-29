@@ -85,7 +85,8 @@ export function dayTotalsFromSnapshot(snapshot: unknown): DayTotals {
     upi?: { transactions?: Array<{ source?: string; orderNo?: string }> };
   } | null;
   for (const r of snap?.settlementLedger ?? []) totals[bankFamily(r.acquirer)]++;
-  totals.hdfc_static = new Set((snap?.upi?.transactions ?? []).filter((t) => t.source === 'HDFC').map((t) => t.orderNo)).size;
+  // An entry with no order number can't be matched or cleared, so it isn't a countable transaction.
+  totals.hdfc_static = new Set((snap?.upi?.transactions ?? []).filter((t) => t.source === 'HDFC' && t.orderNo).map((t) => t.orderNo)).size;
   return totals;
 }
 
@@ -109,7 +110,7 @@ function realOrders(pr: unknown): string[] {
  * there's no snapshot behind them to count against.
  *
  * Identical ledger rows (same RRN, order, amount and time) get an occurrence
- * suffix so each counts once; it's numbered per state within one result.
+ * suffix so each counts once, numbered within one result.
  */
 export function clearedRowsFromResult(result: DayResultLike, outletOfSession: (sessionId: string) => string | undefined): ClearedRow[] {
   const out: ClearedRow[] = [];
@@ -134,7 +135,8 @@ export function clearedRowsFromResult(result: DayResultLike, outletOfSession: (s
       out.push(row);
       return;
     }
-    out.push({ businessDate, outlet, bank, key: `${base}#${occurrence(`${outlet}|${businessDate}|${bank}|${state}|${base}`)}`, state, sessionId });
+    // Numbered per transaction, not per state: twins that ended in different states (one settled, one mismatched) must still get different keys.
+    out.push({ businessDate, outlet, bank, key: `${base}#${occurrence(`${outlet}|${businessDate}|${bank}|${base}`)}`, state, sessionId });
   };
 
   for (const tag of ['settled', 'amountMismatch', 'pending'] as const) {
