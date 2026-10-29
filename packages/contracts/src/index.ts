@@ -592,11 +592,23 @@ export interface MprOpenRowDTO {
   row: MprSettledRowDTO | MprPendingRowDTO | MprAmbiguousRowDTO | MprUnexpectedRowDTO | MprAmexResultDTO | MprUpiResultDTO;
 }
 
-/** One business date's reconciled/unreconciled row counts for a GM's own outlet. */
+export interface GmMprBankSummaryDTO {
+  total: number;
+  reconciled: number;
+}
+
+/** One business date's reconciled/unreconciled row counts for a GM's own outlet, overall and per bank. */
 export interface GmMprDaySummaryDTO {
   date: string;
   reconciled: number;
   unreconciled: number;
+  /** HDFC consolidates every HDFC counter family (UPI/dynamic/Link/Static) into one, matching the day-drill-down's own 4-tile layout (AMEX/HDFC/Pinelabs/Kotak). */
+  banks: {
+    amex: GmMprBankSummaryDTO;
+    kotak: GmMprBankSummaryDTO;
+    pinelabs: GmMprBankSummaryDTO;
+    hdfc: GmMprBankSummaryDTO;
+  };
 }
 
 /**

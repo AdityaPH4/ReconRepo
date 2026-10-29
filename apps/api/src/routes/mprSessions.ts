@@ -11,10 +11,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { bankFamily, normDate, rowsToCsv, buildExportRows } from '@toit/mpr-core';
+import { bankFamily, COUNTER_BANKS, normDate, rowsToCsv, buildExportRows } from '@toit/mpr-core';
+import type { CounterBank } from '@toit/mpr-core';
 import type {
   AddMprRowCommentRequest,
   CloseMprRowRequest,
+  GmMprDaySummaryDTO,
   GmMprStatusDTO,
   MprOpenBucket,
   MprOpenRowDTO,
@@ -169,6 +171,29 @@ mprSessionsRouter.get('/range-counters', requireAdmin, async (req, res, next) =>
   }
 });
 
+const HDFC_COUNTER_BANKS = ['hdfc_upi', 'hdfc_dynamic', 'hdfc_link', 'hdfc_static'] as const;
+
+/** Folds the 7 counter families down to the day-drill-down's own 4 tiles (AMEX/HDFC/Pinelabs/Kotak) — HDFC's 4 sub-families summed into one. */
+function consolidateBanks(counts: Record<CounterBank, { total: number; cleared: number }>): GmMprDaySummaryDTO['banks'] {
+  const hdfc = HDFC_COUNTER_BANKS.reduce(
+    (acc, b) => ({ total: acc.total + counts[b].total, reconciled: acc.reconciled + counts[b].cleared }),
+    { total: 0, reconciled: 0 },
+  );
+  return {
+    amex: { total: counts.amex.total, reconciled: counts.amex.cleared },
+    kotak: { total: counts.kotak.total, reconciled: counts.kotak.cleared },
+    pinelabs: { total: counts.pinelabs.total, reconciled: counts.pinelabs.cleared },
+    hdfc,
+  };
+}
+
+function emptyBankCounts(): Record<CounterBank, { total: number; cleared: number }> {
+  return Object.fromEntries(COUNTER_BANKS.map((b) => [b, { total: 0, cleared: 0 }])) as Record<
+    CounterBank,
+    { total: number; cleared: number }
+  >;
+}
+
 mprSessionsRouter.get('/gm-status', async (req, res, next) => {
   try {
     const outlet = req.user.role === 'gm' ? req.user.outlet : null;
@@ -178,15 +203,20 @@ mprSessionsRouter.get('/gm-status', async (req, res, next) => {
     }
 
     const dates = last15DatesIST();
-    // Fast path: the per-day counters (transactions from each day's JSON, and how many MPR has cleared). They hold nothing until the first
-    // rebuild or import has filled them, and the tables may not exist yet — in either case fall back to counting the stored rows.
-    const summary = await getMprCounterStore().rangeSummary(dates, outlet).catch((err) => {
-      console.error('[mpr-counters] summary unavailable:', err);
+    // Fast path: the per-day, per-bank counters (transactions from each day's JSON, and how many MPR has cleared). They hold nothing
+    // until the first rebuild or import has filled them, and the tables may not exist yet — in either case fall back to counting the
+    // stored rows directly.
+    const byBank = await getMprCounterStore().rangeByBank(dates, outlet).catch((err) => {
+      console.error('[mpr-counters] rangeByBank unavailable:', err);
       return null;
     });
     let days: GmMprStatusDTO['days'];
-    if (summary && summary.some((d) => d.total > 0)) {
-      days = summary.map((d) => ({ date: d.date, reconciled: d.cleared, unreconciled: d.total - d.cleared }));
+    if (byBank && byBank.some((d) => COUNTER_BANKS.some((b) => d.counts[b].total > 0))) {
+      days = byBank.map((d) => {
+        const total = COUNTER_BANKS.reduce((s, b) => s + d.counts[b].total, 0);
+        const cleared = COUNTER_BANKS.reduce((s, b) => s + d.counts[b].cleared, 0);
+        return { date: d.date, reconciled: cleared, unreconciled: total - cleared, banks: consolidateBanks(d.counts) };
+      });
     } else {
       // Counted from the same per-row day view the drill-down shows, so a row re-checked by several ingest runs counts once.
       const data = await getMprSessionStore().listDayRows(dates, false);
@@ -194,10 +224,27 @@ mprSessionsRouter.get('/gm-status', async (req, res, next) => {
         const { result } = buildDaySession(date, data, outlet);
         let reconciled = 0;
         let unreconciled = 0;
+        const bankCounts = emptyBankCounts();
+        const BUCKET_BANK = {
+          settled: (r: { acquirer?: string }) => bankFamily(r.acquirer),
+          amountMismatch: (r: { acquirer?: string }) => bankFamily(r.acquirer),
+          pending: (r: { acquirer?: string }) => bankFamily(r.acquirer),
+          amexResults: () => 'amex' as const,
+          upiResults: () => 'hdfc_static' as const,
+        };
         for (const bucket of ['settled', 'amountMismatch', 'pending', 'amexResults', 'upiResults'] as const) {
-          for (const row of result[bucket]) row.status === 'open' ? unreconciled++ : reconciled++;
+          for (const row of result[bucket]) {
+            const fam = BUCKET_BANK[bucket](row as never);
+            bankCounts[fam].total++;
+            if (row.status === 'open') {
+              unreconciled++;
+            } else {
+              reconciled++;
+              bankCounts[fam].cleared++;
+            }
+          }
         }
-        return { date, reconciled, unreconciled };
+        return { date, reconciled, unreconciled, banks: consolidateBanks(bankCounts) };
       });
     }
 
