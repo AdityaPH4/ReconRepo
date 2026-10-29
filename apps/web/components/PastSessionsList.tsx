@@ -17,14 +17,38 @@
 
 import { useEffect, useState } from 'react';
 import type { SessionListItemDTO } from '@toit/contracts';
+import { todayIsoIST } from '@toit/recon-core';
 import { fmt } from '@toit/recon-core/display';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { diffClass } from '@/components/ui/table';
 import { listSessions, reportUrl } from '@/lib/api';
 
-/** A submitted row opens its printable report directly — that's the whole point of "submission history". A still-draft row has no report to show yet (the endpoint 409s), so it opens the workspace to keep working on it instead. */
+/**
+ * How far back a submitted row still opens the live workspace instead of the
+ * printed report — recent enough that "did the GM actually reconcile this
+ * right" is still a live question worth checking tile-by-tile, same view a
+ * GM sees right before they submit. Deliberately separate from the API's own
+ * `RECENT_REPORT_WINDOW_DAYS` (7) — that one gates whether a GM can reach
+ * their own report at all; this is purely "which view opens by default" and
+ * applies to anyone who can see the row (GM or admin).
+ */
+const RECENT_WORKSPACE_WINDOW_DAYS = 15;
+
+function isWithinWorkspaceWindow(s: SessionListItemDTO): boolean {
+  const date = s.businessDate ?? todayIsoIST(new Date(s.createdAt));
+  const ageDays = Math.round((Date.parse(`${todayIsoIST()}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000);
+  return Number.isFinite(ageDays) && ageDays <= RECENT_WORKSPACE_WINDOW_DAYS;
+}
+
+/**
+ * A still-draft row always opens the workspace to keep working on it. A
+ * submitted row within the last 15 days also opens the workspace — the same
+ * full tile-by-tile view a GM sees right before submitting, for reviewing
+ * whether it was actually done correctly. A submitted row older than that
+ * opens the printed report instead, same as always.
+ */
 function openSession(s: SessionListItemDTO): void {
-  if (s.status === 'submitted') {
+  if (s.status === 'submitted' && !isWithinWorkspaceWindow(s)) {
     window.open(reportUrl(s.id), '_blank');
   } else {
     window.location.href = `/recon/sessions/${s.id}`;
