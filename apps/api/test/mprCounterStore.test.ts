@@ -112,7 +112,33 @@ function spec(name: string, make: () => Promise<MprCounterStore>) {
       await fresh();
       await store.applyRun([session()], [row()]);
       await store.reset();
-      assert.equal(await store.openTotal(), 0);
+      assert.equal(await store.openTotal(), null); // nothing recorded, which is not the same as nothing open
+    });
+
+    it('sums a day that arrives as two sessions, and keeps both sessions\' cleared rows', async () => {
+      await fresh();
+      await store.applyRun(
+        [session({ totals: totals({ kotak: 2 }) }), session({ sessionId: 's2', totals: totals({ kotak: 3 }) })],
+        [row(), row({ sessionId: 's2', key: 'z#1' })],
+      );
+      const c = await store.dayCounters(D, 'BLRT');
+      assert.deepEqual([c.kotak.total, c.kotak.settled], [5, 2]);
+    });
+
+    it('survives the same transaction arriving twice in one run in different states', async () => {
+      await fresh();
+      await store.applyRun([session()], [row({ state: 'mismatch' }), row({ state: 'settled' })]);
+      const c = await store.dayCounters(D, 'BLRT');
+      assert.deepEqual([c.kotak.settled, c.kotak.mismatch], [1, 0]);
+    });
+
+    it('ignores a resolution from a superseded session', async () => {
+      await fresh();
+      await store.applyRun([session({ sessionId: 's2' })], []);
+      await store.markResolved([row({ sessionId: 's1' })]);
+      assert.equal((await store.dayCounters(D, 'BLRT')).kotak.resolved, 0);
+      await store.markResolved([row({ sessionId: 's2' })]);
+      assert.equal((await store.dayCounters(D, 'BLRT')).kotak.resolved, 1);
     });
   });
 }

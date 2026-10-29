@@ -16,8 +16,16 @@ const isNumbered = (bank: CounterBank) => bank !== 'hdfc_static';
 
 export function createPostgresMprCounterStore(pool: Pool): MprCounterStore {
   async function upsertCleared(client: { query: Pool['query'] }, cleared: ClearedRow[]): Promise<void> {
-    for (let i = 0; i < cleared.length; i += CHUNK) {
-      const c = cleared.slice(i, i + CHUNK);
+    // One statement can't touch the same row twice, so collapse repeated keys to the highest state first.
+    const best = new Map<string, ClearedRow>();
+    for (const r of cleared) {
+      const k = `${r.businessDate}|${r.outlet}|${r.bank}|${r.key}`;
+      const e = best.get(k);
+      if (!e || STATE_RANK[r.state] > STATE_RANK[e.state]) best.set(k, r);
+    }
+    const rows = [...best.values()];
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const c = rows.slice(i, i + CHUNK);
       await client.query(
         `INSERT INTO recon.mpr_day_cleared AS e (business_date, outlet, bank, row_key, state, session_id)
          SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
@@ -28,6 +36,10 @@ export function createPostgresMprCounterStore(pool: Pool): MprCounterStore {
       );
     }
   }
+
+  /** Serialises writers on one outlet-day, so a run and an admin resolution can't interleave on it. */
+  const lockDay = (client: { query: Pool['query'] }, businessDate: string, outlet: string) =>
+    client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`mpr-day|${businessDate}|${outlet}`]);
 
   async function inTransaction<T>(fn: (client: { query: Pool['query'] }) => Promise<T>): Promise<T> {
     const client = await pool.connect();
@@ -48,23 +60,29 @@ export function createPostgresMprCounterStore(pool: Pool): MprCounterStore {
     driver: 'postgres',
 
     async applyRun(sessions, cleared) {
+      // A day can arrive as several sessions in one run; its total is their sum.
+      const days = new Map<string, { businessDate: string; outlet: string; ids: string[]; totals: Record<CounterBank, number> }>();
+      for (const s of sessions) {
+        const k = `${s.businessDate}|${s.outlet}`;
+        const d = days.get(k) ?? { businessDate: s.businessDate, outlet: s.outlet, ids: [], totals: Object.fromEntries(COUNTER_BANKS.map((b) => [b, 0])) as Record<CounterBank, number> };
+        d.ids.push(s.sessionId);
+        for (const b of COUNTER_BANKS) d.totals[b] += s.totals[b];
+        days.set(k, d);
+      }
       await inTransaction(async (client) => {
-        for (const s of sessions) {
-          await client.query(`DELETE FROM recon.mpr_day_totals WHERE business_date = $1 AND outlet = $2`, [s.businessDate, s.outlet]);
-          const banks = COUNTER_BANKS.filter((b) => s.totals[b] > 0);
+        for (const d of days.values()) {
+          await lockDay(client, d.businessDate, d.outlet);
+          await client.query(`DELETE FROM recon.mpr_day_totals WHERE business_date = $1 AND outlet = $2`, [d.businessDate, d.outlet]);
+          const banks = COUNTER_BANKS.filter((b) => d.totals[b] > 0);
           if (banks.length) {
             await client.query(
               `INSERT INTO recon.mpr_day_totals (business_date, outlet, bank, total, session_id)
                SELECT $1, $2, b, t, $3 FROM unnest($4::text[], $5::int[]) AS x(b, t)`,
-              [s.businessDate, s.outlet, s.sessionId, banks, banks.map((b) => s.totals[b])],
+              [d.businessDate, d.outlet, d.ids.join(','), banks, banks.map((b) => d.totals[b])],
             );
           }
           // A re-submitted day has a new session; whatever the old one had cleared no longer describes the day.
-          await client.query(`DELETE FROM recon.mpr_day_cleared WHERE business_date = $1 AND outlet = $2 AND session_id <> $3`, [
-            s.businessDate,
-            s.outlet,
-            s.sessionId,
-          ]);
+          await client.query(`DELETE FROM recon.mpr_day_cleared WHERE business_date = $1 AND outlet = $2 AND NOT (session_id = ANY($3::text[]))`, [d.businessDate, d.outlet, d.ids]);
         }
         await upsertCleared(client, cleared);
       });
@@ -73,6 +91,13 @@ export function createPostgresMprCounterStore(pool: Pool): MprCounterStore {
     async markResolved(rows) {
       await inTransaction(async (client) => {
         for (const r of rows) {
+          await lockDay(client, r.businessDate, r.outlet);
+          // Only the day's current session counts: a resolution recorded against a superseded session would describe a day that no longer exists.
+          const { rowCount } = await client.query(
+            `SELECT 1 FROM recon.mpr_day_totals WHERE business_date = $1 AND outlet = $2 AND $3 = ANY(string_to_array(session_id, ',')) LIMIT 1`,
+            [r.businessDate, r.outlet, r.sessionId],
+          );
+          if (!rowCount) continue;
           let key = r.key;
           if (isNumbered(r.bank)) {
             const base = occurrenceBase(r.key);
@@ -130,13 +155,13 @@ export function createPostgresMprCounterStore(pool: Pool): MprCounterStore {
     },
 
     async openTotal() {
-      const { rows } = await pool.query<{ n: number }>(
-        `SELECT coalesce(sum(greatest(t.total - coalesce(c.n, 0), 0)), 0)::int AS n
+      const { rows } = await pool.query<{ n: number | null }>(
+        `SELECT sum(greatest(t.total - coalesce(c.n, 0), 0))::int AS n
          FROM recon.mpr_day_totals t
          LEFT JOIN (SELECT business_date, outlet, bank, count(*) AS n FROM recon.mpr_day_cleared WHERE state IN ('settled','resolved') GROUP BY 1,2,3) c
            USING (business_date, outlet, bank)`,
       );
-      return rows[0]?.n ?? 0;
+      return rows[0]?.n ?? null;
     },
 
     async reset() {

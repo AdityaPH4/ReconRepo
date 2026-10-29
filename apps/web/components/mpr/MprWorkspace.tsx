@@ -248,6 +248,8 @@ export function MprWorkspace({
       }))
     : [];
   const countersBuilt = counterRows.some((c) => c.total > 0);
+  // Counters exist (the tables are there) but hold nothing for a day whose tiles have transactions: not built yet for this day.
+  const countersMissing = dayCounters !== undefined && !countersBuilt && checkRows.some((c) => c.tile > 0);
   const counterFailures = countersBuilt
     ? counterRows.filter((c, i) => c.total !== checkRows[i]!.tile || c.cleared !== c.tileDone)
     : [];
@@ -328,13 +330,13 @@ export function MprWorkspace({
       </div>
 
       {snapshot && snapshot.sessions > 0 && (
-        <div className={`alert ${checkFailures.length || counterFailures.length ? 'alert-warn' : 'alert-info'}`} data-testid="snapshot-check">
-          <span>{checkFailures.length || counterFailures.length ? '⚠' : '✓'}</span>
+        <div className={`alert ${checkFailures.length || counterFailures.length || countersMissing ? 'alert-warn' : 'alert-info'}`} data-testid="snapshot-check">
+          <span>{checkFailures.length || counterFailures.length || countersMissing ? '⚠' : '✓'}</span>
           <span>
             {counterFailures.length > 0 && !checkFailures.length ? (
               <>
                 <strong>The day&apos;s counters don&apos;t match the tiles.</strong>{' '}
-                {counterFailures.map((c) => `${c.label}: counter ${c.cleared}/${c.total} cleared, tiles ${c.tileDone}/${checkRows.find((r) => r.label === c.label)!.tile}`).join(' · ')}. A counter update was probably missed; the next MPR run for this day corrects it.
+                {counterFailures.map((c) => `${c.label}: counter ${c.cleared}/${c.total} cleared, tiles ${c.tileDone}/${checkRows.find((r) => r.label === c.label)!.tile}`).join(' · ')}. A counter update was missed; run the counter rebuild (apps/api/scripts/rebuildMprCounters.ts) to correct it.
               </>
             ) : checkFailures.length ? (
               <>
@@ -343,6 +345,10 @@ export function MprWorkspace({
                 {checkFailures.some((c) => c.json > c.tile)
                   ? 'Some JSON rows have not been through an MPR run yet (e.g. submitted after the last run).'
                   : 'The tiles hold more rows than the JSON — a re-submitted day may be double counted.'}
+              </>
+            ) : countersMissing ? (
+              <>
+                <strong>This day&apos;s counters are empty.</strong> The tiles are right, but the per-day counter has not been built for this day yet; run the counter rebuild (apps/api/scripts/rebuildMprCounters.ts).
               </>
             ) : (
               <>

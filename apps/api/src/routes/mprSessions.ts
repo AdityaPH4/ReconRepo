@@ -120,7 +120,7 @@ mprSessionsRouter.get('/open-count', requireAdmin, async (req, res, next) => {
       // The counters answer instantly and exactly (open = every day's transactions minus what's cleared). Until they've been filled — or if the tables aren't there — count stored open rows instead.
       openCountInFlight ??= getMprCounterStore()
         .openTotal()
-        .then((n) => (n > 0 ? n : getMprSessionStore().countOpenRows(50)))
+        .then((n) => n ?? getMprSessionStore().countOpenRows(50))
         .catch(() => getMprSessionStore().countOpenRows(50))
         .finally(() => { openCountInFlight = null; });
       openCount = { value: await openCountInFlight, at: Date.now() };

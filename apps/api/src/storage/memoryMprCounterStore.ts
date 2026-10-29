@@ -27,18 +27,28 @@ export function createMemoryMprCounterStore(): MprCounterStore {
     driver: 'memory',
 
     async applyRun(sessions, rows) {
+      const days = new Map<string, { businessDate: string; outlet: string; ids: string[]; totals: Record<CounterBank, number> }>();
       for (const s of sessions) {
-        for (const [k, v] of totals) if (v.date === s.businessDate && v.outlet === s.outlet) totals.delete(k);
+        const k = `${s.businessDate}|${s.outlet}`;
+        const d = days.get(k) ?? { businessDate: s.businessDate, outlet: s.outlet, ids: [], totals: Object.fromEntries(COUNTER_BANKS.map((b) => [b, 0])) as Record<CounterBank, number> };
+        d.ids.push(s.sessionId);
+        for (const b of COUNTER_BANKS) d.totals[b] += s.totals[b];
+        days.set(k, d);
+      }
+      for (const d of days.values()) {
+        for (const [k, v] of totals) if (v.date === d.businessDate && v.outlet === d.outlet) totals.delete(k);
         for (const b of COUNTER_BANKS) {
-          if (s.totals[b] > 0) totals.set(`${s.businessDate}|${s.outlet}|${b}`, { date: s.businessDate, outlet: s.outlet, bank: b, total: s.totals[b], sessionId: s.sessionId });
+          if (d.totals[b] > 0) totals.set(`${d.businessDate}|${d.outlet}|${b}`, { date: d.businessDate, outlet: d.outlet, bank: b, total: d.totals[b], sessionId: d.ids.join(',') });
         }
-        for (const [k, v] of cleared) if (v.businessDate === s.businessDate && v.outlet === s.outlet && v.sessionId !== s.sessionId) cleared.delete(k);
+        for (const [k, v] of cleared) if (v.businessDate === d.businessDate && v.outlet === d.outlet && !d.ids.includes(v.sessionId)) cleared.delete(k);
       }
       upsert(rows);
     },
 
     async markResolved(rows) {
       for (const r of rows) {
+        const current = [...totals.values()].some((t) => t.date === r.businessDate && t.outlet === r.outlet && t.sessionId.split(',').includes(r.sessionId));
+        if (!current) continue; // not the day's current session
         let key = r.key;
         if (r.bank !== 'hdfc_static') {
           const base = occurrenceBase(r.key);
@@ -77,6 +87,7 @@ export function createMemoryMprCounterStore(): MprCounterStore {
     },
 
     async openTotal() {
+      if (!totals.size) return null;
       let open = 0;
       for (const t of totals.values()) {
         let n = 0;
