@@ -8,9 +8,10 @@
  * `serverless-http`.
  */
 
-import { runMailFetch } from './services/mailFetchService.js';
+import { runMailFetch, type MailBackfillOptions } from './services/mailFetchService.js';
 
-export const handler = async () => {
-  const result = await runMailFetch();
+// The scheduled rule sends no payload; a manual test event can carry `{"backfill": {...}}` for a one-off catch-up (see `MailBackfillOptions`).
+export const handler = async (event?: { backfill?: MailBackfillOptions }) => {
+  const result = await runMailFetch(event?.backfill);
   return result;
 };
