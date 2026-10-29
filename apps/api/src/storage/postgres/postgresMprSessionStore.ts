@@ -111,6 +111,18 @@ export function createPostgresMprSessionStore(pool: Pool): MprSessionStore {
       return { runs: runs.rows, rows: rows.rows, bankRows: bankRows.rows, settledKeys: new Set(settled.rows.map((r) => r.k)) };
     },
 
+    async countOpenRows(limit) {
+      const { rows } = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n
+         FROM (SELECT data FROM recon.mpr_sessions ORDER BY created_at DESC LIMIT $1) ms
+         CROSS JOIN unnest(ARRAY['amountMismatch','pending','ambiguous','unexpected','amexResults','upiResults']) AS b(bucket)
+         CROSS JOIN LATERAL jsonb_array_elements(ms.data->'result'->b.bucket) AS r
+         WHERE r->>'status' = 'open'`,
+        [limit],
+      );
+      return rows[0]?.n ?? 0;
+    },
+
     async update(id, session) {
       const { rowCount } = await pool.query(`UPDATE recon.mpr_sessions SET data = $2 WHERE id = $1`, [id, session]);
       if (!rowCount) throw new Error(`MPR session not found: ${id}`);

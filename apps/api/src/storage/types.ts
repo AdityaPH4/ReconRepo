@@ -79,6 +79,20 @@ export interface SessionStore {
    * (including `.snapshot`), unlike `list()`'s slim `SessionListItemDTO`.
    */
   listPendingMpr(): Promise<SessionDTO[]>;
+  /**
+   * What the saved POS-recon JSON of one business day holds, counted in the
+   * database without loading the snapshots: settlement-ledger rows per
+   * acquirer, and distinct HDFC Static UPI order numbers. Only `submitted`
+   * sessions count (a draft or discarded one isn't the day's record).
+   * `outlet` null pools every outlet.
+   */
+  snapshotCountsForDay(businessDate: string, outlet: string | null): Promise<SnapshotDayCounts>;
+}
+
+export interface SnapshotDayCounts {
+  sessions: number;
+  byAcquirer: Record<string, number>;
+  staticUpiOrders: number;
 }
 
 // ── Advances repository — outlet-scoped cross-session store ──────────────
@@ -174,6 +188,11 @@ export interface MprSessionStore {
    * runs instead is hundreds of MB per request.
    */
   listDayRows(dates: string[], bankSide: boolean): Promise<MprDayRows>;
+  /**
+   * How many rows are still `open` across the newest `limit` runs — counted
+   * in the database, so the admin home badge never has to download runs.
+   */
+  countOpenRows(limit: number): Promise<number>;
   /** Whole-object replace — used to persist a row's close-with-note mutation. */
   update(id: string, session: MprSessionDTO): Promise<MprSessionDTO>;
 }

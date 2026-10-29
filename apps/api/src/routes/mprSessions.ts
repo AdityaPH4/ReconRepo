@@ -11,7 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { normDate, rowsToCsv, buildExportRows } from '@toit/mpr-core';
+import { bankFamily, normDate, rowsToCsv, buildExportRows } from '@toit/mpr-core';
 import type {
   AddMprRowCommentRequest,
   CloseMprRowRequest,
@@ -21,6 +21,7 @@ import type {
   MprRowClosureDTO,
   MprRowCommentDTO,
   MprSessionDTO,
+  MprSnapshotCountsDTO,
 } from '@toit/contracts';
 import { todayIsoIST } from '@toit/recon-core';
 import { Router } from 'express';
@@ -28,7 +29,7 @@ import multer from 'multer';
 import { config } from '../config.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { BadMprRequestError, enrichMprMatchResult, runMprReconciliation } from '../services/mprService.js';
-import { getMprSessionStore } from '../storage/index.js';
+import { getMprSessionStore, getSessionStore } from '../storage/index.js';
 import type { MprDayRows } from '../storage/types.js';
 
 const OPEN_BUCKETS: readonly MprOpenBucket[] = [
@@ -101,6 +102,24 @@ mprSessionsRouter.get('/', async (req, res, next) => {
   try {
     const items = await getMprSessionStore().list({});
     res.json(items);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Registered before GET /:id, same reason as /open-rows below. Backs the admin home badge, which only shows a number — so it must not download runs. Concurrent callers share one query and the answer is kept for 5 minutes.
+const OPEN_COUNT_TTL_MS = 5 * 60 * 1000;
+let openCount: { value: number; at: number } | null = null;
+let openCountInFlight: Promise<number> | null = null;
+mprSessionsRouter.get('/open-count', requireAdmin, async (req, res, next) => {
+  try {
+    if (!openCount || Date.now() - openCount.at > OPEN_COUNT_TTL_MS) {
+      openCountInFlight ??= getMprSessionStore()
+        .countOpenRows(50)
+        .finally(() => { openCountInFlight = null; });
+      openCount = { value: await openCountInFlight, at: Date.now() };
+    }
+    res.json({ count: openCount.value });
   } catch (err) {
     next(err);
   }
@@ -329,7 +348,13 @@ function buildDaySession(date: string, data: MprDayRows, outlet: string | null):
 
 /** Bank-only rows carry no outlet, so they're only fetched for the all-outlets view. */
 async function loadDay(date: string, outlet: string | null): Promise<MprSessionDTO> {
-  return buildDaySession(date, await getMprSessionStore().listDayRows([date], !outlet), outlet);
+  const [data, snapshot] = await Promise.all([
+    getMprSessionStore().listDayRows([date], !outlet),
+    getSessionStore().snapshotCountsForDay(date, outlet),
+  ]);
+  const counts: MprSnapshotCountsDTO['counts'] = { amex: 0, kotak: 0, pinelabs: 0, hdfc_upi: 0, hdfc_dynamic: 0, hdfc_link: 0, hdfc_static: snapshot.staticUpiOrders };
+  for (const [acquirer, n] of Object.entries(snapshot.byAcquirer)) counts[bankFamily(acquirer)] += n;
+  return { ...buildDaySession(date, data, outlet), snapshotCounts: { sessions: snapshot.sessions, counts } };
 }
 
 // Registered before GET /:id, same reason as /open-rows above.

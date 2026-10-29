@@ -80,6 +80,17 @@ export function createMemoryMprSessionStore(): MprSessionStore {
       return { runs: recent.map((s) => ({ id: s.meta.id, meta: s.meta })), rows, bankRows, settledKeys };
     },
 
+    async countOpenRows(limit) {
+      const recent = [...sessions.values()].sort((a, b) => b.meta.createdAt.localeCompare(a.meta.createdAt)).slice(0, limit);
+      let n = 0;
+      for (const s of recent) {
+        for (const bucket of ['amountMismatch', 'pending', 'ambiguous', 'unexpected', 'amexResults', 'upiResults'] as const) {
+          n += (s.result[bucket] as Array<{ status: string }>).filter((r) => r.status === 'open').length;
+        }
+      }
+      return n;
+    },
+
     async update(id, session) {
       if (!sessions.has(id)) throw new Error(`MPR session not found: ${id}`);
       sessions.set(id, session);

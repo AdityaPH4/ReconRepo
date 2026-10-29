@@ -7,7 +7,7 @@
  */
 
 import type { MprRowClosureDTO, MprSessionDTO } from '@toit/contracts';
-import { normDate } from '@toit/mpr-core';
+import { bankFamily, normDate, type BankFamily } from '@toit/mpr-core';
 import { useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { addMprRowComment, closeMprRow, mprExportCsvUrl } from '@/lib/mprApi';
@@ -16,16 +16,7 @@ import { EmptyRow, LoadMoreSentinel, PanelSection, diffClass, useRevealOnScroll 
 type TabId = 'amex' | 'hdfc' | 'pinelabs' | 'kotak' | 'ambiguous';
 type HdfcSub = 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_static' | 'hdfc_link';
 type AmbiguousSub = 'duplicates' | 'mismatch' | 'unexpected';
-type LedgerFamily = 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link';
-
-/** Which bank's MPR file settles a ledger row, by its acquirer. Everything Kotak/HDFC don't acquire settles through Pinelabs. */
-function ledgerFamily(acquirer: string | undefined): LedgerFamily {
-  if (/^KOTAK/i.test(acquirer ?? '')) return 'kotak';
-  if (acquirer === 'HDFC UPI') return 'hdfc_upi';
-  if (acquirer === 'HDFC') return 'hdfc_dynamic';
-  if (acquirer === 'HDFC_LINK') return 'hdfc_link';
-  return 'pinelabs';
-}
+type LedgerFamily = Exclude<BankFamily, 'amex'>;
 
 const HDFC_SUBS: Array<{ id: HdfcSub; label: string }> = [
   { id: 'hdfc_upi', label: 'HDFC UPI' },
@@ -162,12 +153,27 @@ export function MprWorkspace({
     MprSessionDTO['result']['pending']
   >;
   for (const r of [...result.settled, ...result.amountMismatch, ...result.pending]) {
-    const c = ledgerCount[ledgerFamily(r.acquirer)];
+    const c = ledgerCount[bankFamily(r.acquirer) as LedgerFamily];
     c.total++;
     if (isDone(r)) c.done++;
   }
-  for (const r of result.pending) if (!isDone(r)) openByFamily[ledgerFamily(r.acquirer)].push(r);
-  const staticUpi: Count = { done: result.upiResults.filter(isDone).length, total: result.upiResults.length };
+  for (const r of result.pending) if (!isDone(r)) openByFamily[bankFamily(r.acquirer) as LedgerFamily].push(r);
+  // Static UPI is counted by POS transaction (distinct order numbers), the same unit as every other bank. A row with no POS transaction behind it is a manual entry a GM made (e.g. "Advance Received") — it stays in the Static UPI tab but never inflates the fraction.
+  const realOrders = (r: MprSessionDTO['result']['upiResults'][number]) =>
+    new Set(
+      (Array.isArray(r.pr) ? r.pr : [r.pr]).flatMap((p) => {
+        const t = p as { source?: string; orderNo?: string } | null;
+        return t?.source === 'HDFC' && t.orderNo ? [t.orderNo] : [];
+      }),
+    );
+  const staticUpi: Count = { done: 0, total: 0 };
+  let manualUpiEntries = 0;
+  for (const r of result.upiResults) {
+    const orders = realOrders(r).size;
+    if (orders === 0) manualUpiEntries++;
+    staticUpi.total += orders;
+    if (isDone(r)) staticUpi.done += orders;
+  }
   // Denominator excludes 'unexpected' (an AMEX bank credit with no ledger counterpart), so this stays "how many of the ledger's AMEX transactions are confirmed".
   const amexLedger = result.amexResults.filter((r) => r._match !== 'unexpected');
   const amex: Count = { done: amexLedger.filter(isDone).length, total: amexLedger.length };
@@ -192,9 +198,36 @@ export function MprWorkspace({
     sub: 'reconciled / total in ledger',
     stat: (c.done < c.total ? 'err' : 'ok') as 'ok' | 'err',
   });
+  const hdfcTile = {
+    ...bankTile('hdfc', 'HDFC', hdfc),
+    sub: `reconciled / total in ledger${manualUpiEntries ? ` · +${manualUpiEntries} manual entr${manualUpiEntries === 1 ? 'y' : 'ies'} listed separately` : ''}`,
+  };
+
+  // What each tile's total must equal: the rows the day's saved POS JSON holds. Only pooled day views carry it.
+  const snapshot = session.snapshotCounts;
+  const tileTotals = {
+    amex: amex.total,
+    kotak: ledgerCount.kotak.total,
+    pinelabs: ledgerCount.pinelabs.total,
+    hdfc_upi: ledgerCount.hdfc_upi.total,
+    hdfc_dynamic: ledgerCount.hdfc_dynamic.total,
+    hdfc_link: ledgerCount.hdfc_link.total,
+    hdfc_static: staticUpi.total,
+  };
+  const checkRows = [
+    { label: 'AMEX', keys: ['amex'] as const },
+    { label: 'HDFC', keys: ['hdfc_upi', 'hdfc_dynamic', 'hdfc_static', 'hdfc_link'] as const },
+    { label: 'Pinelabs', keys: ['pinelabs'] as const },
+    { label: 'Kotak', keys: ['kotak'] as const },
+  ].map((c) => ({
+    label: c.label,
+    json: snapshot ? c.keys.reduce((n, k) => n + snapshot.counts[k], 0) : 0,
+    tile: c.keys.reduce((n, k) => n + tileTotals[k], 0),
+  }));
+  const checkFailures = checkRows.filter((c) => c.json !== c.tile);
   const tiles = [
     bankTile('amex', 'AMEX', amex),
-    bankTile('hdfc', 'HDFC', hdfc),
+    hdfcTile,
     bankTile('pinelabs', 'Pinelabs', ledgerCount.pinelabs),
     bankTile('kotak', 'Kotak', ledgerCount.kotak),
     {
@@ -267,6 +300,28 @@ export function MprWorkspace({
           );
         })}
       </div>
+
+      {snapshot && snapshot.sessions > 0 && (
+        <div className={`alert ${checkFailures.length ? 'alert-warn' : 'alert-info'}`} data-testid="snapshot-check">
+          <span>{checkFailures.length ? '⚠' : '✓'}</span>
+          <span>
+            {checkFailures.length ? (
+              <>
+                <strong>Tile totals don&apos;t match this day&apos;s saved POS recon JSON.</strong>{' '}
+                {checkFailures.map((c) => `${c.label}: JSON has ${c.json}, tiles count ${c.tile}`).join(' · ')}.{' '}
+                {checkFailures.some((c) => c.json > c.tile)
+                  ? 'Some JSON rows have not been through an MPR run yet (e.g. submitted after the last run).'
+                  : 'The tiles hold more rows than the JSON — a re-submitted day may be double counted.'}
+              </>
+            ) : (
+              <>
+                <strong>Checked against this day&apos;s saved POS recon JSON</strong>
+                {snapshot.sessions > 1 ? ` (${snapshot.sessions} sessions)` : ''}: {checkRows.map((c) => `${c.label} ${c.json}`).join(' · ')} — every tile total matches.
+              </>
+            )}
+          </span>
+        </div>
+      )}
 
       {tab === 'amex' && <AmexTab rows={result.amexResults} sessionId={session.meta.id} onResolved={handleResolved} />}
 

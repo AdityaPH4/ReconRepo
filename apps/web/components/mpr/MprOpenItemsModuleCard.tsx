@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { ModuleCard } from '@/components/ModuleCard';
-import { listOpenMprRows } from '@/lib/mprApi';
+import { getOpenMprCount } from '@/lib/mprApi';
 
 export function MprOpenItemsModuleCard() {
   const user = useCurrentUser();
@@ -16,8 +16,8 @@ export function MprOpenItemsModuleCard() {
 
   useEffect(() => {
     if (user.role !== 'admin') return;
-    listOpenMprRows()
-      .then((rows) => setOpenCount(rows.length))
+    getOpenMprCount()
+      .then(setOpenCount)
       .catch(() => setOpenCount(0));
   }, [user.role]);
 
