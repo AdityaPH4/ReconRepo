@@ -128,6 +128,10 @@ function GmMprOverview({
                     <th className="text-left!">Business date</th>
                     <th className="num">Reconciled</th>
                     <th className="num">Unreconciled</th>
+                    <th className="num">AMEX</th>
+                    <th className="num">HDFC</th>
+                    <th className="num">Pinelabs</th>
+                    <th className="num">Kotak</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -138,6 +142,14 @@ function GmMprOverview({
                       <td className={`num ${d.unreconciled > 0 ? 'text-err font-semibold' : 'text-ink-3'}`}>
                         {d.unreconciled}
                       </td>
+                      {(['amex', 'hdfc', 'pinelabs', 'kotak'] as const).map((bank) => {
+                        const b = d.banks[bank];
+                        return (
+                          <td key={bank} className={`num ${b.reconciled < b.total ? 'text-err' : 'text-ink-3'}`}>
+                            {b.reconciled}/{b.total}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
