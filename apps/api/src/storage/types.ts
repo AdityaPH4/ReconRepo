@@ -139,11 +139,41 @@ export interface MprSessionQuery {
   limit?: number;
 }
 
+type MprResult = MprSessionDTO['result'];
+/** One stored row tagged with the run it lives in and its bucket — discriminated on `bucket`. */
+export type MprBucketRow = { [B in keyof MprResult]: { runId: string; bucket: B; row: MprResult[B][number] } }[keyof MprResult];
+
+export interface MprDayRows {
+  runs: Array<{ id: string; meta: MprSessionDTO['meta'] }>;
+  rows: MprBucketRow[];
+  bankRows: MprBucketRow[];
+  /** Settled bank RRNs, plus `date|cardLast4|amount` for settled/mismatched AMEX — used to drop bank-only rows that have since reconciled. */
+  settledKeys: Set<string>;
+}
+
 export interface MprSessionStore {
   readonly driver: 'memory' | 'postgres';
   create(session: MprSessionDTO): Promise<MprSessionDTO>;
   get(id: string): Promise<MprSessionDTO | null>;
   list(query: MprSessionQuery): Promise<MprSessionListItemDTO[]>;
+  /**
+   * Every matching session, in full — for the day-pooling routes
+   * (`gm-status`/`gm-day`/`day`), which need every row of every session, not
+   * just the summary counts `list()` returns. A single full MPR session's
+   * JSON can run tens of MB, so this exists specifically so those routes
+   * fetch it once each, not once via `list()` (to get the id) and again via
+   * `get()` (to get the actual rows).
+   */
+  listFull(query: MprSessionQuery): Promise<MprSessionDTO[]>;
+  /**
+   * Just what the day views need, filtered in the database: every run's meta
+   * (newest first), the rows of the date-keyed buckets whose `_businessDate`
+   * is one of `dates`, and — only when `bankSide` — the bank-only rows
+   * (ambiguous, unexpected, AMEX unexpected) plus every settled key, which
+   * carry no business date and are filtered by the caller. Fetching whole
+   * runs instead is hundreds of MB per request.
+   */
+  listDayRows(dates: string[], bankSide: boolean): Promise<MprDayRows>;
   /** Whole-object replace — used to persist a row's close-with-note mutation. */
   update(id: string, session: MprSessionDTO): Promise<MprSessionDTO>;
 }

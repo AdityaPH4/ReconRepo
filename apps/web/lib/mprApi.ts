@@ -10,7 +10,6 @@ import type {
   GmMprStatusDTO,
   MprOpenRowDTO,
   MprSessionDTO,
-  MprSessionListItemDTO,
 } from '@toit/contracts';
 import { authHeaders, getToken } from './auth';
 
@@ -38,29 +37,9 @@ async function unwrap<T>(res: Response): Promise<T> {
   throw new ApiError(message, res.status);
 }
 
-export interface MprRunFiles {
-  json: File[];
-  mpr: File[];
-}
-
-/** Uploads Layer-1 JSON snapshots + bank MPR files and runs the Layer-2 match. */
-export async function runMprReconciliation(files: MprRunFiles): Promise<MprSessionDTO> {
-  const fd = new FormData();
-  for (const f of files.json) fd.append('json', f);
-  for (const f of files.mpr) fd.append('mpr', f);
-
-  const res = await fetch(`${API_BASE}/api/mpr-sessions`, { method: 'POST', body: fd, headers: authHeaders() });
-  return unwrap<MprSessionDTO>(res);
-}
-
 export async function getMprSession(id: string): Promise<MprSessionDTO> {
   const res = await fetch(`${API_BASE}/api/mpr-sessions/${id}`, { cache: 'no-store', headers: authHeaders() });
   return unwrap<MprSessionDTO>(res);
-}
-
-export async function listMprSessions(): Promise<MprSessionListItemDTO[]> {
-  const res = await fetch(`${API_BASE}/api/mpr-sessions`, { cache: 'no-store', headers: authHeaders() });
-  return unwrap<MprSessionListItemDTO[]>(res);
 }
 
 /** URL for the CSV export — used directly as an `<a href>`, not fetched here; the token rides along as `?token=` since a plain link can't carry a header. */
@@ -81,7 +60,31 @@ export async function getGmMprStatus(): Promise<GmMprStatusDTO> {
   return unwrap<GmMprStatusDTO>(res);
 }
 
-/** Resolves one open row with a required note. Admin-only, and requires at least one comment to already exist on the row. */
+/** A GM's own outlet, pooled across every stored run, for one business date — the day-wise drill-down from their dashboard's date picker. */
+export async function getGmMprDaySession(date: string): Promise<MprSessionDTO> {
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/gm-day?date=${encodeURIComponent(date)}`, {
+    cache: 'no-store',
+    headers: authHeaders(),
+  });
+  return unwrap<MprSessionDTO>(res);
+}
+
+/** One outlet (or every outlet, for `outlet: 'ALL'`), pooled across every stored run, for one business date — admin-only, backs the main dashboard's outlet + date pickers. */
+export async function getAdminMprDaySession(date: string, outlet: string): Promise<MprSessionDTO> {
+  const res = await fetch(
+    `${API_BASE}/api/mpr-sessions/day?date=${encodeURIComponent(date)}&outlet=${encodeURIComponent(outlet)}`,
+    { cache: 'no-store', headers: authHeaders() },
+  );
+  return unwrap<MprSessionDTO>(res);
+}
+
+/** URL for the admin day session's CSV export — same `?token=` pattern as `mprExportCsvUrl`. */
+export function mprDayExportCsvUrl(date: string, outlet: string): string {
+  const token = getToken();
+  return `${API_BASE}/api/mpr-sessions/day/export.csv?date=${encodeURIComponent(date)}&outlet=${encodeURIComponent(outlet)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+}
+
+/** Resolves one open row with a required note. Admin-only. */
 export async function closeMprRow(sessionId: string, rowId: string, note: string): Promise<MprSessionDTO> {
   const body: CloseMprRowRequest = { note };
   const res = await fetch(`${API_BASE}/api/mpr-sessions/${sessionId}/rows/${rowId}/close`, {
