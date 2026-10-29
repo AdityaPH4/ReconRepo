@@ -389,6 +389,20 @@ describe('parseTransactionsZip()', () => {
     assert.equal(paperPos!.amount, 333);
   });
 
+  it('reads the masked card number from "Customer Payment Mode ID", and leaves it blank when the column is absent', async () => {
+    const win = buildWin({ y: 2026, m: 7, d: 1 });
+    const withCard = [
+      ZIP_HEADER + ',Customer Payment Mode ID',
+      'AMEX,CARD,Zed,AMEX,200.00,0,01/08/2026 09:14:03 PM,Settled,Success,000000000000,02/08/2026,,983,839593,Sale,South,Toit- Bangalore,T1,M1,APOS,***********2006',
+    ].join('\n');
+    const { inside } = await parseTransactionsZip(await makeZip(withCard), win);
+    assert.equal(inside[0]!.cardNo, '***********2006');
+    assert.equal(inside[0]!.paymentMode, 'CARD', 'the Payment Mode column still resolves to its own header');
+
+    const { inside: plain } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);
+    assert.equal(plain[0]!.cardNo, '');
+  });
+
   it('resolves the outlet from the terminal store name', async () => {
     const win = buildWin({ y: 2026, m: 7, d: 1 });
     const { inside } = await parseTransactionsZip(await makeZip(ZIP_CSV), win);

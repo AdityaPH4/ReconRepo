@@ -93,6 +93,8 @@ export interface ZipRow {
   billInvoice: string;
   invoice: string;
   approvalCode: string;
+  /** Masked card number from "Customer Payment Mode ID" (e.g. `***********2006`) — present on card rows, and the only place a terminal-only AMEX transaction (a tip, an advance) has a card at all. */
+  cardNo?: string;
   type: string;
   zone: string;
   store: string;

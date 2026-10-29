@@ -37,6 +37,7 @@ function zipRow(r: readonly string[], C: ColMap): ZipRow {
     billInvoice: cleanRRN(cell(r, C.billInvoice!)),
     invoice: cell(r, C.invoice!),
     approvalCode: cleanCode(cell(r, C.approvalCode!)),
+    cardNo: cell(r, C.cardNo!),
     type: cell(r, C.type!),
     zone: cell(r, C.zone!),
     store: cell(r, C.store!),
@@ -105,6 +106,8 @@ export async function parseTransactionsZip(
     // Exact only — a loose match would collide with "Bill Invoice".
     invoice: H.exact('invoice'),
     approvalCode: H.loose('approval code'),
+    // Exact — "Payment Mode" must keep resolving to its own column.
+    cardNo: H.exact('customer payment mode id'),
     type: H.loose('type'),
     zone: H.loose('zone'),
     store: H.loose('store name'),

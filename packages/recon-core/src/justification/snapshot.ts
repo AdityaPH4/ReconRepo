@@ -290,6 +290,7 @@ function pinelabsSettlementLedger(
     rows.push({
       rrn: x.rrn,
       authCode: x.pr?.authCode || '',
+      ...(isAmex ? { cardNo: zip?.cardNo || x.pr?.cardNo || '' } : {}),
       acquirer: zip?.acquirer || '',
       mid: isAmex ? zip?.mid || null : null,
       invoice: null,
@@ -317,6 +318,7 @@ function pinelabsSettlementLedger(
     rows.push({
       rrn: x.rrn,
       authCode: '',
+      ...(isAmexAcq(x.acquirer) ? { cardNo: x.cardNo || '' } : {}),
       acquirer: x.acquirer || '',
       mid: isAmexAcq(x.acquirer) ? x.mid || null : null,
       invoice: null,
@@ -339,7 +341,8 @@ function pinelabsSettlementLedger(
     rows.push({
       rrn: x.zip?.rrn || '',
       authCode: x.pr?.authCode || '',
-      cardNo: x.pr?.cardNo || '',
+      // The terminal's own report carries the card for every AMEX transaction; the Payment Report only for ones POS billed.
+      cardNo: x.zip?.cardNo || x.pr?.cardNo || '',
       acquirer: 'AMEX',
       mid: x.zip?.mid || null,
       invoice: x.zip?.invoice || null,
