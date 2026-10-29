@@ -39,6 +39,7 @@ import {
   removeBohStaging,
   removeEntry,
   setSquareOff,
+  visibleSessionApplications,
 } from '../services/justificationService.js';
 import { getAdvanceStore, getBohStore, getSessionStore } from '../storage/index.js';
 
@@ -71,7 +72,17 @@ async function persist(session: SessionDTO): Promise<SessionDTO> {
     submitGate: computeSubmitGate(session),
     explanation: buildExplanationItems(session),
   };
-  return getSessionStore().update(session.meta.id, withGate);
+  const saved = await getSessionStore().update(session.meta.id, withGate);
+  // Display-only, same as GET /:id — never persisted, see
+  // `visibleSessionApplications`'s own doc comment.
+  const committedApplications = await getAdvanceStore().listApplications(saved.meta.outlet);
+  return {
+    ...saved,
+    justification: {
+      ...saved.justification,
+      draftApplications: visibleSessionApplications(saved, committedApplications),
+    },
+  };
 }
 
 justificationRouter.post('/entries', async (req, res, next) => {
@@ -106,7 +117,7 @@ justificationRouter.post('/square-off', async (req, res, next) => {
     const submittedModules = session.meta.submittedModules ?? [];
     assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.a));
     assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.b));
-    const justification = setSquareOff(session.justification, body.a, body.b, true);
+    const justification = setSquareOff(session.justification, body.a, body.b, true, submittedModules);
     const updated = await persist({ ...session, justification });
     res.status(201).json(updated);
   } catch (err) {
@@ -121,7 +132,7 @@ justificationRouter.delete('/square-off', async (req, res, next) => {
     const submittedModules = session.meta.submittedModules ?? [];
     assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.a));
     assertModuleEditable(submittedModules, moduleOfSquareOffPartner(body.b));
-    const justification = setSquareOff(session.justification, body.a, body.b, false);
+    const justification = setSquareOff(session.justification, body.a, body.b, false, submittedModules);
     const updated = await persist({ ...session, justification });
     res.json(updated);
   } catch (err) {

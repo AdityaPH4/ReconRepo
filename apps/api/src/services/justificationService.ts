@@ -135,6 +135,27 @@ export function isEverySubmissionModuleLocked(submittedModules: readonly Submiss
   return SUBMISSION_MODULES.every((m) => submittedModules.includes(m));
 }
 
+/**
+ * `justification.draftApplications` alone under-counts a session's own
+ * applications once "Advances" has been partially submitted — the
+ * application already left that draft list for the permanent cross-session
+ * repository (by design, so a later full submit doesn't re-commit it). This
+ * merges back in whichever of the outlet's committed applications belong to
+ * THIS session, so a still-draft session's own live view (KPI tile,
+ * dry-run report) reflects reality. Display-only: callers pass this into an
+ * API response, never back into storage.
+ */
+export function visibleSessionApplications(
+  session: SessionDTO,
+  committedOutletApplications: readonly AdvanceApplication[],
+): AdvanceApplication[] {
+  const draftIds = new Set(session.justification.draftApplications.map((a) => a.id));
+  const committedForThisSession = committedOutletApplications.filter(
+    (a) => a.sessionId === session.meta.id && !draftIds.has(a.id),
+  );
+  return [...session.justification.draftApplications, ...committedForThisSession];
+}
+
 /** Every Pinelabs + HDFC-UPI + HDFC Link resolvable item for a session — what a square-off group's net is computed against. */
 export function buildAllItems(session: SessionDTO): ResolvableItem[] {
   const pinelabs = session.result.pinelabs as unknown as PinelabsResult;
@@ -327,8 +348,25 @@ function removeTdsDraft(state: JustificationState, tdsEntryId: string): Justific
  * Comparing group keys before/after (not just "was an edge touched") means a
  * redundant multi-edge removal in a clique — where the member set is
  * unchanged — doesn't unnecessarily discard a still-valid residual.
+ *
+ * A stale entry whose own module is already locked (partially submitted) is
+ * left alone instead of being swept up in this cleanup: `removeEntry`'s
+ * "undo the application/advance/clearance it made" cascade only reaches into
+ * this session's own *draft* state, which is exactly what a locked module no
+ * longer has — its applications already left for the shared repository and
+ * are no longer reversible. Auto-deleting the entry there would silently
+ * orphan that real, already-committed money with nothing left anywhere
+ * explaining where it went. The direct "delete entry" route already refuses
+ * this via `assertModuleEditable`; this is the same protection for the
+ * automatic cleanup path, which has no such check of its own.
  */
-export function setSquareOff(state: JustificationState, a: string, b: string, on: boolean): JustificationState {
+export function setSquareOff(
+  state: JustificationState,
+  a: string,
+  b: string,
+  on: boolean,
+  submittedModules: readonly SubmissionModule[],
+): JustificationState {
   const preKeys = new Set(
     [a, b].map((id) => squareOffGroupKey(state.squareOff, id)).filter((k): k is string => k !== null),
   );
@@ -342,6 +380,8 @@ export function setSquareOff(state: JustificationState, a: string, b: string, on
   if (staleKeys.length > 0) {
     const staleSet = new Set(staleKeys);
     for (const e of next.entries.filter((e) => e.targetKey !== null && staleSet.has(e.targetKey))) {
+      const module = moduleForEntry(e);
+      if (module && submittedModules.includes(module)) continue;
       next = removeEntry(next, e.id);
     }
   }

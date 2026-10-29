@@ -31,6 +31,7 @@ import {
   isEverySubmissionModuleLocked,
   planModuleCommit,
   removeCommittedFromState,
+  visibleSessionApplications,
 } from '../services/justificationService.js';
 import {
   BadRequestError,
@@ -280,8 +281,13 @@ sessionsRouter.get('/:id', async (req, res, next) => {
     // one thing that must never silently drift from what submit actually
     // gates on (see the plan's "one canonical completeness/residual
     // calculation" decision).
+    const committedApplications = await getAdvanceStore().listApplications(session.meta.outlet);
     res.json({
       ...session,
+      justification: {
+        ...session.justification,
+        draftApplications: visibleSessionApplications(session, committedApplications),
+      },
       submitGate: computeSubmitGate(session),
       explanation: buildExplanationItems(session),
     } satisfies SessionDTO);
@@ -424,7 +430,13 @@ async function finalizeSubmit(session: SessionDTO, userEmail: string): Promise<S
     // scope `bohOpen` already has below.
     advances: allAdvances,
     applications: allApplications,
-    sessionApplications: justification.draftApplications,
+    // Not just `justification.draftApplications` — an application this
+    // session made via an EARLIER partial submit has already left that
+    // draft list (committed, by design, so it isn't double-committed on a
+    // later submit). `allApplications` already holds the full outlet-wide
+    // set (committed + still-draft), so filtering it down to this session's
+    // own id covers both, instead of only whatever's still uncommitted.
+    sessionApplications: allApplications.filter((a) => a.sessionId === session.meta.id),
     bohOpen: bohOpen.filter((b) => b.status === 'open'),
     bohClearedThisSession,
     bohStagedIds: justification.bohStaging.map((b) => b.id),
