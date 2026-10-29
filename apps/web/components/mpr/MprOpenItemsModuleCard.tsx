@@ -28,7 +28,7 @@ export function MprOpenItemsModuleCard() {
       href="/mpr/open-items"
       icon="🧮"
       title="Open MPR Items"
-      description="Every mismatch, pending, ambiguous or unexpected MPR row across all runs that's still awaiting resolution."
+      description="Transactions still awaiting a bank match, across every day. Open the list for mismatches, ambiguous and unexpected rows."
       badge={openCount}
     />
   );

@@ -8,6 +8,7 @@ import { createMemoryActionLogStore } from './memoryActionLogStore.js';
 import { createMemoryAdvanceStore } from './memoryAdvanceStore.js';
 import { createMemoryApprovalStore } from './memoryApprovalStore.js';
 import { createMemoryBohStore } from './memoryBohStore.js';
+import { createMemoryMprCounterStore } from './memoryMprCounterStore.js';
 import { createMemoryMprSessionStore } from './memoryMprSessionStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
 import { createMemoryTdsStore } from './memoryTdsStore.js';
@@ -16,6 +17,7 @@ import { createPostgresActionLogStore } from './postgres/postgresActionLogStore.
 import { createPostgresAdvanceStore } from './postgres/postgresAdvanceStore.js';
 import { createPostgresApprovalStore } from './postgres/postgresApprovalStore.js';
 import { createPostgresBohStore } from './postgres/postgresBohStore.js';
+import { createPostgresMprCounterStore } from './postgres/postgresMprCounterStore.js';
 import { createPostgresMprSessionStore } from './postgres/postgresMprSessionStore.js';
 import { createPostgresSessionStore } from './postgres/postgresSessionStore.js';
 import { createPostgresTdsStore } from './postgres/postgresTdsStore.js';
@@ -25,6 +27,7 @@ import type {
   AdvanceStore,
   ApprovalStore,
   BohStore,
+  MprCounterStore,
   MprSessionStore,
   ObjectStore,
   SessionStore,
@@ -36,6 +39,7 @@ let sessionStore: SessionStore | null = null;
 let advanceStore: AdvanceStore | null = null;
 let bohStore: BohStore | null = null;
 let mprSessionStore: MprSessionStore | null = null;
+let mprCounterStore: MprCounterStore | null = null;
 let approvalStore: ApprovalStore | null = null;
 let tdsStore: TdsStore | null = null;
 let actionLogStore: ActionLogStore | null = null;
@@ -104,6 +108,18 @@ export function getMprSessionStore(): MprSessionStore {
 
   mprSessionStore = createMemoryMprSessionStore();
   return mprSessionStore;
+}
+
+export function getMprCounterStore(): MprCounterStore {
+  if (mprCounterStore) return mprCounterStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    mprCounterStore = createPostgresMprCounterStore(getPool());
+    return mprCounterStore;
+  }
+
+  mprCounterStore = createMemoryMprCounterStore();
+  return mprCounterStore;
 }
 
 export function getApprovalStore(): ApprovalStore {

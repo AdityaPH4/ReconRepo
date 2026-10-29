@@ -50,6 +50,7 @@ import type { MprSessionDTO } from '@toit/contracts';
 import { applyReconciledAccumulator, type ReconciledDay } from '@toit/mpr-core';
 import { config } from '../config.js';
 import { autoClearBohFromNoRrn } from './bohMprAutoClear.js';
+import { applyRunToCounters } from './mprCounterService.js';
 import { enrichMprMatchResult, runMprReconciliation, type MprInputFile, type MprSnapshotInput } from './mprService.js';
 import { loadReconciledDay, loadRecentSettledKeys, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
 import { getMprSessionStore, getSessionStore } from '../storage/index.js';
@@ -173,6 +174,10 @@ export async function runMprIngest(): Promise<MprIngestResult> {
   };
 
   await getMprSessionStore().create(mprSession);
+
+  // Per-day counters: each ingested session's totals (from its JSON) and the transactions this run cleared. Only the sessions that were folded in without error.
+  const ingestedIds = new Set(outcome.jsonFiles.filter((f) => f.sourceSessionId && !f.error).map((f) => f.sourceSessionId!));
+  await applyRunToCounters(pendingSessions.filter((s) => ingestedIds.has(s.meta.id)), mprSession.result);
 
   // Only after the MprSessionDTO is durably persisted — a "No RRN" row can
   // never be matched by any future bank file either, so if it lines up with

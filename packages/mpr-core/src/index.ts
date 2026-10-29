@@ -48,6 +48,23 @@ export {
 } from './util/normalize.js';
 
 export { bankFamily, type BankFamily } from './util/bankFamily.js';
+export {
+  COUNTER_BANKS,
+  STATE_RANK,
+  clearedOf,
+  clearedRowsFromResult,
+  dayTotalsFromSnapshot,
+  emptyCounter,
+  emptyTotals,
+  isCleared,
+  openOf,
+  type BankCounter,
+  type ClearState,
+  type ClearedRow,
+  type CounterBank,
+  type DayResultLike,
+  type DayTotals,
+} from './engine/dayCounters.js';
 export { parseMprFile } from './parsers/mprFile.js';
 export { parseAmexCSV } from './parsers/amexCsv.js';
 

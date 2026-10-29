@@ -18,6 +18,7 @@ import type {
   UploadRole,
   UserRole,
 } from '@toit/contracts';
+import type { BankCounter, ClearedRow, CounterBank, DayTotals } from '@toit/mpr-core';
 import type { Advance, AdvanceApplication, BohEntry, OutletCode, TdsEntry } from '@toit/recon-core';
 
 // ── Object storage: raw uploaded files, byte-for-byte ────────────────────
@@ -222,4 +223,36 @@ export interface ActionLogStore {
   /** Also prunes anything past the retention window — self-cleaning, no separate scheduled job. */
   record(entry: Omit<ActionLogEntryDTO, 'id'>): Promise<void>;
   list(role: UserRole, limit?: number): Promise<ActionLogEntryDTO[]>;
+}
+
+// ── MPR per-day counters ─────────────────────────────────────────────────
+//
+// See `schema.sql` (`mpr_day_totals` / `mpr_day_cleared`) for what these hold.
+
+export interface DayCounterSession {
+  sessionId: string;
+  outlet: string;
+  businessDate: string;
+  totals: DayTotals;
+}
+
+export interface MprCounterStore {
+  readonly driver: 'memory' | 'postgres';
+  /**
+   * Records one ingest run: each session's totals (replacing any earlier
+   * ones for that outlet-day, and dropping cleared rows that belong to an
+   * older session of the same day), then every transaction the run cleared.
+   * Idempotent — applying the same run twice changes nothing.
+   */
+  applyRun(sessions: DayCounterSession[], cleared: ClearedRow[]): Promise<void>;
+  /** An admin resolved still-open transactions; each takes the next free slot among identical twins. */
+  markResolved(rows: ClearedRow[]): Promise<void>;
+  /** Per-bank counters for one day, for one outlet or (null) all outlets pooled. */
+  dayCounters(businessDate: string, outlet: string | null): Promise<Record<CounterBank, BankCounter>>;
+  /** Total and cleared transaction counts per date, for one outlet or all. */
+  rangeSummary(dates: string[], outlet: string | null): Promise<Array<{ date: string; total: number; cleared: number }>>;
+  /** Transactions still awaiting settlement across every day. */
+  openTotal(): Promise<number>;
+  /** Empties both tables — only for a full rebuild. */
+  reset(): Promise<void>;
 }
