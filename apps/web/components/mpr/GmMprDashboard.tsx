@@ -143,7 +143,11 @@ function GmMprOverview({
                         {d.unreconciled}
                       </td>
                       {(['amex', 'hdfc', 'pinelabs', 'kotak'] as const).map((bank) => {
-                        const b = d.banks[bank];
+                        // Defensive: the API Lambda deploys separately from
+                        // this (Amplify-auto-deployed) frontend — `banks` is
+                        // undefined until that backend redeploy actually
+                        // ships, and must never crash the page meanwhile.
+                        const b = d.banks?.[bank] ?? { total: 0, reconciled: 0 };
                         return (
                           <td key={bank} className={`num ${b.reconciled < b.total ? 'text-err' : 'text-ink-3'}`}>
                             {b.reconciled}/{b.total}
