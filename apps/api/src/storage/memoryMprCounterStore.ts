@@ -86,6 +86,20 @@ export function createMemoryMprCounterStore(): MprCounterStore {
       });
     },
 
+    async rangeByBank(dates, outlet) {
+      return dates.map((date) => {
+        const counts = Object.fromEntries(COUNTER_BANKS.map((b) => [b, { total: 0, cleared: 0 }])) as Record<CounterBank, { total: number; cleared: number }>;
+        for (const t of totals.values()) {
+          if (t.date !== date || (outlet && t.outlet !== outlet)) continue;
+          let n = 0;
+          for (const c of cleared.values()) if (c.businessDate === date && c.outlet === t.outlet && c.bank === t.bank && c.state !== 'mismatch') n++;
+          counts[t.bank].total += t.total;
+          counts[t.bank].cleared += Math.min(t.total, n);
+        }
+        return { date, counts };
+      });
+    },
+
     async openTotal() {
       if (!totals.size) return null;
       let open = 0;

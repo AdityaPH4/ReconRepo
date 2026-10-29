@@ -664,6 +664,14 @@ export interface MprDayCountersDTO {
   counts: Record<'amex' | 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link' | 'hdfc_static', { total: number; settled: number; resolved: number; mismatch: number }>;
 }
 
+/** Per-day, per-bank cleared/total from the counters alone — `GET /api/mpr-sessions/range-counters`. */
+export interface MprRangeCountersDTO {
+  days: Array<{
+    date: string;
+    counts: Record<'amex' | 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link' | 'hdfc_static', { total: number; cleared: number }>;
+  }>;
+}
+
 export interface MprSessionDTO {
   meta: MprSessionMetaDTO;
   result: MprMatchResultDTO;

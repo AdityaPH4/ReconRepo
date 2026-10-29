@@ -252,6 +252,8 @@ export interface MprCounterStore {
   dayCounters(businessDate: string, outlet: string | null): Promise<Record<CounterBank, BankCounter>>;
   /** Total and cleared transaction counts per date, for one outlet or all. */
   rangeSummary(dates: string[], outlet: string | null): Promise<Array<{ date: string; total: number; cleared: number }>>;
+  /** Per-bank total and cleared per date, for one outlet or all — a few small indexed reads, no run data. */
+  rangeByBank(dates: string[], outlet: string | null): Promise<Array<{ date: string; counts: Record<CounterBank, { total: number; cleared: number }> }>>;
   /** Transactions still awaiting settlement across every day, or null when no day's totals have been recorded yet. */
   openTotal(): Promise<number | null>;
   /** Empties both tables — only for a full rebuild. */
