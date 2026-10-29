@@ -22,22 +22,22 @@ import type {
 } from '../types.js';
 import { money } from '../util/money.js';
 
-/** Payment name → total, summed over the Payment Report. */
+/** Payment name → total, summed over the Payment Report. Keyed case-insensitively — real exports vary casing (e.g. "SWIGGY-Online" vs configured "Swiggy-Online"). */
 export function buildPRMap(prData: readonly PRRow[]): Record<string, number> {
   const prMap: Record<string, number> = {};
   for (const row of prData) {
-    const pn = (row.paymentName || '').trim();
+    const pn = (row.paymentName || '').trim().toLowerCase();
     prMap[pn] = (prMap[pn] || 0) + row.amount;
   }
   return prMap;
 }
 
-/** Drawer summary column → numeric total. Unparseable cells become 0. */
+/** Drawer summary column → numeric total. Unparseable cells become 0. Keyed case-insensitively, same as `buildPRMap`. */
 export function buildSumMap(summaryData: SummaryData | null): Record<string, number> {
   const sumMap: Record<string, number> = {};
   if (!summaryData) return sumMap;
   for (const [k, v] of Object.entries(summaryData)) {
-    sumMap[k] = money(v) || 0;
+    sumMap[k.toLowerCase()] = money(v) || 0;
   }
   return sumMap;
 }
@@ -48,8 +48,8 @@ export function frsMethodTotals(
   prMap: Record<string, number>,
   sumMap: Record<string, number>,
 ): { pr: number; sum: number } {
-  const pr = m.prKeys.reduce((s, k) => s + (prMap[k] || 0), 0);
-  const sum = m.sumKeys.reduce((s, k) => s + (sumMap[k] || 0), 0);
+  const pr = m.prKeys.reduce((s, k) => s + (prMap[k.toLowerCase()] || 0), 0);
+  const sum = m.sumKeys.reduce((s, k) => s + (sumMap[k.toLowerCase()] || 0), 0);
   return { pr, sum };
 }
 
