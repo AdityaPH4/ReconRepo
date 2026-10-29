@@ -1,13 +1,9 @@
 'use client';
 
 /**
- * MPR (Layer 2) results view — KPI tiles + tab switcher.
+ * MPR (Layer 2) results view — one tile per bank (reconciled / total ledger
+ * rows) plus an Ambiguous tile, each opening its own tab.
  * Ported from `mpr-recon (10).html` lines 1310–1720 (`renderResults`/`renderTab`).
- *
- * Two tiles beyond legacy's six: **Ambiguous** (the duplicate-RRN fix — see
- * `mpr-core`) and the Pending tile/tab now count *every* pending row,
- * "No RRN" included, instead of legacy's silent split between what the tile
- * shows and what the CSV export contains.
  */
 
 import type { MprRowClosureDTO, MprSessionDTO } from '@toit/contracts';
@@ -15,9 +11,80 @@ import { normDate } from '@toit/mpr-core';
 import { useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { addMprRowComment, closeMprRow, mprExportCsvUrl } from '@/lib/mprApi';
-import { EmptyRow, PanelSection, diffClass } from '@/components/ui/table';
+import { EmptyRow, LoadMoreSentinel, PanelSection, diffClass, useRevealOnScroll } from '@/components/ui/table';
 
-type TabId = 'settled' | 'mismatch' | 'pending' | 'ambiguous' | 'unexpected' | 'amex' | 'upi';
+type TabId = 'amex' | 'hdfc' | 'pinelabs' | 'kotak' | 'ambiguous';
+type HdfcSub = 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_static' | 'hdfc_link';
+type AmbiguousSub = 'duplicates' | 'mismatch' | 'unexpected';
+type LedgerFamily = 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link';
+
+/** Which bank's MPR file settles a ledger row, by its acquirer. Everything Kotak/HDFC don't acquire settles through Pinelabs. */
+function ledgerFamily(acquirer: string | undefined): LedgerFamily {
+  if (/^KOTAK/i.test(acquirer ?? '')) return 'kotak';
+  if (acquirer === 'HDFC UPI') return 'hdfc_upi';
+  if (acquirer === 'HDFC') return 'hdfc_dynamic';
+  if (acquirer === 'HDFC_LINK') return 'hdfc_link';
+  return 'pinelabs';
+}
+
+const HDFC_SUBS: Array<{ id: HdfcSub; label: string }> = [
+  { id: 'hdfc_upi', label: 'HDFC UPI' },
+  { id: 'hdfc_dynamic', label: 'HDFC (dynamic UPI)' },
+  { id: 'hdfc_static', label: 'HDFC Static UPI' },
+  { id: 'hdfc_link', label: 'HDFC Link' },
+];
+
+/** `EmptyRow` is a table row — this is the same empty state where there's no table around it. */
+function EmptyTable({ message }: { message: string }) {
+  return (
+    <table className="data-table">
+      <tbody>
+        <EmptyRow cols={1} message={message} />
+      </tbody>
+    </table>
+  );
+}
+
+type Count = { done: number; total: number };
+const fraction = (c: Count) => `${c.done}/${c.total}`;
+const addCounts = (...cs: Count[]): Count => ({ done: cs.reduce((s, c) => s + c.done, 0), total: cs.reduce((s, c) => s + c.total, 0) });
+
+function SubTabs<T extends string>({ tabs, active, onSelect }: { tabs: Array<{ id: T; label: string; badge: string; ok: boolean }>; active: T; onSelect: (id: T) => void }) {
+  return (
+    <div className="panel mb-3">
+      <div className="subtabs">
+        {tabs.map((t) => (
+          <button key={t.id} type="button" className={`subtab${active === t.id ? ' subtab-active' : ''}`} onClick={() => onSelect(t.id)}>
+            {t.label}
+            <span className={`badge ${t.ok ? 'badge-ok' : 'badge-err'}`}>{t.badge}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One bank's open ledger rows (Not in MPR / No RRN), with its reconciled count on top. */
+function BankTab({
+  count,
+  open,
+  sessionId,
+  onResolved,
+}: {
+  count: Count;
+  open: MprSessionDTO['result']['pending'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
+  return (
+    <>
+      <p className="text-tiny text-ink-3 mb-2">
+        {count.done} reconciled · {count.total - count.done} not reconciled (amount mismatches are under Ambiguous)
+      </p>
+      <PendingTab rows={open} sessionId={sessionId} onResolved={onResolved} />
+    </>
+  );
+}
 
 const ACQUIRER_LABELS: Record<string, string> = {
   KOTAK: 'Kotak',
@@ -53,62 +120,89 @@ function dateRangeLabel(dates: string[]): string {
   return sorted.length === 1 ? sorted[0]! : `${sorted[0]} – ${sorted[sorted.length - 1]}`;
 }
 
-export function MprWorkspace({ session: initialSession }: { session: MprSessionDTO }) {
+export function MprWorkspace({
+  session: initialSession,
+  hideExport,
+  exportUrl,
+  afterRowChange,
+}: {
+  session: MprSessionDTO;
+  /** Hide the CSV export link — there's no real stored session behind a synthetic (e.g. GM day-view) one for it to export. */
+  hideExport?: boolean;
+  /** Override the export link's URL — a pooled/synthetic session (e.g. the admin day-view) has its own dedicated export route rather than `session.meta.id`'s. */
+  exportUrl?: string;
+  /**
+   * A row's comment/resolve call returns the one *real* session it actually
+   * lives in — fine to adopt directly when this view already shows that real
+   * session, but wrong for a pooled view (e.g. a GM's day-view, which spans
+   * several real sessions) where adopting it would replace the whole pooled
+   * result with just that one session's unfiltered data. When set, the
+   * caller owns re-fetching instead, and should pass a changing `key` prop
+   * alongside it so this component remounts with the refreshed session.
+   */
+  afterRowChange?: () => void;
+}) {
+  const user = useCurrentUser();
   const [session, setSession] = useState(initialSession);
-  const [tab, setTab] = useState<TabId>('settled');
+  const handleResolved = afterRowChange ? () => afterRowChange() : setSession;
+  const [tab, setTab] = useState<TabId>('amex');
+  const [hdfcSub, setHdfcSub] = useState<HdfcSub>('hdfc_upi');
+  const [ambiguousSub, setAmbiguousSub] = useState<AmbiguousSub>('duplicates');
   const { result } = session;
+  // A pooled day-view scoped to one outlet — bank-side rows (duplicates, unexpected) carry no outlet, so the API leaves them out there.
+  const outletScopedDay = session.meta.id.startsWith('gm-day:');
 
-  const totalLedger = result.settled.length + result.amountMismatch.length + result.pending.length;
+  // Reconciled = settled by the bank or resolved by an admin (status 'closed') — the same rule the GM overview counts by; total = every ledger row.
+  const isDone = (r: MprRowClosureDTO) => r.status === 'closed';
+  const ledgerCount = Object.fromEntries(
+    (['kotak', 'pinelabs', 'hdfc_upi', 'hdfc_dynamic', 'hdfc_link'] as const).map((f) => [f, { done: 0, total: 0 }]),
+  ) as Record<LedgerFamily, Count>;
+  const openByFamily = Object.fromEntries(Object.keys(ledgerCount).map((f) => [f, []])) as unknown as Record<
+    LedgerFamily,
+    MprSessionDTO['result']['pending']
+  >;
+  for (const r of [...result.settled, ...result.amountMismatch, ...result.pending]) {
+    const c = ledgerCount[ledgerFamily(r.acquirer)];
+    c.total++;
+    if (isDone(r)) c.done++;
+  }
+  for (const r of result.pending) if (!isDone(r)) openByFamily[ledgerFamily(r.acquirer)].push(r);
+  const staticUpi: Count = { done: result.upiResults.filter(isDone).length, total: result.upiResults.length };
+  // Denominator excludes 'unexpected' (an AMEX bank credit with no ledger counterpart), so this stays "how many of the ledger's AMEX transactions are confirmed".
+  const amexLedger = result.amexResults.filter((r) => r._match !== 'unexpected');
+  const amex: Count = { done: amexLedger.filter(isDone).length, total: amexLedger.length };
+  const hdfcCount: Record<HdfcSub, Count> = {
+    hdfc_upi: ledgerCount.hdfc_upi,
+    hdfc_dynamic: ledgerCount.hdfc_dynamic,
+    hdfc_static: staticUpi,
+    hdfc_link: ledgerCount.hdfc_link,
+  };
+  const hdfc = addCounts(...Object.values(hdfcCount));
+  const ambiguousCount: Record<AmbiguousSub, number> = {
+    duplicates: result.ambiguous.length,
+    mismatch: result.amountMismatch.length,
+    unexpected: result.unexpected.length,
+  };
+  const ambiguousTotal = ambiguousCount.duplicates + ambiguousCount.mismatch + ambiguousCount.unexpected;
 
-  const tiles: Array<{ id: TabId; label: string; main: string; sub: string; stat: 'ok' | 'err' | 'neutral' }> = [
+  const bankTile = (id: TabId, label: string, c: Count) => ({
+    id,
+    label,
+    main: fraction(c),
+    sub: 'reconciled / total in ledger',
+    stat: (c.done < c.total ? 'err' : 'ok') as 'ok' | 'err',
+  });
+  const tiles = [
+    bankTile('amex', 'AMEX', amex),
+    bankTile('hdfc', 'HDFC', hdfc),
+    bankTile('pinelabs', 'Pinelabs', ledgerCount.pinelabs),
+    bankTile('kotak', 'Kotak', ledgerCount.kotak),
     {
-      id: 'settled',
-      label: 'Settled (RRN match)',
-      main: String(result.settled.length),
-      sub: totalLedger ? `${Math.round((result.settled.length / totalLedger) * 100)}% of ledger` : '—',
-      stat: 'ok',
-    },
-    {
-      id: 'mismatch',
-      label: 'Amount Mismatch',
-      main: String(result.amountMismatch.length),
-      sub: 'RRN matched, amounts differ',
-      stat: result.amountMismatch.length ? 'err' : 'ok',
-    },
-    {
-      id: 'pending',
-      label: 'Pending Settlement',
-      main: String(result.pending.length),
-      sub: 'in ledger, not in MPR',
-      stat: result.pending.length ? 'err' : 'ok',
-    },
-    {
-      id: 'ambiguous',
+      id: 'ambiguous' as TabId,
       label: 'Ambiguous',
-      main: String(result.ambiguous.length),
-      sub: 'duplicate RRN across MPR rows',
-      stat: result.ambiguous.length ? 'err' : 'ok',
-    },
-    {
-      id: 'unexpected',
-      label: 'Unexpected MPR Credits',
-      main: String(result.unexpected.length),
-      sub: 'in MPR, not in ledger',
-      stat: result.unexpected.length ? 'err' : 'ok',
-    },
-    {
-      id: 'amex',
-      label: 'AMEX Batches',
-      main: `${result.amexResults.filter((r) => r._match === 'settled').length}/${result.amexResults.length}`,
-      sub: 'settled / total',
-      stat: result.amexResults.some((r) => r._match !== 'settled') ? 'err' : 'ok',
-    },
-    {
-      id: 'upi',
-      label: 'HDFC Static UPI',
-      main: `${result.upiResults.filter((r) => r._match === 'settled').length}/${result.upiResults.length}`,
-      sub: 'settled / total',
-      stat: result.upiResults.some((r) => r._match === 'pending') ? 'err' : 'ok',
+      main: String(ambiguousTotal),
+      sub: `${ambiguousCount.duplicates} duplicate RRN · ${ambiguousCount.mismatch} mismatch · ${ambiguousCount.unexpected} unexpected`,
+      stat: (ambiguousTotal ? 'err' : 'ok') as 'ok' | 'err',
     },
   ];
 
@@ -128,9 +222,11 @@ export function MprWorkspace({ session: initialSession }: { session: MprSessionD
             </span>
           </div>
         </div>
-        <a className="btn" href={mprExportCsvUrl(session.meta.id)}>
-          ⬇ Export CSV
-        </a>
+        {!hideExport && (
+          <a className="btn" href={exportUrl ?? mprExportCsvUrl(session.meta.id)}>
+            ⬇ Export CSV
+          </a>
+        )}
       </div>
 
       {(session.meta.mprFiles.some((f) => f.error) || session.meta.jsonFiles.some((f) => f.error)) && (
@@ -152,36 +248,83 @@ export function MprWorkspace({ session: initialSession }: { session: MprSessionD
       )}
 
       <div className="kpi-grid">
-        {tiles.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`kpi${tab === t.id ? ' kpi-active' : ''}`}
-            aria-pressed={tab === t.id}
-            onClick={() => setTab(t.id)}
-          >
-            <span className="kpi-label">{t.label}</span>
-            <span className={`kpi-value ${t.stat === 'ok' ? 'kpi-value-ok' : t.stat === 'err' ? 'kpi-value-err' : ''}`}>
-              {t.main}
-            </span>
-            <span className="kpi-note">{t.sub}</span>
-          </button>
-        ))}
+        {tiles.map((t) => {
+          const accent = t.stat === 'err' ? 'kpi-border-err' : '';
+          return (
+            <button
+              key={t.id}
+              type="button"
+              className={`kpi ${accent}${tab === t.id ? ' kpi-active' : ''}`}
+              aria-pressed={tab === t.id}
+              onClick={() => setTab(t.id)}
+            >
+              <span className="kpi-label">{t.label}</span>
+              <span className={`kpi-value ${t.stat === 'ok' ? 'kpi-value-ok' : t.stat === 'err' ? 'kpi-value-err' : ''}`}>
+                {t.main}
+              </span>
+              <span className="kpi-note">{t.sub}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {tab === 'settled' && <SettledTab rows={result.settled} />}
-      {tab === 'mismatch' && (
-        <MismatchTab rows={result.amountMismatch} sessionId={session.meta.id} onResolved={setSession} />
+      {tab === 'amex' && <AmexTab rows={result.amexResults} sessionId={session.meta.id} onResolved={handleResolved} />}
+
+      {tab === 'hdfc' && (
+        <>
+          <SubTabs
+            tabs={HDFC_SUBS.map((s) => ({ ...s, badge: fraction(hdfcCount[s.id]), ok: hdfcCount[s.id].done === hdfcCount[s.id].total }))}
+            active={hdfcSub}
+            onSelect={setHdfcSub}
+          />
+          {hdfcSub === 'hdfc_static' ? (
+            <UpiTab rows={result.upiResults} sessionId={session.meta.id} onResolved={handleResolved} />
+          ) : (
+            <BankTab count={hdfcCount[hdfcSub]} open={openByFamily[hdfcSub]} sessionId={session.meta.id} onResolved={handleResolved} />
+          )}
+        </>
       )}
-      {tab === 'pending' && <PendingTab rows={result.pending} sessionId={session.meta.id} onResolved={setSession} />}
+
+      {tab === 'pinelabs' && (
+        <BankTab count={ledgerCount.pinelabs} open={openByFamily.pinelabs} sessionId={session.meta.id} onResolved={handleResolved} />
+      )}
+      {tab === 'kotak' && (
+        <BankTab count={ledgerCount.kotak} open={openByFamily.kotak} sessionId={session.meta.id} onResolved={handleResolved} />
+      )}
+
       {tab === 'ambiguous' && (
-        <AmbiguousTab rows={result.ambiguous} sessionId={session.meta.id} onResolved={setSession} />
+        <>
+          <SubTabs
+            tabs={(
+              [
+                { id: 'duplicates', label: 'Duplicate RRNs' },
+                { id: 'mismatch', label: 'Amount mismatch' },
+                { id: 'unexpected', label: 'Unexpected MPR' },
+              ] as const
+            ).map((s) => ({ ...s, badge: String(ambiguousCount[s.id]), ok: ambiguousCount[s.id] === 0 }))}
+            active={ambiguousSub}
+            onSelect={setAmbiguousSub}
+          />
+          {outletScopedDay && ambiguousSub !== 'mismatch' && (
+            <div className="alert alert-info mb-3">
+              <span>ℹ</span>
+              <span>
+                Bank files don&apos;t say which outlet these belong to
+                {user.role === 'admin' ? ' — pick "All outlets" to see them.' : ', so the admin team reviews them centrally.'}
+              </span>
+            </div>
+          )}
+          {ambiguousSub === 'duplicates' && (
+            <AmbiguousTab rows={result.ambiguous} sessionId={session.meta.id} onResolved={handleResolved} />
+          )}
+          {ambiguousSub === 'mismatch' && (
+            <MismatchTab rows={result.amountMismatch} sessionId={session.meta.id} onResolved={handleResolved} />
+          )}
+          {ambiguousSub === 'unexpected' && (
+            <UnexpectedTab rows={result.unexpected} sessionId={session.meta.id} onResolved={handleResolved} />
+          )}
+        </>
       )}
-      {tab === 'unexpected' && (
-        <UnexpectedTab rows={result.unexpected} sessionId={session.meta.id} onResolved={setSession} />
-      )}
-      {tab === 'amex' && <AmexTab rows={result.amexResults} sessionId={session.meta.id} onResolved={setSession} />}
-      {tab === 'upi' && <UpiTab rows={result.upiResults} sessionId={session.meta.id} onResolved={setSession} />}
     </>
   );
 }
@@ -248,75 +391,14 @@ export function ResolveRow({
           💬 {comments.length}
         </span>
       )}
-      <button type="button" className="btn btn-sm" disabled={busy} onClick={addComment}>
-        Comment
-      </button>
-      {user.role === 'admin' && (
+      {user.role === 'admin' ? (
         <button type="button" className="btn btn-sm" disabled={busy} onClick={resolve}>
           Resolve
         </button>
-      )}
-    </div>
-  );
-}
-
-// ── Settled — grouped by acquirer ───────────────────────────────────────
-
-function SettledTab({ rows }: { rows: MprSessionDTO['result']['settled'] }) {
-  const groups = new Map<string, typeof rows>();
-  for (const r of rows) {
-    const key = r.acquirer || 'UNKNOWN';
-    groups.set(key, [...(groups.get(key) ?? []), r]);
-  }
-
-  return (
-    <div className="panel">
-      {rows.length === 0 ? (
-        <EmptyRow cols={1} message="No settled rows yet." />
       ) : (
-        [...groups.entries()].map(([acquirer, group]) => (
-          <PanelSection key={acquirer} title={`${ACQUIRER_LABELS[acquirer] ?? acquirer} (${group.length})`}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>RRN</th>
-                  <th>Outlet</th>
-                  <th>Txn Date</th>
-                  <th>Settlement Date</th>
-                  <th className="num">L1 Amount</th>
-                  <th className="num">MPR Amount</th>
-                  <th>Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.slice(0, 50).map((r, i) => (
-                  <tr key={`${r.rrn}-${i}`}>
-                    <td className="mono">{r.rrn || '—'}</td>
-                    <td>{r.outlet || '—'}</td>
-                    <td className="mono">{r.mpr.txnDate ?? '—'}</td>
-                    <td className="mono">{r.mpr.settlementDate ?? '—'}</td>
-                    <td className="num">{fmt(r.plAmount)}</td>
-                    <td className="num">{fmt(r.mpr.grossAmount)}</td>
-                    <td>{r.mpr._source}</td>
-                  </tr>
-                ))}
-                {group.length > 50 && (
-                  <tr>
-                    <td colSpan={7} className="text-ink-3 text-tiny">
-                      …{group.length - 50} more
-                    </td>
-                  </tr>
-                )}
-                <tr className="total-row">
-                  <td colSpan={4}>Total</td>
-                  <td className="num">{fmt(group.reduce((s, r) => s + r.plAmount, 0))}</td>
-                  <td className="num">{fmt(group.reduce((s, r) => s + r.mpr.grossAmount, 0))}</td>
-                  <td />
-                </tr>
-              </tbody>
-            </table>
-          </PanelSection>
-        ))
+        <button type="button" className="btn btn-sm" disabled={busy} onClick={addComment}>
+          Comment
+        </button>
       )}
     </div>
   );
@@ -365,7 +447,7 @@ function MismatchTab({
                   <td className={`num ${diffClass(r._diff)}`}>{signedFmt(r._diff)}</td>
                   <td>{r.l1Status || '—'}</td>
                   <td>
-                    <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                    <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
                   </td>
                 </tr>
               ))
@@ -409,58 +491,86 @@ function PendingTab({
   return (
     <div className="panel">
       {rows.length === 0 ? (
-        <EmptyRow cols={1} message="Nothing pending." />
+        <EmptyTable message="Nothing pending." />
       ) : (
         [...groups.entries()].map(([acquirer, group]) => (
-          <PanelSection key={acquirer} title={`${ACQUIRER_LABELS[acquirer] ?? acquirer} (${group.length})`}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>RRN</th>
-                  <th>Outlet</th>
-                  <th>Store</th>
-                  <th>Business Date</th>
-                  <th>L1 Date</th>
-                  <th className="num">Amount</th>
-                  <th>L1 Status</th>
-                  <th>L1 Remark</th>
-                  <th>Reason</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {group.map((r, i) => (
-                  <tr key={`${r.rrn}-${i}`}>
-                    <td className="mono">{r.rrn || '—'}</td>
-                    <td>{r.outlet || '—'}</td>
-                    <td>{r.store || '—'}</td>
-                    <td className="mono">{r._businessDate}</td>
-                    <td className="text-tiny text-ink-3">{normDate(r.plDate) || '—'}</td>
-                    <td className="num">{fmt(r.plAmount)}</td>
-                    <td>{r.l1Status || '—'}</td>
-                    <td className="text-tiny text-ink-3">{r.l1Remark || '—'}</td>
-                    <td>
-                      <span className={`tag ${r._reason === 'No RRN' ? 'tag-warn' : 'tag-neutral'}`}>{r._reason}</span>
-                    </td>
-                    <td>
-                      <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
-                    </td>
-                  </tr>
-                ))}
-                <tr className="total-row">
-                  <td colSpan={5}>Total</td>
-                  <td className="num">{fmt(group.reduce((s, r) => s + r.plAmount, 0))}</td>
-                  <td />
-                  <td />
-                  <td />
-                  <td />
-                </tr>
-              </tbody>
-            </table>
-          </PanelSection>
+          <PendingGroupTable
+            key={acquirer}
+            acquirer={acquirer}
+            group={group}
+            sessionId={sessionId}
+            onResolved={onResolved}
+          />
         ))
       )}
     </div>
+  );
+}
+
+/** One acquirer's pending table — a real-world group can run into the hundreds of
+ * rows, so it reveals 50 at a time on scroll instead of mounting them all up front. */
+function PendingGroupTable({
+  acquirer,
+  group,
+  sessionId,
+  onResolved,
+}: {
+  acquirer: string;
+  group: MprSessionDTO['result']['pending'];
+  sessionId: string;
+  onResolved: (updated: MprSessionDTO) => void;
+}) {
+  const { visible, sentinelRef } = useRevealOnScroll(group.length);
+  const shown = group.slice(0, visible);
+
+  return (
+    <PanelSection title={`${ACQUIRER_LABELS[acquirer] ?? acquirer} (${group.length})`}>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>RRN</th>
+            <th>Outlet</th>
+            <th>Store</th>
+            <th>Business Date</th>
+            <th>L1 Date</th>
+            <th className="num">Amount</th>
+            <th>L1 Status</th>
+            <th>L1 Remark</th>
+            <th>Reason</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((r, i) => (
+            <tr key={`${r.rrn}-${i}`}>
+              <td className="mono">{r.rrn || '—'}</td>
+              <td>{r.outlet || '—'}</td>
+              <td>{r.store || '—'}</td>
+              <td className="mono">{r._businessDate}</td>
+              <td className="text-tiny text-ink-3">{normDate(r.plDate) || '—'}</td>
+              <td className="num">{fmt(r.plAmount)}</td>
+              <td>{r.l1Status || '—'}</td>
+              <td className="text-tiny text-ink-3">{r.l1Remark || '—'}</td>
+              <td>
+                <span className={`tag ${r._reason === 'No RRN' ? 'tag-warn' : 'tag-neutral'}`}>{r._reason}</span>
+              </td>
+              <td>
+                <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
+              </td>
+            </tr>
+          ))}
+          <LoadMoreSentinel sentinelRef={sentinelRef} cols={10} remaining={group.length - visible} />
+          <tr className="total-row">
+            <td colSpan={5}>Total</td>
+            <td className="num">{fmt(group.reduce((s, r) => s + r.plAmount, 0))}</td>
+            <td />
+            <td />
+            <td />
+            <td />
+          </tr>
+        </tbody>
+      </table>
+    </PanelSection>
   );
 }
 
@@ -506,7 +616,7 @@ function AmbiguousTab({
                 <td className="num">{r.candidates.map((c) => fmt(c.grossAmount)).join(', ')}</td>
                 <td className="text-tiny text-ink-3">{r.candidates.map((c) => c._file).join(', ')}</td>
                 <td>
-                  <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                  <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
                 </td>
               </tr>
             ))
@@ -538,7 +648,7 @@ function UnexpectedTab({
         <span>In MPR but not in the settlement ledger. May be BOH clearances, system adjustments, or missing JSON files.</span>
       </div>
       {rows.length === 0 ? (
-        <EmptyRow cols={1} message="No unexpected MPR credits." />
+        <EmptyTable message="No unexpected MPR credits." />
       ) : (
         [...groups.entries()].map(([source, group]) => (
           <PanelSection key={source} title={`${ACQUIRER_LABELS[source] ?? source} (${group.length})`}>
@@ -562,7 +672,7 @@ function UnexpectedTab({
                     <td className="num">{fmt(r.mprAmount)}</td>
                     <td className="text-tiny text-ink-3">{r._file}</td>
                     <td>
-                      <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                      <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
                     </td>
                   </tr>
                 ))}
@@ -650,7 +760,7 @@ function AmexTab({
                   </span>
                 </td>
                 <td>
-                  <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                  <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
                 </td>
               </tr>
             );
@@ -676,12 +786,7 @@ function AmexTab({
 
   return (
     <div className="panel">
-      <PanelSection
-        title={`Reconciled (${reconciled.length})`}
-      >
-        <p className="text-tiny text-ink-3 mb-2">matched by Transaction Date + Card (last 4) + Amount ±₹0.50</p>
-        {table(reconciled)}
-      </PanelSection>
+      <PanelSection title={`Reconciled (${reconciled.length})`}>{null}</PanelSection>
       <PanelSection title={`Not reconciled (${notReconciled.length})`}>
         <p className="text-tiny text-ink-3 mb-2">
           {mismatch.length} mismatch · {pending.length} pending · {unexpected.length} unexpected · {ambiguous.length} ambiguous
@@ -782,7 +887,7 @@ function SettledLikeTable({
             </td>
             <td className="text-tiny text-ink-3">{r._gmNote || ''}</td>
             <td>
-              <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+              <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
             </td>
           </tr>
         ))}
@@ -815,7 +920,7 @@ function UpiTab({
   if (rows.length === 0) {
     return (
       <div className="panel">
-        <EmptyRow cols={1} message="No HDFC Static UPI data." />
+        <EmptyTable message="No HDFC Static UPI data." />
       </div>
     );
   }
@@ -869,7 +974,7 @@ function UpiTab({
                     <td className="num">{r.mpr ? fmt(r.mpr.grossAmount) : '—'}</td>
                     <td className={`num ${diffClass(r._diff)}`}>{d.text}</td>
                     <td>
-                      <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                      <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
                     </td>
                   </tr>
                 );
@@ -905,7 +1010,7 @@ function UpiTab({
                   <td className="text-tiny text-ink-3 italic">{r._gmNote || ''}</td>
                   <td className="num">{fmt(prTotal(r))}</td>
                   <td>
-                    <ResolveRow sessionId={sessionId} row={r} onResolved={onResolved} />
+                    <ResolveRow sessionId={r._storageSessionId ?? sessionId} row={r} onResolved={onResolved} />
                   </td>
                 </tr>
               ))}

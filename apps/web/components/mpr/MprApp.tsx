@@ -1,65 +1,45 @@
 'use client';
 
 /**
- * MPR (Layer 2) top-level workspace state machine — mirrors
- * `ReconciliationApp.tsx`'s upload/results split, plus a list of past runs
- * since (unlike legacy) these are persisted.
+ * MPR (Layer 2) top-level workspace state machine.
+ *
+ * MPR ingestion is now fully automated (mail-fetch + ingest Lambdas), so
+ * nobody uploads files through this screen anymore — an admin picks a
+ * business date (defaulting to today) and sees every outlet's rows for that
+ * date, pooled across whatever automated runs touched it (a date's rows can
+ * land in more than one run — see `buildDaySession` on the API side). GMs
+ * get their own outlet-scoped status view instead (see the early return
+ * below).
  */
 
-import type { MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
+import type { MprSessionDTO } from '@toit/contracts';
+import { OUTLET_CODES, OUTLET_NAMES, todayIsoIST } from '@toit/recon-core';
 import { useEffect, useState } from 'react';
 import { useCurrentUser } from '@/components/auth/AuthProvider';
 import { GmMprDashboard } from '@/components/mpr/GmMprDashboard';
 import { MprHeader } from '@/components/mpr/MprHeader';
-import { MprUploadPanel, type MprSelectedFiles } from '@/components/mpr/MprUploadPanel';
 import { MprWorkspace } from '@/components/mpr/MprWorkspace';
-import { ApiError, listMprSessions, runMprReconciliation } from '@/lib/mprApi';
+import { ApiError, getAdminMprDaySession, mprDayExportCsvUrl } from '@/lib/mprApi';
 
 export function MprApp() {
   const user = useCurrentUser();
-  const [files, setFiles] = useState<MprSelectedFiles>({ json: [], mpr: [] });
+  const [selectedOutlet, setSelectedOutlet] = useState('ALL');
+  const [selectedDate, setSelectedDate] = useState(() => todayIsoIST());
   const [session, setSession] = useState<MprSessionDTO | null>(null);
-  const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [past, setPast] = useState<MprSessionListItemDTO[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
-    if (session || user.role === 'gm') return; // GMs get their own outlet-scoped view instead — see the early return below.
-    listMprSessions()
-      .then(setPast)
-      .catch(() => setPast([]));
-  }, [session]);
-
-  async function run() {
-    setRunning(true);
+    if (user.role === 'gm') return;
+    setLoading(true);
     setError(null);
-    try {
-      const dto = await runMprReconciliation(files);
-      setSession(dto);
-    } catch (err) {
-      setError(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? `Could not reach the API — is it running on port 4000? (${err.message})`
-            : 'Unknown error',
-      );
-    } finally {
-      setRunning(false);
-    }
-  }
+    getAdminMprDaySession(selectedDate, selectedOutlet)
+      .then(setSession)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load that date.'))
+      .finally(() => setLoading(false));
+  }, [user.role, selectedDate, selectedOutlet, refreshNonce]);
 
-  function reset() {
-    setSession(null);
-    setFiles({ json: [], mpr: [] });
-    setError(null);
-  }
-
-  // MPR ingestion is now fully automated — a GM never uploads/runs it
-  // directly, so this replaces the upload/results screen for them
-  // entirely with their own outlet-scoped status view. Admins keep the
-  // existing flow (still useful as the manual re-run escape hatch — e.g.
-  // re-matching an old snapshot against a late-arriving bank file).
   if (user.role === 'gm') {
     return (
       <>
@@ -71,54 +51,66 @@ export function MprApp() {
 
   return (
     <>
-      <MprHeader subtitle={session ? `${session.meta.businessDates.length} business date(s)` : 'Upload files to begin'} />
-
-      {session ? (
-        <main className="app-main">
-          <div className="btn-row mb-4">
-            <button className="btn" type="button" onClick={reset}>
-              ↑ New upload
+      <MprHeader subtitle="Automated MPR runs — pick an outlet and a business date" />
+      <main className="app-main">
+        <div className="inline-flex items-center gap-2 mb-4 flex-wrap">
+          <label className="text-tiny text-ink-3 font-semibold" htmlFor="mpr-outlet">
+            Outlet
+          </label>
+          <select
+            id="mpr-outlet"
+            className="toolbar-select"
+            value={selectedOutlet}
+            onChange={(e) => setSelectedOutlet(e.target.value)}
+          >
+            <option value="ALL">All outlets</option>
+            {OUTLET_CODES.map((code) => (
+              <option key={code} value={code}>
+                {OUTLET_NAMES[code]}
+              </option>
+            ))}
+          </select>
+          <label className="text-tiny text-ink-3 font-semibold ml-2" htmlFor="mpr-date">
+            Date
+          </label>
+          <input
+            id="mpr-date"
+            type="date"
+            className="toolbar-input flex-none"
+            value={selectedDate}
+            onChange={(e) => e.target.value && setSelectedDate(e.target.value)}
+          />
+          {selectedDate !== todayIsoIST() && (
+            <button type="button" className="btn" onClick={() => setSelectedDate(todayIsoIST())}>
+              Today
             </button>
-          </div>
-          <MprWorkspace session={session} />
-        </main>
-      ) : (
-        <main className="app-main">
-          <MprUploadPanel files={files} onFilesChange={setFiles} onRun={run} running={running} error={error} />
-
-          {past && past.length > 0 && (
-            <div className="panel">
-              <div className="panel-section-title px-5 pt-5">Past runs</div>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Run date</th>
-                    <th>Business dates</th>
-                    <th>Outlets</th>
-                    <th className="num">Settled</th>
-                    <th className="num">Mismatch</th>
-                    <th className="num">Pending</th>
-                    <th className="num">Unexpected</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {past.map((s) => (
-                    <tr key={s.id} className="cursor-pointer" onClick={() => (window.location.href = `/mpr/${s.id}`)}>
-                      <td className="mono">{new Date(s.createdAt).toLocaleString('en-IN')}</td>
-                      <td>{s.businessDates.join(', ') || '—'}</td>
-                      <td>{s.outlets.join(', ') || '—'}</td>
-                      <td className="num">{s.settledCount}</td>
-                      <td className="num">{s.mismatchCount}</td>
-                      <td className="num">{s.pendingCount}</td>
-                      <td className="num">{s.unexpectedCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           )}
-        </main>
-      )}
+        </div>
+
+        {loading ? (
+          <p className="text-body text-ink-3">Loading…</p>
+        ) : error ? (
+          <div className="alert alert-err">
+            <span>✕</span>
+            <span>{error}</span>
+          </div>
+        ) : session && Object.values(session.result).some((rows) => rows.length > 0) ? (
+          <MprWorkspace
+            key={`${selectedOutlet}-${selectedDate}-${refreshNonce}`}
+            session={session}
+            exportUrl={mprDayExportCsvUrl(selectedDate, selectedOutlet)}
+            afterRowChange={() => setRefreshNonce((n) => n + 1)}
+          />
+        ) : (
+          <div className="panel">
+            <div className="panel-section-title px-5 pt-5">No automated MPR runs for this date</div>
+            <p className="text-body text-ink-3 px-5 pb-5">
+              Once the mail-fetch and ingest pipeline processes bank files for this business date, its rows will show
+              up here automatically.
+            </p>
+          </div>
+        )}
+      </main>
     </>
   );
 }

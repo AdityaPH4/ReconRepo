@@ -308,6 +308,17 @@
     @apply block text-micro text-ink-3 mt-1 leading-snug;
   }
 
+  /* MPR dashboard only — colored left edge per tile (legacy mpr-recon's
+     colorful tile look): blue for the primary "settled" metric, red for
+     anything that needs attention. Plain/neutral tiles keep the default
+     border — only these two cases get an accent. */
+  .kpi-border-accent {
+    @apply border-l-4 border-l-accent;
+  }
+  .kpi-border-err {
+    @apply border-l-4 border-l-err;
+  }
+
   /* ── Alerts ───────────────────────────────────────────────────────────── */
   .alert {
     @apply rounded-control px-4 py-3 text-body mb-4 flex gap-2 items-start

@@ -6,7 +6,7 @@
  * `globals.css`; these components only decide *which* named class applies.
  */
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { AMOUNT_EPSILON } from '@toit/recon-core/display';
 
 /** A titled block inside a panel — panels stack several tables vertically. */
@@ -66,4 +66,54 @@ export function diffClass(diff: number | null | undefined): string {
   if (diff > AMOUNT_EPSILON) return 'diff-excess';
   if (diff < -AMOUNT_EPSILON) return 'diff-short';
   return 'diff-zero';
+}
+
+/**
+ * Reveals rows a page at a time as the user scrolls near the bottom of a long
+ * table, instead of mounting hundreds of rows (each with its own
+ * resolve/comment controls) up front — real-world row counts in the hundreds
+ * were freezing the browser on first paint.
+ */
+export function useRevealOnScroll(total: number, pageSize = 50) {
+  const [visible, setVisible] = useState(Math.min(pageSize, total));
+  const sentinelRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    setVisible(Math.min(pageSize, total)); // reset when the underlying data changes
+  }, [total, pageSize]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || visible >= total) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setVisible((v) => Math.min(v + pageSize, total));
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible, total, pageSize]);
+
+  return { visible, sentinelRef };
+}
+
+/** Row to place at the end of a table body, just before any totals row — renders nothing once everything is shown. */
+export function LoadMoreSentinel({
+  sentinelRef,
+  cols,
+  remaining,
+}: {
+  sentinelRef: RefObject<HTMLTableRowElement | null>;
+  cols: number;
+  remaining: number;
+}) {
+  if (remaining <= 0) return null;
+  return (
+    <tr ref={sentinelRef}>
+      <td colSpan={cols} className="text-ink-3 text-tiny text-center py-3">
+        Loading more… ({remaining} left)
+      </td>
+    </tr>
+  );
 }

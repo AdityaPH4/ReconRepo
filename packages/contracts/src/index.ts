@@ -526,6 +526,20 @@ export interface MprRowClosureDTO {
    * its rows; every reader treats a missing array the same as an empty one.
    */
   comments?: MprRowCommentDTO[];
+  /**
+   * Set only on a row returned by a pooled/synthetic session (the GM or
+   * admin day-view, which can span several real stored MPR runs) — the
+   * *real* `mpr_sessions` id this row physically lives in, since the pooled
+   * session's own id (e.g. `day:2026-10-13`) is synthetic and was never
+   * persisted. Comment/resolve calls must target this id instead of the
+   * pooled session's id, or the API 404s with "MPR session not found".
+   * Absent on an ordinary single-session fetch, where the session's own id
+   * already is the real one. Not to be confused with `_sourceSessionId`
+   * (present on some row types) — that's the unrelated Layer-1 recon
+   * submission id, kept purely for traceability, and was never a safe
+   * stand-in for this.
+   */
+  _storageSessionId?: string;
 }
 
 export interface MprRowCommentDTO {
@@ -578,23 +592,26 @@ export interface MprOpenRowDTO {
   row: MprSettledRowDTO | MprPendingRowDTO | MprAmbiguousRowDTO | MprUnexpectedRowDTO | MprAmexResultDTO | MprUpiResultDTO;
 }
 
+/** One business date's reconciled/unreconciled row counts for a GM's own outlet. */
+export interface GmMprDaySummaryDTO {
+  date: string;
+  reconciled: number;
+  unreconciled: number;
+}
+
 /**
  * A GM's own view of MPR status for their outlet (`GET
  * /api/mpr-sessions/gm-status`) — MPR is now fully automated, so a GM never
  * uploads/runs it directly; this is what replaces that screen for them.
- * `ambiguous`/`unexpected` rows never appear in `openItems` — neither type
- * carries a reliable outlet attribution (an ambiguous RRN collision or a
- * completely unmatched bank credit could belong to any outlet), so those
- * stay admin-only, handled cross-outlet via the existing open-items queue.
+ * Broken down by business date, pooled across every stored automated run —
+ * `ambiguous`/`unexpected` rows are excluded entirely, since neither carries
+ * a reliable outlet or business date to group by (those stay admin-only,
+ * handled cross-outlet via the existing open-items queue).
  */
 export interface GmMprStatusDTO {
   outlet: OutletCode;
-  /** Submitted sessions not yet included in any automated MPR run — either the bank file hasn't arrived yet, or the automation hasn't run since this was submitted. */
-  pendingSessions: Array<{ sessionId: string; businessDate: string | null; submittedAt: string | null }>;
-  /** This outlet's still-open rows across all past MPR runs, most recent first. */
-  openItems: MprOpenRowDTO[];
-  /** How many of this outlet's rows, across all runs, are already settled/resolved. */
-  settledCount: number;
+  /** Last 15 calendar days (IST), most recent first — zero-filled for a day with no activity at all. */
+  days: GmMprDaySummaryDTO[];
 }
 
 export interface ParsedMprFileMetaDTO {

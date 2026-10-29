@@ -4,45 +4,100 @@
  * A GM's own view of MPR (Layer 2) status — replaces the old upload/run
  * screen for them now that ingestion is fully automated (see
  * mailFetchService.ts/mprIngestService.ts). A GM never uploads or runs MPR
- * directly anymore; this shows what the automation has found for their
- * outlet and lets them comment on anything still open. Resolving an item
- * stays admin-only — see ResolveRow's own doc comment.
+ * directly anymore. With no date picked, this is the last 15 days' worth of
+ * reconciled/unreconciled counts for their own outlet — no per-acquirer
+ * breakdown, there's no room for it at this level. Clicking a listed date
+ * (or picking an older one from the date picker) opens that day's full
+ * breakdown (the same AMEX/HDFC/Kotak tile dashboard the admin view uses),
+ * pooled from whichever automated runs touched this outlet on that date.
+ * Resolving an item stays admin-only — see ResolveRow's own doc comment; a
+ * GM can always comment.
  */
 
 import type { GmMprStatusDTO, MprSessionDTO } from '@toit/contracts';
-import { OUTLET_NAMES } from '@toit/recon-core/display';
+import { fmtEventDate, OUTLET_NAMES } from '@toit/recon-core/display';
 import { useEffect, useState } from 'react';
-import { fmtEventDate } from '@toit/recon-core/display';
-import { ApiError, getGmMprStatus } from '@/lib/mprApi';
-import { BUCKET_LABELS, rowAmount, rowRrn } from './MprOpenItemsQueue';
-import { ResolveRow } from './MprWorkspace';
+import { ApiError, getGmMprDaySession, getGmMprStatus } from '@/lib/mprApi';
+import { MprWorkspace } from './MprWorkspace';
 
 export function GmMprDashboard() {
   const [status, setStatus] = useState<GmMprStatusDTO | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [daySession, setDaySession] = useState<MprSessionDTO | null>(null);
+  const [dayError, setDayError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
-    refresh();
-  }, []);
-
-  function refresh() {
     getGmMprStatus()
       .then(setStatus)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load MPR status.'));
-  }
+  }, []);
 
-  // A comment/resolve action returns the whole updated MprSessionDTO, but
-  // this view only needs to know "something changed" — a full refetch
-  // keeps pendingSessions/settledCount/openItems all correctly in sync
-  // rather than trying to patch one row into this outlet-scoped shape by
-  // hand.
-  function onRowChanged(_updated: MprSessionDTO) {
-    refresh();
-  }
+  useEffect(() => {
+    if (!selectedDate) return;
+    setDaySession(null);
+    setDayError(null);
+    getGmMprDaySession(selectedDate)
+      .then(setDaySession)
+      .catch((err) => setDayError(err instanceof ApiError ? err.message : 'Failed to load that day.'));
+  }, [selectedDate, refreshNonce]);
 
   return (
     <main className="app-main">
-      <div className="results-header mt-6">
+      <div className="inline-flex items-center gap-2 mb-4">
+        <label className="text-tiny text-ink-3 font-semibold" htmlFor="gm-mpr-date">
+          Day-wise view
+        </label>
+        <input
+          id="gm-mpr-date"
+          type="date"
+          className="toolbar-input flex-none"
+          value={selectedDate ?? ''}
+          onChange={(e) => setSelectedDate(e.target.value || null)}
+        />
+        {selectedDate && (
+          <button type="button" className="btn" onClick={() => setSelectedDate(null)}>
+            ← Back to overview
+          </button>
+        )}
+      </div>
+
+      {selectedDate ? (
+        dayError ? (
+          <div className="alert alert-err mt-4">
+            <span>✕</span>
+            <span>{dayError}</span>
+          </div>
+        ) : !daySession ? (
+          <p className="text-body text-ink-3 mt-4">Loading…</p>
+        ) : (
+          <MprWorkspace
+            key={`${daySession.meta.id}-${refreshNonce}`}
+            session={daySession}
+            hideExport
+            afterRowChange={() => setRefreshNonce((n) => n + 1)}
+          />
+        )
+      ) : (
+        <GmMprOverview status={status} error={error} onSelectDate={setSelectedDate} />
+      )}
+    </main>
+  );
+}
+
+function GmMprOverview({
+  status,
+  error,
+  onSelectDate,
+}: {
+  status: GmMprStatusDTO | null;
+  error: string | null;
+  onSelectDate: (date: string) => void;
+}) {
+  return (
+    <>
+      <div className="results-header">
         <div>
           <h1 className="results-title">MPR status — {status ? OUTLET_NAMES[status.outlet] : '…'}</h1>
           <div className="results-meta">
@@ -64,129 +119,33 @@ export function GmMprDashboard() {
       {!status ? (
         <p className="text-body text-ink-3 mt-4">Loading…</p>
       ) : (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
-            <div className="panel">
-              <div className="panel-header">
-                <div className="panel-header-left">
-                  <div className="panel-icon">⏳</div>
-                  <div>
-                    <p className="panel-title">Awaiting match</p>
-                    <p className="panel-subtitle">{status.pendingSessions.length} session(s)</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panel-header">
-                <div className="panel-header-left">
-                  <div className="panel-icon">⚠️</div>
-                  <div>
-                    <p className="panel-title">Needs attention</p>
-                    <p className="panel-subtitle">{status.openItems.length} open item(s)</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panel-header">
-                <div className="panel-header-left">
-                  <div className="panel-icon">✓</div>
-                  <div>
-                    <p className="panel-title">Settled</p>
-                    <p className="panel-subtitle">{status.settledCount} row(s)</p>
-                  </div>
-                </div>
-              </div>
+        <section className="mt-6">
+          <div className="panel">
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="text-left!">Business date</th>
+                    <th className="num">Reconciled</th>
+                    <th className="num">Unreconciled</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {status.days.map((d) => (
+                    <tr key={d.date} className="cursor-pointer" onClick={() => onSelectDate(d.date)}>
+                      <td className="text-left!">{fmtEventDate(d.date)}</td>
+                      <td className="num text-ok">{d.reconciled}</td>
+                      <td className={`num ${d.unreconciled > 0 ? 'text-err font-semibold' : 'text-ink-3'}`}>
+                        {d.unreconciled}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-
-          <section className="mt-6">
-            <h2 className="text-lede font-semibold mb-1">Awaiting an automated match</h2>
-            <p className="text-tiny text-ink-3 mb-3">
-              Submitted recon sessions not yet checked against a bank settlement file — either the file hasn't
-              arrived yet, or the automation hasn't run since this was submitted. Nothing to do here; this is just
-              status.
-            </p>
-            <div className="panel">
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th className="text-left!">Business date</th>
-                      <th className="text-left!">Submitted</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {status.pendingSessions.length === 0 ? (
-                      <tr>
-                        <td colSpan={2} className="text-center text-ink-3">
-                          Nothing waiting — every submitted session has been through a match.
-                        </td>
-                      </tr>
-                    ) : (
-                      status.pendingSessions.map((s) => (
-                        <tr key={s.sessionId}>
-                          <td className="text-left!">{s.businessDate ? fmtEventDate(s.businessDate) : '—'}</td>
-                          <td className="text-left!">
-                            {s.submittedAt ? new Date(s.submittedAt).toLocaleString('en-IN') : '—'}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-
-          <section className="mt-6">
-            <h2 className="text-lede font-semibold mb-1">Needs attention</h2>
-            <p className="text-tiny text-ink-3 mb-3">
-              Rows the automated match couldn't confirm settled — add a comment with anything you know (e.g. "bank
-              confirmed a delay"); an admin makes the final call to resolve it.
-            </p>
-            <div className="panel">
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th className="text-left!">Run date</th>
-                      <th className="text-left!">Type</th>
-                      <th className="text-left!">RRN</th>
-                      <th className="num">Amount</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {status.openItems.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="text-center text-ink-3">
-                          Nothing open — every matched row for your outlet is settled.
-                        </td>
-                      </tr>
-                    ) : (
-                      status.openItems.map((item) => (
-                        <tr key={item.row.id}>
-                          <td className="text-left!">{new Date(item.sessionCreatedAt).toLocaleDateString('en-IN')}</td>
-                          <td className="text-left!">{BUCKET_LABELS[item.bucket]}</td>
-                          <td className="mono text-left!">{rowRrn(item)}</td>
-                          <td className="num">
-                            {rowAmount(item) != null ? `₹${rowAmount(item)!.toLocaleString('en-IN')}` : '—'}
-                          </td>
-                          <td>
-                            <ResolveRow sessionId={item.sessionId} row={item.row} onResolved={onRowChanged} />
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        </>
+        </section>
       )}
-    </main>
+    </>
   );
 }
