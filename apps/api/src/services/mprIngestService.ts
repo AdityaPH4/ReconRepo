@@ -49,6 +49,7 @@ import {
 import type { MprSessionDTO } from '@toit/contracts';
 import { applyReconciledAccumulator, type ReconciledDay } from '@toit/mpr-core';
 import { config } from '../config.js';
+import { autoClearBohFromNoRrn } from './bohMprAutoClear.js';
 import { enrichMprMatchResult, runMprReconciliation, type MprInputFile, type MprSnapshotInput } from './mprService.js';
 import { loadReconciledDay, loadRecentSettledKeys, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
 import { getMprSessionStore, getSessionStore } from '../storage/index.js';
@@ -101,6 +102,10 @@ export interface MprIngestResult {
   sourceSessionsFlagged: number;
   /** Sessions with at least one row still genuinely open (no bank file yet) — left unflagged so the next run retries them. */
   sourceSessionsStillOpen: number;
+  /** Bills on Hold auto-cleared via a matching "No RRN" MPR row this run — see `bohMprAutoClear.ts`. */
+  bohAutoCleared: number;
+  /** "No RRN" rows that matched more than one open BOH entry at the same outlet+date+amount — left open rather than guessed. */
+  bohSkippedAmbiguous: number;
 }
 
 export async function runMprIngest(): Promise<MprIngestResult> {
@@ -115,6 +120,7 @@ export async function runMprIngest(): Promise<MprIngestResult> {
     return {
       ranReconciliation: false, mprSessionId: null, bankFilesProcessed: 0,
       jsonSnapshotsProcessed: 0, sourceSessionsFlagged: 0, sourceSessionsStillOpen: 0,
+      bohAutoCleared: 0, bohSkippedAmbiguous: 0,
     };
   }
 
@@ -168,6 +174,12 @@ export async function runMprIngest(): Promise<MprIngestResult> {
 
   await getMprSessionStore().create(mprSession);
 
+  // Only after the MprSessionDTO is durably persisted — a "No RRN" row can
+  // never be matched by any future bank file either, so if it lines up with
+  // an open Bill on Hold (same outlet + date + amount, unambiguous, old
+  // enough), auto-clear it. See `bohMprAutoClear.ts`'s own doc comment.
+  const bohAutoClear = await autoClearBohFromNoRrn(mprSession);
+
   // Only after the MprSessionDTO is durably persisted — merge this run's
   // newly-resolved rows into each touched date's accumulator. An upsert by
   // key is idempotent, so repeating this after a crash/retry is harmless.
@@ -211,7 +223,8 @@ export async function runMprIngest(): Promise<MprIngestResult> {
 
   console.log(
     `[mpr-ingest] created MPR session ${mprSession.meta.id} — ${mprInputs.length} bank file(s), ${jsonInputs.length} snapshot(s), ` +
-      `${sourceSessionsFlagged} source session(s) flagged, ${reconciled.stillOpenSessionIds.size} left open for retry`,
+      `${sourceSessionsFlagged} source session(s) flagged, ${reconciled.stillOpenSessionIds.size} left open for retry, ` +
+      `${bohAutoClear.cleared} BOH auto-cleared (${bohAutoClear.skippedAmbiguous} skipped, ambiguous)`,
   );
 
   return {
@@ -221,5 +234,7 @@ export async function runMprIngest(): Promise<MprIngestResult> {
     jsonSnapshotsProcessed: jsonInputs.length,
     sourceSessionsFlagged,
     sourceSessionsStillOpen: reconciled.stillOpenSessionIds.size,
+    bohAutoCleared: bohAutoClear.cleared,
+    bohSkippedAmbiguous: bohAutoClear.skippedAmbiguous,
   };
 }
