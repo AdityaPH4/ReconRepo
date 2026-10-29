@@ -166,14 +166,19 @@ export function MprWorkspace({
         return t?.source === 'HDFC' && t.orderNo ? [t.orderNo] : [];
       }),
     );
-  const staticUpi: Count = { done: 0, total: 0 };
+  // Distinct across the whole day: an order that shows up in two rows (a split payment) is still one transaction.
+  const staticOrders = new Set<string>();
+  const staticDone = new Set<string>();
   let manualUpiEntries = 0;
   for (const r of result.upiResults) {
-    const orders = realOrders(r).size;
-    if (orders === 0) manualUpiEntries++;
-    staticUpi.total += orders;
-    if (isDone(r)) staticUpi.done += orders;
+    const orders = realOrders(r);
+    if (orders.size === 0) manualUpiEntries++;
+    for (const o of orders) {
+      staticOrders.add(o);
+      if (isDone(r)) staticDone.add(o);
+    }
   }
+  const staticUpi: Count = { done: staticDone.size, total: staticOrders.size };
   // Denominator excludes 'unexpected' (an AMEX bank credit with no ledger counterpart), so this stays "how many of the ledger's AMEX transactions are confirmed".
   const amexLedger = result.amexResults.filter((r) => r._match !== 'unexpected');
   const amex: Count = { done: amexLedger.filter(isDone).length, total: amexLedger.length };
@@ -225,6 +230,27 @@ export function MprWorkspace({
     tile: c.keys.reduce((n, k) => n + tileTotals[k], 0),
   }));
   const checkFailures = checkRows.filter((c) => c.json !== c.tile);
+
+  // The day's running counters (total from the JSON, cleared so far). They must agree with the tiles — a gap means a counter update was missed. Hidden until the day has been counted at all.
+  const counterBanks = [
+    { label: 'AMEX', keys: ['amex'] as const, done: amex.done },
+    { label: 'HDFC', keys: ['hdfc_upi', 'hdfc_dynamic', 'hdfc_static', 'hdfc_link'] as const, done: hdfc.done },
+    { label: 'Pinelabs', keys: ['pinelabs'] as const, done: ledgerCount.pinelabs.done },
+    { label: 'Kotak', keys: ['kotak'] as const, done: ledgerCount.kotak.done },
+  ];
+  const dayCounters = session.dayCounters?.counts;
+  const counterRows = dayCounters
+    ? counterBanks.map((c) => ({
+        label: c.label,
+        total: c.keys.reduce((n, k) => n + dayCounters[k].total, 0),
+        cleared: c.keys.reduce((n, k) => n + dayCounters[k].settled + dayCounters[k].resolved, 0),
+        tileDone: c.done,
+      }))
+    : [];
+  const countersBuilt = counterRows.some((c) => c.total > 0);
+  const counterFailures = countersBuilt
+    ? counterRows.filter((c, i) => c.total !== checkRows[i]!.tile || c.cleared !== c.tileDone)
+    : [];
   const tiles = [
     bankTile('amex', 'AMEX', amex),
     hdfcTile,
@@ -302,10 +328,15 @@ export function MprWorkspace({
       </div>
 
       {snapshot && snapshot.sessions > 0 && (
-        <div className={`alert ${checkFailures.length ? 'alert-warn' : 'alert-info'}`} data-testid="snapshot-check">
-          <span>{checkFailures.length ? '⚠' : '✓'}</span>
+        <div className={`alert ${checkFailures.length || counterFailures.length ? 'alert-warn' : 'alert-info'}`} data-testid="snapshot-check">
+          <span>{checkFailures.length || counterFailures.length ? '⚠' : '✓'}</span>
           <span>
-            {checkFailures.length ? (
+            {counterFailures.length > 0 && !checkFailures.length ? (
+              <>
+                <strong>The day&apos;s counters don&apos;t match the tiles.</strong>{' '}
+                {counterFailures.map((c) => `${c.label}: counter ${c.cleared}/${c.total} cleared, tiles ${c.tileDone}/${checkRows.find((r) => r.label === c.label)!.tile}`).join(' · ')}. A counter update was probably missed; the next MPR run for this day corrects it.
+              </>
+            ) : checkFailures.length ? (
               <>
                 <strong>Tile totals don&apos;t match this day&apos;s saved POS recon JSON.</strong>{' '}
                 {checkFailures.map((c) => `${c.label}: JSON has ${c.json}, tiles count ${c.tile}`).join(' · ')}.{' '}
@@ -317,6 +348,12 @@ export function MprWorkspace({
               <>
                 <strong>Checked against this day&apos;s saved POS recon JSON</strong>
                 {snapshot.sessions > 1 ? ` (${snapshot.sessions} sessions)` : ''}: {checkRows.map((c) => `${c.label} ${c.json}`).join(' · ')} — every tile total matches.
+                {countersBuilt && (
+                  <>
+                    {' '}
+                    Day counter (cleared / total): {counterRows.map((c) => `${c.label} ${c.cleared}/${c.total}`).join(' · ')}.
+                  </>
+                )}
               </>
             )}
           </span>

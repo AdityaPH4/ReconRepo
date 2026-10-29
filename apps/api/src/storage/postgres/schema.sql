@@ -113,3 +113,30 @@ CREATE TABLE IF NOT EXISTS recon.action_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS action_logs_role_created_at_idx ON recon.action_logs (role, created_at DESC);
+
+-- Per-day MPR progress counters. `mpr_day_totals` is how many POS transactions
+-- an outlet's day has per bank, taken from that day's saved JSON snapshot when
+-- it's imported. `mpr_day_cleared` is the set of those transactions MPR has
+-- cleared so far (settled by the bank, or resolved by an admin) plus the
+-- mismatched ones. It holds the transactions themselves, not a number, so
+-- re-applying a run or a resent bank file can never count one twice. Open =
+-- total - cleared. `session_id` ties both to the Layer-1 session they were
+-- built from, so a re-submitted day starts clean.
+CREATE TABLE IF NOT EXISTS recon.mpr_day_totals (
+  business_date TEXT NOT NULL,
+  outlet TEXT NOT NULL,
+  bank TEXT NOT NULL,
+  total INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (business_date, outlet, bank)
+);
+CREATE TABLE IF NOT EXISTS recon.mpr_day_cleared (
+  business_date TEXT NOT NULL,
+  outlet TEXT NOT NULL,
+  bank TEXT NOT NULL,
+  row_key TEXT NOT NULL,
+  state TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  PRIMARY KEY (business_date, outlet, bank, row_key)
+);

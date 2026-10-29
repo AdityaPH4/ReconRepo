@@ -655,10 +655,20 @@ export interface MprSnapshotCountsDTO {
   counts: Record<'amex' | 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link' | 'hdfc_static', number>;
 }
 
+/**
+ * The day's running progress counters, per bank: `total` is the day's POS
+ * transactions (from its JSON, fixed when the day is imported); the rest is
+ * what MPR has cleared so far. Open = total − settled − resolved.
+ */
+export interface MprDayCountersDTO {
+  counts: Record<'amex' | 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link' | 'hdfc_static', { total: number; settled: number; resolved: number; mismatch: number }>;
+}
+
 export interface MprSessionDTO {
   meta: MprSessionMetaDTO;
   result: MprMatchResultDTO;
   snapshotCounts?: MprSnapshotCountsDTO;
+  dayCounters?: MprDayCountersDTO;
 }
 
 /** Row shown in the MPR session list. */
