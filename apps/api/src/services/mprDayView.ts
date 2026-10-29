@@ -123,10 +123,10 @@ export function buildDaySession(date: string, data: MprDayRows, outlet: string |
     }
   }
 
-  // Runs from before the card-number backfill hold the same AMEX rows with an empty card — drop those copies where a carded one exists.
-  const cardedRuns = new Set(amex.filter((c) => c.row.cardLast4).map((c) => c.run));
-  const cardedBases = new Set(amex.filter((c) => c.row.cardLast4).map((c) => amexBase(c.row)));
-  amex = amex.filter((c) => c.row.cardLast4 || cardedRuns.has(c.run) || !cardedBases.has(amexBase(c.row)));
+  // Runs from before the card-number backfill hold the same AMEX rows with an empty card — drop those copies where another run has the row with a card.
+  const cardedRunsByBase = new Map<string, Set<number>>();
+  for (const c of amex) if (c.row.cardLast4) cardedRunsByBase.set(amexBase(c.row), (cardedRunsByBase.get(amexBase(c.row)) ?? new Set()).add(c.run));
+  amex = amex.filter((c) => c.row.cardLast4 || ![...(cardedRunsByBase.get(amexBase(c.row)) ?? [])].some((run) => run !== c.run));
 
   // A run that settles several orders as one grouped Static UPI row leaves single-order pending copies of them in earlier runs.
   const orderKeys = (r: Result['upiResults'][number]) => upiPrs(r).flatMap((p) => (p?.orderNo ? [`${upiOutlet(r, outletBySourceSession)}|${p.orderNo}`] : []));
