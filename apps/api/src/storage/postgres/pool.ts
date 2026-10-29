@@ -20,5 +20,7 @@ export function getPool(): Pool {
     // here if full certificate verification is ever required.
     ssl: { rejectUnauthorized: false },
   });
+  // An idle connection RDS or the network drops (e.g. `read ETIMEDOUT`) is emitted as a pool 'error' — with no listener Node treats it as uncaught and kills the whole process. The pool discards that connection and opens a fresh one on the next query.
+  pool.on('error', (err) => console.error('[pg] idle connection dropped:', err.message));
   return pool;
 }
