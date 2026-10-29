@@ -47,6 +47,7 @@ export {
   splitRRNs,
 } from './util/normalize.js';
 
+export { bankFamily, type BankFamily } from './util/bankFamily.js';
 export { parseMprFile } from './parsers/mprFile.js';
 export { parseAmexCSV } from './parsers/amexCsv.js';
 

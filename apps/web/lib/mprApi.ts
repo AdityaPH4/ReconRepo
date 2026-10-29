@@ -54,6 +54,12 @@ export async function listOpenMprRows(): Promise<MprOpenRowDTO[]> {
   return unwrap<MprOpenRowDTO[]>(res);
 }
 
+/** Just the number of open rows — for the admin home badge, which must not download the rows themselves. */
+export async function getOpenMprCount(): Promise<number> {
+  const res = await fetch(`${API_BASE}/api/mpr-sessions/open-count`, { cache: 'no-store', headers: authHeaders() });
+  return (await unwrap<{ count: number }>(res)).count;
+}
+
 /** A GM's own outlet-scoped MPR status — replaces the upload/run screen for them, since MPR is now fully automated. */
 export async function getGmMprStatus(): Promise<GmMprStatusDTO> {
   const res = await fetch(`${API_BASE}/api/mpr-sessions/gm-status`, { cache: 'no-store', headers: authHeaders() });

@@ -643,9 +643,22 @@ export interface MprSessionMetaDTO {
   outlets: string[];
 }
 
+/**
+ * Row counts read straight from the saved POS-recon JSON of the day (and
+ * outlet) a day view shows — what each bank tile's total must equal. Only
+ * the pooled day views carry it; a stored run has no single day to check.
+ * `hdfc_static` counts distinct Static UPI order numbers (not ledger rows).
+ */
+export interface MprSnapshotCountsDTO {
+  /** How many submitted POS-recon sessions the counts come from. */
+  sessions: number;
+  counts: Record<'amex' | 'kotak' | 'pinelabs' | 'hdfc_upi' | 'hdfc_dynamic' | 'hdfc_link' | 'hdfc_static', number>;
+}
+
 export interface MprSessionDTO {
   meta: MprSessionMetaDTO;
   result: MprMatchResultDTO;
+  snapshotCounts?: MprSnapshotCountsDTO;
 }
 
 /** Row shown in the MPR session list. */

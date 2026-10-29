@@ -102,5 +102,30 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
       );
       return rows.map((r) => r.data);
     },
+
+    async snapshotCountsForDay(businessDate, outlet) {
+      // Only the day's own session(s) get their arrays expanded — the business-date test reads each submitted session's header, never its ledger.
+      const day = `s.status = 'submitted' AND s.data->'meta'->>'businessDate' = $1 AND ($2::text IS NULL OR s.outlet = $2)`;
+      const [byAcquirer, upi, sessions] = await Promise.all([
+        pool.query<{ acquirer: string | null; n: number }>(
+          `SELECT r->>'acquirer' AS acquirer, count(*)::int AS n
+           FROM recon.sessions s, jsonb_array_elements(coalesce(s.data->'snapshot'->'settlementLedger', '[]'::jsonb)) r
+           WHERE ${day} GROUP BY 1`,
+          [businessDate, outlet],
+        ),
+        pool.query<{ n: number }>(
+          `SELECT count(DISTINCT s.id || '|' || (t->>'orderNo'))::int AS n
+           FROM recon.sessions s, jsonb_array_elements(coalesce(s.data->'snapshot'->'upi'->'transactions', '[]'::jsonb)) t
+           WHERE ${day} AND t->>'source' = 'HDFC'`,
+          [businessDate, outlet],
+        ),
+        pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM recon.sessions s WHERE ${day}`, [businessDate, outlet]),
+      ]);
+      return {
+        sessions: sessions.rows[0]?.n ?? 0,
+        byAcquirer: Object.fromEntries(byAcquirer.rows.map((r) => [r.acquirer ?? '', r.n])),
+        staticUpiOrders: upi.rows[0]?.n ?? 0,
+      };
+    },
   };
 }

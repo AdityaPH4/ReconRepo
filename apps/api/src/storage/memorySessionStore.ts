@@ -70,5 +70,19 @@ export function createMemorySessionStore(): SessionStore {
         )
         .sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
     },
+
+    async snapshotCountsForDay(businessDate, outlet) {
+      const day = [...sessions.values()].filter(
+        (s) => s.meta.status === 'submitted' && s.meta.businessDate === businessDate && (!outlet || s.meta.outlet === outlet),
+      );
+      const byAcquirer: Record<string, number> = {};
+      const orders = new Set<string>();
+      for (const s of day) {
+        const snap = s.snapshot as { settlementLedger?: Array<{ acquirer?: string }>; upi?: { transactions?: Array<{ source?: string; orderNo?: string }> } } | null;
+        for (const r of snap?.settlementLedger ?? []) byAcquirer[r.acquirer ?? ''] = (byAcquirer[r.acquirer ?? ''] ?? 0) + 1;
+        for (const t of snap?.upi?.transactions ?? []) if (t.source === 'HDFC') orders.add(`${s.meta.id}|${t.orderNo}`);
+      }
+      return { sessions: day.length, byAcquirer, staticUpiOrders: orders.size };
+    },
   };
 }
