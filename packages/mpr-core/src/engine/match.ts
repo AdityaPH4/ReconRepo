@@ -45,6 +45,11 @@ export function runMatch(input: MatchInput): MatchResult {
   const mprHdfcUpi: MprRow[] = [];
   const mprAmex: AmexMprRow[] = [];
 
+  // A bank re-issuing a report repeats its rows verbatim in a second file (e.g. HDFC sending 6 Oct's payout again just after
+  // midnight). A row identical in source, RRN, amount, timestamp and settlement date to one read from a *different* file is
+  // that same transaction, so it's read once. Anything else — a copy inside one file, or the same transaction paid again
+  // in a later payout — still counts as an RRN collision for a person to look at.
+  const fileOfRow = new Map<string, string>();
   for (const parsed of mprParsed) {
     if (parsed.error) continue;
     if (parsed.matchStrategy === 'batch') {
@@ -52,6 +57,12 @@ export function runMatch(input: MatchInput): MatchResult {
       continue;
     }
     for (const row of parsed.rows as MprRow[]) {
+      if (row.rrn) {
+        const identity = `${row._source}|${row.rrn}|${row.grossAmount}|${row.txnDateRaw || row.txnDate}|${row.settlementDate}`;
+        const firstFile = fileOfRow.get(identity);
+        if (firstFile !== undefined && firstFile !== row._file) continue;
+        fileOfRow.set(identity, row._file);
+      }
       if (parsed.source === 'HDFC_UPI') mprHdfcUpi.push(row);
       if (row.rrn) {
         const list = mprByRRNCandidates.get(row.rrn) ?? [];

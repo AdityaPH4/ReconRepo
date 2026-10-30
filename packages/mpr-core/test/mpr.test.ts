@@ -355,7 +355,7 @@ describe('runMatch() — primary RRN match', () => {
     assert.equal(result.unexpected[0]!.mprAmount, 250);
   });
 
-  it('routes a duplicate RRN across MPR rows to `ambiguous` rather than silently keeping one (the fix over legacy)', () => {
+  it('routes a duplicate RRN whose copies disagree to `ambiguous` rather than silently keeping one (the fix over legacy)', () => {
     const result = runMatch(
       emptyInput({
         sessions: [ledgerRow()],
@@ -363,7 +363,7 @@ describe('runMatch() — primary RRN match', () => {
           {
             source: 'KOTAK',
             matchStrategy: 'rrn',
-            rows: [mprRow({ grossAmount: 1000 }), mprRow({ grossAmount: 1000, _file: 'kotak2.xlsx' })],
+            rows: [mprRow({ grossAmount: 1000 }), mprRow({ grossAmount: 900, _file: 'kotak2.xlsx' })],
             filename: 'kotak.xlsx',
           },
         ],
@@ -374,6 +374,26 @@ describe('runMatch() — primary RRN match', () => {
     // Neither candidate is available to the primary matcher — the ledger row is "Not in MPR".
     assert.equal(result.pending.length, 1);
     assert.equal(result.pending[0]!._reason, 'Not in MPR');
+  });
+
+  it('reads a row repeated verbatim by a re-issued report once, so it settles (same RRN, amount and timestamp)', () => {
+    const result = runMatch(
+      emptyInput({
+        sessions: [ledgerRow()],
+        mprParsed: [
+          { source: 'HDFC_UPI', matchStrategy: 'rrn', rows: [mprRow({ _source: 'HDFC_UPI', _file: 'payout_07-Oct.xlsx' })], filename: 'payout_07-Oct.xlsx' },
+          { source: 'HDFC_UPI', matchStrategy: 'rrn', rows: [mprRow({ _source: 'HDFC_UPI', _file: 'payout_08-Oct_00.25.xlsx' })], filename: 'payout_08-Oct_00.25.xlsx' },
+        ],
+      }),
+    );
+    assert.equal(result.ambiguous.length, 0);
+    assert.equal(result.settled.length, 1);
+    // Still a collision: a different timestamp, the same transaction paid again in a later payout, or a row repeated inside one file.
+    const collides = (second: Record<string, unknown>) =>
+      runMatch(emptyInput({ sessions: [ledgerRow()], mprParsed: [{ source: 'KOTAK', matchStrategy: 'rrn', rows: [mprRow(), mprRow(second)], filename: 'a.xlsx' }] })).ambiguous.length;
+    assert.equal(collides({ txnDateRaw: '02-Aug-2026 10:00:00', _file: 'b.xlsx' }), 1);
+    assert.equal(collides({ settlementDate: '2026-08-04', _file: 'b.xlsx' }), 1);
+    assert.equal(collides({}), 1, 'same file (kotak.xlsx) twice');
   });
 });
 
