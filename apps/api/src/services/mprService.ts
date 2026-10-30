@@ -8,7 +8,7 @@
  * "does it have a `settlementLedger` key at all" — preserved as-is.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { detectAdapter, parseMprFile, runMatch } from '@toit/mpr-core';
 import type {
   MatchInput,
@@ -127,7 +127,21 @@ export function runMprReconciliation(
     }
   }
 
-  const mprParsed = mprFiles.map((f) => parseMprFile(f.originalName, f.buffer, detectAdapter(f.originalName)));
+  // A byte-identical copy of a file already in this run (the same report fetched twice, or uploaded by hand as well) is skipped:
+  // every one of its rows would otherwise appear twice, and the matcher refuses to settle a duplicated RRN.
+  const seen = new Map<string, string>();
+  const uniqueFiles = mprFiles.filter((f) => {
+    const hash = createHash('sha256').update(f.buffer).digest('hex');
+    const first = seen.get(hash);
+    if (first === undefined) {
+      seen.set(hash, f.originalName);
+      return true;
+    }
+    console.log(`[mpr] skipped ${f.originalName}: identical to ${first}, already in this run`);
+    return false;
+  });
+
+  const mprParsed = uniqueFiles.map((f) => parseMprFile(f.originalName, f.buffer, detectAdapter(f.originalName)));
   const mprFileMeta: ParsedMprFileMetaDTO[] = mprParsed.map((p) => ({
     filename: p.filename,
     detected: p.source,
