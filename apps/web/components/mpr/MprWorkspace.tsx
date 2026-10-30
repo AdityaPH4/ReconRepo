@@ -20,7 +20,7 @@ type LedgerFamily = Exclude<BankFamily, 'amex'>;
 
 const HDFC_SUBS: Array<{ id: HdfcSub; label: string }> = [
   { id: 'hdfc_upi', label: 'HDFC UPI' },
-  { id: 'hdfc_dynamic', label: 'HDFC (dynamic UPI)' },
+  { id: 'hdfc_dynamic', label: 'HDFC card' },
   { id: 'hdfc_static', label: 'HDFC Static UPI' },
   { id: 'hdfc_link', label: 'HDFC Link' },
 ];
