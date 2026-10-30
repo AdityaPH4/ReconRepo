@@ -12,7 +12,7 @@
  * Layer 1 already decided about it.
  */
 
-import { adjustPRDate, cardLast4, normDate, normRRN, parseTxnTimestamp, splitRRNs } from '../util/normalize.js';
+import { adjustPRDate, cardLast4, normDate, normDateTime, normRRN, parseTxnTimestamp, splitRRNs } from '../util/normalize.js';
 import type {
   AmbiguousMprRow,
   AmexMprRow,
@@ -143,7 +143,32 @@ function amexKey(date: string | null, card: string): string | null {
 interface AmexLedgerRow {
   row: MatchInput['sessions'][number];
   date: string | null;
+  /** Pinelabs date-time to the second — same instant as AMEX's Transaction Timestamp. */
+  at: string | null;
   card: string;
+}
+
+/** AMEX's Transaction Timestamp and the Pinelabs date-time agree to the second, or (≈1% of real rows) differ by one second. */
+const TIMESTAMP_TOLERANCE_MS = 2000;
+const atMs = (at: string | null | undefined) => (at ? Date.parse(`${at.replace(' ', 'T')}Z`) : NaN);
+
+/**
+ * Narrows date + card (+ amount) candidates by time, when both sides carry one:
+ * an AMEX row whose Transaction Timestamp is more than ±2s from the ledger
+ * row's Pinelabs date-time is a different transaction — dropped even when it's
+ * the only candidate. Of several that remain, the single timed one wins.
+ * Rows without a timestamp (runs stored before it was parsed) aren't filtered.
+ */
+function byTimestamp(mprAmex: readonly AmexMprRow[], candidates: number[], at: string | null): number[] {
+  const t = atMs(at);
+  if (Number.isNaN(t)) return candidates;
+  const compatible = candidates.filter((i) => {
+    const m = atMs(mprAmex[i]!.txnAt);
+    return Number.isNaN(m) || Math.abs(m - t) <= TIMESTAMP_TOLERANCE_MS;
+  });
+  if (compatible.length < 2) return compatible;
+  const timed = compatible.filter((i) => !Number.isNaN(atMs(mprAmex[i]!.txnAt)));
+  return timed.length === 1 ? timed : compatible;
 }
 
 /** Index of every unused AMEX row whose Transaction Date + Card equal `key` — further filtered to an exact Charge Amount when `amount` is given. */
@@ -170,6 +195,13 @@ function amexCandidates(mprAmex: readonly AmexMprRow[], usedMprIdx: ReadonlySet<
  * exact charge amount, so this alone resolves the common "same customer,
  * same card, several orders in one day" case without any ambiguity.
  *
+ * In both passes candidates are also checked against the ledger row's
+ * Pinelabs date-time, which is the same instant as AMEX's Transaction
+ * Timestamp (real files agree to the second, rarely 1s off): one more than
+ * ±2s away is another transaction, and of identical rows the one at the
+ * right time wins — e.g. one card tipping ₹200 at two outlets on the same
+ * day. Without a unique hit the row stays unresolved, as before.
+ *
  * Pass 2 — whatever Pass 1 left unresolved, keyed by Transaction Date +
  * Card alone (amount dropped). A unique leftover AMEX row there is very
  * likely the same transaction with a genuine amount discrepancy
@@ -184,49 +216,49 @@ function runAmexMatch(
 ): void {
   const ledgerRows: AmexLedgerRow[] = sessions
     .filter((r) => r.acquirer === 'AMEX')
-    .map((row) => ({ row, date: normDate(row.plDate), card: cardLast4(row.cardNo) }));
+    .map((row) => ({ row, date: normDate(row.plDate), at: normDateTime(row.plDate), card: cardLast4(row.cardNo) }));
 
   const usedMprIdx = new Set<number>();
   const resolved = new Array<boolean>(ledgerRows.length).fill(false);
 
-  ledgerRows.forEach(({ row, date, card }, li) => {
+  ledgerRows.forEach(({ row, date, at, card }, li) => {
     const key = amexKey(date, card);
     if (!key) return;
-    const candidates = amexCandidates(mprAmex, usedMprIdx, key, row.plAmount ?? 0);
+    const candidates = byTimestamp(mprAmex, amexCandidates(mprAmex, usedMprIdx, key, row.plAmount ?? 0), at);
     if (candidates.length !== 1) return;
 
     usedMprIdx.add(candidates[0]!);
     resolved[li] = true;
     const mpr = mprAmex[candidates[0]!]!;
     result.amexResults.push({
-      date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
+      date, at, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
       mprRow: mpr, _match: 'settled', _diff: (row.plAmount ?? 0) - mpr.amount,
       _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
     });
   });
 
-  ledgerRows.forEach(({ row, date, card }, li) => {
+  ledgerRows.forEach(({ row, date, at, card }, li) => {
     if (resolved[li]) return;
     const key = amexKey(date, card);
     if (!key) {
       result.amexResults.push({
-        date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending',
+        date, at, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending',
         _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
       });
       return;
     }
 
-    const candidates = amexCandidates(mprAmex, usedMprIdx, key);
+    const candidates = byTimestamp(mprAmex, amexCandidates(mprAmex, usedMprIdx, key), at);
     if (candidates.length === 0) {
       result.amexResults.push({
-        date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending',
+        date, at, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null, _match: 'pending',
         _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
       });
       return;
     }
     if (candidates.length > 1) {
       result.amexResults.push({
-        date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null,
+        date, at, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount, mprRow: null,
         _match: 'ambiguous', _note: `Duplicate Transaction Date + Card in AMEX file (${date}, ${card})`,
         _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
       });
@@ -236,7 +268,7 @@ function runAmexMatch(
     usedMprIdx.add(candidates[0]!);
     const mpr = mprAmex[candidates[0]!]!;
     result.amexResults.push({
-      date, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
+      date, at, cardLast4: card, outlet: row.outlet ?? '', l1Amount: row.plAmount,
       mprRow: mpr, _match: 'mismatch', _diff: (row.plAmount ?? 0) - mpr.amount,
       _businessDate: row._businessDate, _sourceSessionId: row._sourceSessionId,
     });
@@ -247,7 +279,7 @@ function runAmexMatch(
   // dropped, same principle as the Kotak/Pinelabs unexpected-credit fix above.
   mprAmex.forEach((m, i) => {
     if (usedMprIdx.has(i)) return;
-    result.amexResults.push({ date: m.txnDate, cardLast4: m.cardLast4, outlet: '', l1Amount: null, mprRow: m, _match: 'unexpected' });
+    result.amexResults.push({ date: m.txnDate, at: m.txnAt ?? null, cardLast4: m.cardLast4, outlet: '', l1Amount: null, mprRow: m, _match: 'unexpected' });
   });
 }
 

@@ -42,6 +42,7 @@ export {
   cardLast4,
   fmt,
   normDate,
+  normDateTime,
   normRRN,
   parseTxnTimestamp,
   splitRRNs,
@@ -70,4 +71,4 @@ export { parseAmexCSV } from './parsers/amexCsv.js';
 
 export { runMatch } from './engine/match.js';
 export { buildExportRows, rowsToCsv } from './engine/csvExport.js';
-export { applyReconciledAccumulator, type ReconcileRetryOutcome } from './engine/reconcileRetry.js';
+export { amexItemKey, amexSettledKeys, applyReconciledAccumulator, isAmexBankRowSettled, type ReconcileRetryOutcome } from './engine/reconcileRetry.js';

@@ -104,8 +104,12 @@ export function createPostgresMprSessionStore(pool: Pool): MprSessionStore {
            UNION ALL
            SELECT r->'mpr'->>'rrn' FROM ${RECENT_RUNS}, jsonb_array_elements(ms.data->'result'->'upiResults') r WHERE r->>'_match' = 'settled'
            UNION ALL
-           SELECT concat_ws('|', r->>'date', r->>'cardLast4', r->'mprRow'->>'amount')
+           -- Same keys as amexSettledKeys(): date|card|amount, plus @timestamp and @* when the bank row carries its Transaction Timestamp.
+           SELECT concat_ws('|', r->>'date', r->>'cardLast4', r->'mprRow'->>'amount') || coalesce('@' || (r->'mprRow'->>'txnAt'), '')
            FROM ${RECENT_RUNS}, jsonb_array_elements(ms.data->'result'->'amexResults') r WHERE r->>'_match' IN ('settled','mismatch')
+           UNION ALL
+           SELECT concat_ws('|', r->>'date', r->>'cardLast4', r->'mprRow'->>'amount') || '@*'
+           FROM ${RECENT_RUNS}, jsonb_array_elements(ms.data->'result'->'amexResults') r WHERE r->>'_match' IN ('settled','mismatch') AND r->'mprRow'->>'txnAt' IS NOT NULL
          ) s WHERE k IS NOT NULL`,
       );
       return { runs: runs.rows, rows: rows.rows, bankRows: bankRows.rows, settledKeys: new Set(settled.rows.map((r) => r.k)) };

@@ -5,7 +5,7 @@
  */
 
 import type { MprRowClosureDTO, MprSessionDTO } from '@toit/contracts';
-import { normDate } from '@toit/mpr-core';
+import { isAmexBankRowSettled, normDate } from '@toit/mpr-core';
 import type { MprDayRows } from '../storage/types.js';
 
 type Candidate<T> = { row: T; tag: string; rank: number; run: number };
@@ -146,7 +146,8 @@ export function buildDaySession(date: string, data: MprDayRows, outlet: string |
     unexpected: onePerRow(unexpected, (r) => `${r._source}|${r.rrn}|${r.mprAmount}`).map((c) => c.row).filter((r) => !(r.rrn && data.settledKeys.has(r.rrn))),
     amexResults: [
       ...onePerRow(amex, (r) => `${amexBase(r)}|${r.cardLast4}`).map((c) => c.row),
-      ...onePerRow(amexUnexpected, amexKey).map((c) => c.row).filter((r) => !data.settledKeys.has(amexKey(r))),
+      // Drop copies that have since settled before collapsing by date|card|amount — otherwise a settled twin's copy can stand in for an unmatched one from another run.
+      ...onePerRow(amexUnexpected.filter((c) => !(c.row.mprRow && isAmexBankRowSettled(data.settledKeys, c.row.date, c.row.cardLast4, c.row.mprRow.amount, c.row.mprRow.txnAt))), amexKey).map((c) => c.row),
     ],
     upiResults: onePerRow(upi, (r) => `${upiOutlet(r, outletBySourceSession)}|${upiKey(r)}`).map((c) => c.row),
   };

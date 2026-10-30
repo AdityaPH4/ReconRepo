@@ -51,6 +51,41 @@ function accumulatorHas(day: ReconciledDay | undefined, key: string): boolean {
   return !!day?.items.some((i) => i.key === key);
 }
 
+/** One ledger AMEX transaction's accumulator key — amount and date-time included, so a same-card, same-day twin in one session isn't mistaken for it. */
+export function amexItemKey(r: Pick<AmexResult, 'date' | 'at' | 'cardLast4' | 'l1Amount'> & { _sourceSessionId: string }): string {
+  return `${r._sourceSessionId}|amex|${r.date}|${r.cardLast4}|${r.l1Amount ?? ''}|${r.at ?? ''}`;
+}
+
+/**
+ * Already resolved by an earlier run — by the current key, or by an item
+ * written before amount/time were part of it. Such an item kept only the last
+ * of a session's same-card, same-day rows (they shared its key), so it still
+ * means what it did then: every one of them is resolved.
+ */
+function amexResolvedEarlier(day: ReconciledDay | undefined, r: AmexResult & { _sourceSessionId: string }): boolean {
+  const key = amexItemKey(r);
+  const legacy = `${r._sourceSessionId}|amex|${r.date}|${r.cardLast4}`;
+  return !!day?.items.some((i) => i.key === key || i.key === legacy);
+}
+
+/**
+ * Keys under which a settled/mismatched AMEX bank row is remembered, so a
+ * bank-only (`unexpected`) copy of that same row — a resent file, or an older
+ * run — can be recognised: with its Transaction Timestamp when known (plus a
+ * `@*` wildcard for bank rows parsed before timestamps were), else the
+ * date|card|amount alone.
+ */
+export function amexSettledKeys(date: string | null | undefined, card: string, amount: number, txnAt: string | null | undefined): string[] {
+  const base = `${date}|${card}|${amount}`;
+  return txnAt ? [`${base}@${txnAt}`, `${base}@*`] : [base];
+}
+
+/** Whether a bank-only AMEX row is one already recorded under `amexSettledKeys` — or under a bare `date|card`, which older accumulator items are recorded as (see `loadRecentSettledKeys`). */
+export function isAmexBankRowSettled(keys: ReadonlySet<string>, date: string | null | undefined, card: string, amount: number, txnAt: string | null | undefined): boolean {
+  const base = `${date}|${card}|${amount}`;
+  return keys.has(`${date}|${card}`) || keys.has(base) || keys.has(txnAt ? `${base}@${txnAt}` : `${base}@*`);
+}
+
 function pushItem(byDate: Map<string, ReconciledItem[]>, businessDate: string, item: ReconciledItem): void {
   const list = byDate.get(businessDate) ?? [];
   list.push(item);
@@ -109,7 +144,7 @@ export function applyReconciledAccumulator(
     if ((r._match === 'settled' || r._match === 'mismatch') && r.mprRow) {
       if (r._sourceSessionId && r._businessDate) {
         pushItem(newItemsByBusinessDate, r._businessDate, {
-          key: `${r._sourceSessionId}|amex|${r.date}|${r.cardLast4}`,
+          key: amexItemKey({ ...r, _sourceSessionId: r._sourceSessionId }),
           sourceSessionId: r._sourceSessionId,
           rrn: null,
           acquirer: 'AMEX',
@@ -119,6 +154,7 @@ export function applyReconciledAccumulator(
           diff: r._diff ?? 0,
           matchStatus: r._match,
           mprFile: r.mprRow._file ?? null,
+          mprTxnAt: r.mprRow.txnAt ?? null,
           resolvedInMprSessionId: mprSessionId,
           resolvedAt,
         });
@@ -128,14 +164,13 @@ export function applyReconciledAccumulator(
     }
 
     if (r._match === 'pending' && r._sourceSessionId && r._businessDate && r.date && r.cardLast4) {
-      const key = `${r._sourceSessionId}|amex|${r.date}|${r.cardLast4}`;
-      if (accumulatorHas(accumulatorsByDate.get(r._businessDate), key)) continue; // already resolved by an earlier run
+      if (amexResolvedEarlier(accumulatorsByDate.get(r._businessDate), { ...r, _sourceSessionId: r._sourceSessionId })) continue; // already resolved by an earlier run
       stillAmex.push(r);
       stillOpenSessionIds.add(r._sourceSessionId);
       continue;
     }
 
-    if (r._match === 'unexpected' && r.date && r.cardLast4 && recentSettledKeys.has(`${r.date}|${r.cardLast4}`)) continue;
+    if (r._match === 'unexpected' && r.mprRow && r.date && r.cardLast4 && isAmexBankRowSettled(recentSettledKeys, r.date, r.cardLast4, r.mprRow.amount, r.mprRow.txnAt)) continue;
 
     stillAmex.push(r);
   }

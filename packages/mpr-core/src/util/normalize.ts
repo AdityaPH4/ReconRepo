@@ -78,6 +78,24 @@ export function cardLast4(raw: unknown): string {
   return String(raw ?? '').replace(/\D/g, '').slice(-4);
 }
 
+/**
+ * `dd/mm/yyyy hh:mm:ss[ AM|PM]` → `YYYY-MM-DD HH:MM:SS` (24h), or `null`.
+ * Pinelabs' "Date" (`16/10/2026 02:25:44 PM`) and AMEX's "Transaction
+ * Timestamp" (`16/10/2026 14:25:44`) are the same instant written two ways.
+ * Seconds are required: a minute-only time (a file re-saved by hand) can't be
+ * held to the matcher's ±2s, so it counts as having no time at all.
+ */
+export function normDateTime(raw: unknown): string | null {
+  const m = String(raw ?? '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*(AM|PM)?/i);
+  if (!m) return null;
+  let h = +m[4]!;
+  const ap = m[7]?.toUpperCase();
+  if (ap === 'PM' && h < 12) h += 12;
+  if (ap === 'AM' && h === 12) h = 0;
+  const p2 = (n: number | string) => String(n).padStart(2, '0');
+  return `${m[3]}-${p2(m[2]!)}-${p2(m[1]!)} ${p2(h)}:${m[5]}:${m[6]}`;
+}
+
 const MONTH_IDX: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
 };

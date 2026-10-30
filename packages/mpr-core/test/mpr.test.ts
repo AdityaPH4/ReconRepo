@@ -13,10 +13,12 @@ import * as XLSX from 'xlsx';
 import {
   ADAPTERS,
   adjustPRDate,
+  amexSettledKeys,
   applyReconciledAccumulator,
   cardLast4,
   detectAdapter,
   normDate,
+  normDateTime,
   normRRN,
   parseAmexCSV,
   parseMprFile,
@@ -49,6 +51,20 @@ describe('detectAdapter()', () => {
 });
 
 // ── Normalisation ─────────────────────────────────────────────────────────
+
+describe('normDateTime()', () => {
+  it('puts the Pinelabs 12-hour date-time and the AMEX 24-hour timestamp on one form', () => {
+    assert.equal(normDateTime('16/10/2026 02:25:44 PM'), '2026-10-16 14:25:44');
+    assert.equal(normDateTime('16/10/2026 14:25:44'), '2026-10-16 14:25:44');
+    assert.equal(normDateTime('20/10/2026 12:19:24 AM'), '2026-10-20 00:19:24');
+    assert.equal(normDateTime('20/10/2026 00:19:24'), '2026-10-20 00:19:24');
+    assert.equal(normDateTime('19/10/2026 12:05:00 PM'), '2026-10-19 12:05:00');
+    assert.equal(normDateTime('1/9/2026 9:05:07'), '2026-09-01 09:05:07');
+    assert.equal(normDateTime('16/10/2026 14:25'), null, 'minute-only — no time to hold to ±2s');
+    assert.equal(normDateTime('2026-10-16'), null);
+    assert.equal(normDateTime(''), null);
+  });
+});
 
 describe('normDate()', () => {
   it('handles all four bank date formats', () => {
@@ -131,6 +147,7 @@ describe('parseAmexCSV()', () => {
     assert.equal(rows[0]!.cardLast4, '3000');
     assert.equal(rows[0]!.amount, 3781);
     assert.equal(rows[0]!.txnDate, '2026-09-27');
+    assert.equal(rows[0]!.txnAt, '2026-09-27 19:51:38');
     assert.equal(rows[0]!.settlementDate, '2026-09-29');
     assert.equal(rows[1]!.cardLast4, '8845');
   });
@@ -360,7 +377,7 @@ describe('runMatch() — primary RRN match', () => {
   });
 });
 
-function amexMprRow(overrides: Partial<{ txnDate: string | null; cardLast4: string; amount: number; settlementDate: string | null; _file: string }> = {}) {
+function amexMprRow(overrides: Partial<{ txnDate: string | null; txnAt: string | null; cardLast4: string; amount: number; settlementDate: string | null; _file: string }> = {}) {
   return { txnDate: '2026-09-27', cardLast4: '3000', amount: 3781, settlementDate: '2026-09-29', _file: 'amex.csv', ...overrides };
 }
 
@@ -436,6 +453,64 @@ describe('runMatch() — AMEX transaction matching', () => {
     assert.equal(result.amexResults.length, 3);
     assert.equal(result.amexResults.filter((r) => r._match === 'ambiguous').length, 1);
     assert.equal(result.amexResults.filter((r) => r._match === 'unexpected').length, 2);
+  });
+
+  it('tells identical date + card + amount rows apart by Transaction Timestamp = the Pinelabs date-time (same card tipping ₹200 at two outlets)', () => {
+    const sessions = [
+      ledgerRow({ outlet: 'BAGT', acquirer: 'AMEX', plDate: '16/10/2026 02:25:44 PM', cardNo: '***********2006', plAmount: 200 }),
+      ledgerRow({ outlet: 'BLRT', acquirer: 'AMEX', plDate: '16/10/2026 07:47:33 PM', cardNo: '***********2006', plAmount: 200 }),
+    ];
+    // BLRT's AMEX timestamp is one second after Pinelabs' — a skew real files show.
+    const blrt = amexMprRow({ txnDate: '2026-10-16', txnAt: '2026-10-16 19:47:34', cardLast4: '2006', amount: 200, _file: 'blrt.xls' });
+    const bagt = amexMprRow({ txnDate: '2026-10-16', txnAt: '2026-10-16 14:25:44', cardLast4: '2006', amount: 200, _file: 'bagt.xls' });
+    const result = runMatch(emptyInput({ sessions, mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [blrt, bagt], filename: 'amex.csv' }] }));
+    assert.equal(result.amexResults.length, 2);
+    assert.ok(result.amexResults.every((r) => r._match === 'settled'));
+    assert.equal(result.amexResults.find((r) => r.outlet === 'BAGT')!.mprRow!._file, 'bagt.xls');
+    assert.equal(result.amexResults.find((r) => r.outlet === 'BLRT')!.mprRow!._file, 'blrt.xls');
+  });
+
+  it('uses the timestamp in the amount-mismatch pass too, and still never guesses when no timestamp is unique', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 999 });
+    const hit = runMatch(emptyInput({ sessions: [session], mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 3781, txnAt: '2026-09-27 19:51:38' }), amexMprRow({ amount: 500, txnAt: '2026-09-27 12:00:00' })], filename: 'amex.csv' }] }));
+    assert.equal(hit.amexResults.find((r) => r.l1Amount === 999)!._match, 'mismatch');
+    assert.equal(hit.amexResults.find((r) => r.l1Amount === 999)!.mprRow!.amount, 3781);
+
+    const tie = runMatch(emptyInput({ sessions: [session], mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 3781, txnAt: '2026-09-27 19:51:38' }), amexMprRow({ amount: 500, txnAt: '2026-09-27 19:51:38' })], filename: 'amex.csv' }] }));
+    assert.equal(tie.amexResults.filter((r) => r._match === 'ambiguous').length, 1);
+  });
+
+  it('rejects an AMEX row whose timestamp contradicts the ledger row, even when it is the only candidate', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '16/10/2026 03:00:00 PM', cardNo: '***********2006', plAmount: 200 });
+    const elsewhere = amexMprRow({ txnDate: '2026-10-16', txnAt: '2026-10-16 10:00:00', cardLast4: '2006', amount: 200 });
+    const result = runMatch(emptyInput({ sessions: [session], mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [elsewhere], filename: 'amex.csv' }] }));
+    assert.equal(result.amexResults.find((r) => r.l1Amount === 200)!._match, 'pending');
+    assert.equal(result.amexResults.filter((r) => r._match === 'unexpected').length, 1);
+    // Rows from before timestamps were parsed still match on date + card + amount alone.
+    const timeless = runMatch(emptyInput({ sessions: [session], mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [{ ...elsewhere, txnAt: undefined }], filename: 'amex.csv' }] }));
+    assert.equal(timeless.amexResults[0]!._match, 'settled');
+  });
+
+  it('ignores a minute-only AMEX time (a hand-re-saved file) rather than holding it to ±2s', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '16/10/2026 02:25:44 PM', cardNo: '***********2006', plAmount: 200 });
+    const csv = ['Record Type,Transaction Timestamp,Card Number,Charge Amount', 'ROC,16/10/2026 14:25,376539XXXXX2006,200.00'].join('\n');
+    const rows = parseAmexCSV(csv);
+    assert.equal(rows[0]!.txnAt, null);
+    const r = runMatch(emptyInput({ sessions: [session], mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows, filename: 'amex.csv' }] }));
+    assert.equal(r.amexResults[0]!._match, 'settled');
+  });
+
+  it('pairs each twin with its own-time AMEX row in either ledger order, never by elimination onto a far-off one', () => {
+    const y = ledgerRow({ acquirer: 'AMEX', plDate: '16/10/2026 02:25:44 PM', cardNo: '***********2006', plAmount: 200 });
+    const x = ledgerRow({ acquirer: 'AMEX', plDate: '16/10/2026 03:00:00 PM', cardNo: '***********2006', plAmount: 200 });
+    const rows = [amexMprRow({ txnDate: '2026-10-16', txnAt: '2026-10-16 14:25:44', cardLast4: '2006', amount: 200 }), amexMprRow({ txnDate: '2026-10-16', txnAt: '2026-10-16 10:00:00', cardLast4: '2006', amount: 200 })];
+    for (const order of [[y, x], [x, y]]) {
+      const r = runMatch(emptyInput({ sessions: order, mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows, filename: 'amex.csv' }] }));
+      assert.equal(r.amexResults.filter((a) => a._match === 'settled').length, 1);
+      assert.equal(r.amexResults.find((a) => a._match === 'settled')!.mprRow!.txnAt, '2026-10-16 14:25:44');
+      assert.equal(r.amexResults.filter((a) => a._match === 'pending').length, 1);
+      assert.equal(r.amexResults.filter((a) => a._match === 'unexpected').length, 1);
+    }
   });
 
   it('never guesses when the full Transaction Date + Card + Amount key itself collides on both sides', () => {
@@ -712,7 +787,7 @@ describe('applyReconciledAccumulator()', () => {
 
     const items = out.newItemsByBusinessDate.get('2026-08-01') ?? [];
     assert.equal(items.length, 1);
-    assert.equal(items[0]!.key, 'sess-amex|amex|2026-09-27|3000');
+    assert.equal(items[0]!.key, 'sess-amex|amex|2026-09-27|3000|3781|2026-09-27 19:51:38');
 
     assert.ok(!out.stillOpenSessionIds.has('sess-amex-2')); // ambiguous never keeps a session open — a human has to resolve it
   });
@@ -796,13 +871,41 @@ describe('applyReconciledAccumulator()', () => {
     assert.equal(out.result.unexpected.length, 1);
   });
 
-  it("AMEX: suppresses an unexpected row whose date+card was already settled in an earlier run", () => {
-    const result = runMatch(
-      emptyInput({ mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow()], filename: 'amex.csv' }] }),
-    );
-    assert.equal(result.amexResults[0]!._match, 'unexpected'); // genuinely unexpected on its own
+  it("AMEX: suppresses an unexpected row already settled in an earlier run — the same row (timestamp), or a timeless older record of date+card+amount", () => {
+    const resent = (txnAt?: string) => runMatch(emptyInput({ mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ txnAt })], filename: 'amex.csv' }] }));
+    assert.equal(resent('2026-09-27 19:51:38').amexResults[0]!._match, 'unexpected'); // genuinely unexpected on its own
 
-    const out = applyReconciledAccumulator(result, new Map(), 'mpr-run-2', '2026-09-29T00:00:00.000Z', new Set(['2026-09-27|3000']));
-    assert.equal(out.result.amexResults.length, 0);
+    const sameRow = new Set(amexSettledKeys('2026-09-27', '3000', 3781, '2026-09-27 19:51:38'));
+    assert.equal(applyReconciledAccumulator(resent('2026-09-27 19:51:38'), new Map(), 'r2', 'now', sameRow).result.amexResults.length, 0);
+    const legacy = new Set(amexSettledKeys('2026-09-27', '3000', 3781, null));
+    assert.equal(applyReconciledAccumulator(resent('2026-09-27 19:51:38'), new Map(), 'r2', 'now', legacy).result.amexResults.length, 0);
+    assert.equal(applyReconciledAccumulator(resent(undefined), new Map(), 'r2', 'now', sameRow).result.amexResults.length, 0);
+  });
+
+  it("AMEX: an old-format accumulator record (bare date|card) still suppresses every resent row on that card and day", () => {
+    const resent = runMatch(emptyInput({ mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ amount: 800, txnAt: '2026-09-27 12:00:00' }), amexMprRow({ amount: 1500, txnAt: '2026-09-27 12:01:00' })], filename: 'amex.csv' }] }));
+    assert.equal(applyReconciledAccumulator(resent, new Map(), 'r2', 'now', new Set(['2026-09-27|3000'])).result.amexResults.length, 0);
+  });
+
+  it("AMEX: does not suppress a same-card, same-day, same-amount twin whose timestamp differs from the settled one", () => {
+    const twin = runMatch(emptyInput({ mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [amexMprRow({ txnAt: '2026-09-27 21:00:00' })], filename: 'amex.csv' }] }));
+    const settledOther = new Set(amexSettledKeys('2026-09-27', '3000', 3781, '2026-09-27 19:51:38'));
+    assert.equal(applyReconciledAccumulator(twin, new Map(), 'r2', 'now', settledOther).result.amexResults.length, 1);
+  });
+
+  it("AMEX: a still-pending row isn't mistaken for its same-card, same-day sibling resolved in an earlier run — while an old-format item keeps its old meaning", () => {
+    const pendingRow = ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 09:00:00 PM', cardNo: '379863XXXXX3000', plAmount: 500, _sourceSessionId: 's1' });
+    const result = runMatch(emptyInput({ sessions: [pendingRow] }));
+    assert.equal(result.amexResults[0]!._match, 'pending');
+    const day = (key: string, plAmount: number) => new Map([['2026-08-01', { businessDate: '2026-08-01', updatedAt: '', items: [{ key, sourceSessionId: 's1', rrn: null, acquirer: 'AMEX', outlet: 'BLRT', plAmount, mprAmount: plAmount, diff: 0, matchStatus: 'settled' as const, mprFile: null, resolvedInMprSessionId: 'r1', resolvedAt: '' }] }]]);
+    const sibling = applyReconciledAccumulator(result, day('s1|amex|2026-09-27|3000|3781|2026-09-27 19:51:38', 3781), 'r2', 'now');
+    assert.ok(sibling.stillOpenSessionIds.has('s1'));
+    // The old key had no amount, so twins shared it and only the last one's item survived: it stands for all of them.
+    const legacySibling = applyReconciledAccumulator(result, day('s1|amex|2026-09-27|3000', 3781), 'r2', 'now');
+    assert.ok(!legacySibling.stillOpenSessionIds.has('s1'));
+    const itself = applyReconciledAccumulator(result, day('s1|amex|2026-09-27|3000|500|2026-09-27 21:00:00', 500), 'r2', 'now');
+    assert.ok(!itself.stillOpenSessionIds.has('s1'));
+    const legacyItself = applyReconciledAccumulator(result, day('s1|amex|2026-09-27|3000', 500), 'r2', 'now');
+    assert.ok(!legacyItself.stillOpenSessionIds.has('s1'));
   });
 });

@@ -20,7 +20,7 @@
  */
 
 import { GetObjectCommand, PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
-import type { ReconciledDay, ReconciledItem } from '@toit/mpr-core';
+import { amexSettledKeys, type ReconciledDay, type ReconciledItem } from '@toit/mpr-core';
 import { config } from '../config.js';
 
 function emptyDay(businessDate: string): ReconciledDay {
@@ -95,8 +95,9 @@ export const RECENT_SETTLED_LOOKBACK_DAYS = 30;
 
 /**
  * Every settled/mismatch item's lookup key — bare RRN, or (AMEX, which has
- * none) its `date|cardLast4` composite, pulled from `item.key`'s own
- * `sourceSessionId|...` suffix — across the trailing
+ * none) its date|card|amount, with the bank row's timestamp when known (see
+ * `amexSettledKeys`; date and card come from `item.key`'s own
+ * `sourceSessionId|amex|...` suffix) — across the trailing
  * `RECENT_SETTLED_LOOKBACK_DAYS` calendar dates' accumulators.
  *
  * Why this is keyed independent of `sourceSessionId`, unlike every other
@@ -117,8 +118,11 @@ export async function loadRecentSettledKeys(s3: S3Client, today = new Date()): P
       if (item.rrn) {
         keys.add(item.rrn);
       } else if (item.acquirer === 'AMEX') {
-        const [, date, card] = item.key.slice(item.sourceSessionId.length + 1).split('|');
-        if (date && card) keys.add(`${date}|${card}`);
+        const [, date, card, amount] = item.key.slice(item.sourceSessionId.length + 1).split('|');
+        if (!date || !card) continue;
+        // An item from before amount/time were in the key may stand for several same-card, same-day rows (they shared it), so it keeps its old date|card reach.
+        if (amount === undefined) keys.add(`${date}|${card}`);
+        else for (const k of amexSettledKeys(date, card, item.mprAmount, item.mprTxnAt)) keys.add(k);
       }
     }
   }

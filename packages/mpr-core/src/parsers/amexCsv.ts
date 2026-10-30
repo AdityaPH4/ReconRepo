@@ -12,7 +12,7 @@
 
 import { parseCSV } from '@toit/recon-core';
 import type { AmexMprRow } from '../types.js';
-import { cardLast4, normDate } from '../util/normalize.js';
+import { cardLast4, normDate, normDateTime } from '../util/normalize.js';
 
 /** Handles Indian comma-grouped amounts, e.g. `"1,32,042.00"`. */
 function cleanAmt(s: unknown): number {
@@ -61,6 +61,7 @@ export function parseAmexCSV(text: string): AmexMprRow[] {
 
     rows.push({
       txnDate,
+      txnAt: normDateTime(cols[iTxnTimestamp]),
       cardLast4: cardLast,
       amount,
       settlementDate: iPaymentDate >= 0 ? normDate(cols[iPaymentDate]) : null,

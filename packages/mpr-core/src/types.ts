@@ -128,6 +128,8 @@ export interface MprRow {
 export interface AmexMprRow {
   /** Transaction Timestamp, normalised to a calendar date. */
   txnDate: string | null;
+  /** Transaction Timestamp to the second (`YYYY-MM-DD HH:MM:SS`) — tells apart identical date + card + amount rows. Absent on runs stored before it existed. */
+  txnAt?: string | null;
   /** Last 4 digits of Card Number. */
   cardLast4: string;
   /** Charge Amount. */
@@ -185,6 +187,8 @@ export type AmexMatchStatus = 'settled' | 'mismatch' | 'pending' | 'unexpected' 
 export interface AmexResult {
   /** Transaction date — from the ledger side when present, else the MPR row's. */
   date: string | null;
+  /** Date-time to the second (`YYYY-MM-DD HH:MM:SS`), same sides as `date`. Absent on runs stored before it existed. */
+  at?: string | null;
   cardLast4: string;
   /** `''` for an `unexpected` row — no ledger counterpart to attribute an outlet to. */
   outlet: string;
@@ -250,7 +254,11 @@ export interface MatchResult {
 export type ReconciledMatchStatus = 'settled' | 'amountMismatch' | 'mismatch' | 'partial';
 
 export interface ReconciledItem {
-  /** Unique within a business date: `${sourceSessionId}|${rrn}` (RRN-based), or `${sourceSessionId}|amex|${date}|${cardLast4}` (AMEX, which has no RRN). */
+  /**
+   * Unique within a business date: `${sourceSessionId}|${rrn}` (RRN-based), or
+   * `${sourceSessionId}|amex|${date}|${cardLast4}|${amount}|${dateTime}` (AMEX, which has no RRN — see `amexItemKey`).
+   * Items written before amount/time were added have the shorter `...|amex|${date}|${cardLast4}`.
+   */
   key: string;
   sourceSessionId: string;
   rrn: string | null;
@@ -261,6 +269,8 @@ export interface ReconciledItem {
   diff: number;
   matchStatus: ReconciledMatchStatus;
   mprFile: string | null;
+  /** AMEX only: the bank row's Transaction Timestamp, so a resent file's row is recognised as this one and not its same-amount twin. */
+  mprTxnAt?: string | null;
   /** Which automated MprSessionDTO run recorded this — the most recent write wins on a later upsert, not the first. */
   resolvedInMprSessionId: string;
   resolvedAt: string;

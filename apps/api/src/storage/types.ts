@@ -162,7 +162,7 @@ export interface MprDayRows {
   runs: Array<{ id: string; meta: MprSessionDTO['meta'] }>;
   rows: MprBucketRow[];
   bankRows: MprBucketRow[];
-  /** Settled bank RRNs, plus `date|cardLast4|amount` for settled/mismatched AMEX — used to drop bank-only rows that have since reconciled. */
+  /** Settled bank RRNs, plus AMEX settled/mismatched rows under `amexSettledKeys` — used to drop bank-only rows that have since reconciled. */
   settledKeys: Set<string>;
 }
 

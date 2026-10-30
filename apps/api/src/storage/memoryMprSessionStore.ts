@@ -7,6 +7,7 @@
  */
 
 import type { MprSessionDTO, MprSessionListItemDTO } from '@toit/contracts';
+import { amexSettledKeys } from '@toit/mpr-core';
 import type { MprBucketRow, MprSessionQuery, MprSessionStore } from './types.js';
 
 export function createMemoryMprSessionStore(): MprSessionStore {
@@ -72,7 +73,7 @@ export function createMemoryMprSessionStore(): MprSessionStore {
         for (const row of r.unexpected) bankRows.push({ runId, bucket: 'unexpected', row });
         for (const row of r.amexResults) {
           if (row._match === 'unexpected') bankRows.push({ runId, bucket: 'amexResults', row });
-          if ((row._match === 'settled' || row._match === 'mismatch') && row.mprRow) settledKeys.add([row.date, row.cardLast4, row.mprRow.amount].join('|'));
+          if ((row._match === 'settled' || row._match === 'mismatch') && row.mprRow) for (const k of amexSettledKeys(row.date, row.cardLast4, row.mprRow.amount, row.mprRow.txnAt)) settledKeys.add(k);
         }
         for (const row of r.settled) if (row.mpr?.rrn) settledKeys.add(row.mpr.rrn);
         for (const row of r.upiResults) if (row._match === 'settled' && row.mpr?.rrn) settledKeys.add(row.mpr.rrn);
