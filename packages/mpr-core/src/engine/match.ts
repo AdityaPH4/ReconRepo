@@ -53,7 +53,16 @@ export function runMatch(input: MatchInput): MatchResult {
   for (const parsed of mprParsed) {
     if (parsed.error) continue;
     if (parsed.matchStrategy === 'batch') {
-      mprAmex.push(...(parsed.rows as AmexMprRow[]));
+      // Same rule for AMEX, whose exports overlap in date range: a row identical to one from another file (to the second) is that row.
+      for (const row of parsed.rows as AmexMprRow[]) {
+        if (row.txnAt) {
+          const identity = `AMEX|${row.txnAt}|${row.cardLast4}|${row.amount}|${row.settlementDate}`;
+          const firstFile = fileOfRow.get(identity);
+          if (firstFile !== undefined && firstFile !== row._file) continue;
+          fileOfRow.set(identity, row._file);
+        }
+        mprAmex.push(row);
+      }
       continue;
     }
     for (const row of parsed.rows as MprRow[]) {

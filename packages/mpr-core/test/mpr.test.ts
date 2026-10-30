@@ -533,6 +533,19 @@ describe('runMatch() — AMEX transaction matching', () => {
     }
   });
 
+  it('reads an AMEX row that two overlapping exports both contain (same timestamp, card, amount, payout) once', () => {
+    const session = ledgerRow({ acquirer: 'AMEX', plDate: '07/10/2026 12:07:27 AM', cardNo: '***********3005', plAmount: 3000 });
+    const row = (file: string, txnAt: string) => amexMprRow({ txnDate: '2026-10-07', txnAt, cardLast4: '3005', amount: 3000, settlementDate: '2026-10-09', _file: file });
+    const both = runMatch(emptyInput({ sessions: [session], mprParsed: [
+      { source: 'AMEX', matchStrategy: 'batch', rows: [row('a.xls', '2026-10-07 00:07:27')], filename: 'a.xls' },
+      { source: 'AMEX', matchStrategy: 'batch', rows: [row('b.csv', '2026-10-07 00:07:27')], filename: 'b.csv' },
+    ] }));
+    assert.deepEqual(both.amexResults.map((r) => r._match), ['settled']);
+    // Two genuinely different charges a second apart in one file both stay.
+    const twins = runMatch(emptyInput({ sessions: [session], mprParsed: [{ source: 'AMEX', matchStrategy: 'batch', rows: [row('a.xls', '2026-10-07 00:07:27'), row('a.xls', '2026-10-07 00:07:27')], filename: 'a.xls' }] }));
+    assert.equal(twins.amexResults.filter((r) => r._match === 'settled').length, 0);
+  });
+
   it('never guesses when the full Transaction Date + Card + Amount key itself collides on both sides', () => {
     const sessions = [
       ledgerRow({ acquirer: 'AMEX', plDate: '27/09/2026 07:51:38 PM', cardNo: '379863XXXXX3000', plAmount: 3781 }),
