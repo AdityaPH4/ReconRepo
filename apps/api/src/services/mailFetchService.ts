@@ -3,7 +3,8 @@
  *
  * Connects over IMAP to the bank/aggregator mailbox (`config.mprMailbox`),
  * finds unread messages from an allowlisted sender, and uploads their
- * `.csv`/`.xlsx`/`.xls` attachments to S3 for Stage B
+ * `.csv`/`.xlsx`/`.xls` attachments (and the files behind Pine Labs'
+ * "Download MPR" links, which come with no attachment) to S3 for Stage B
  * (`mprIngestService.ts`) to pick up on its own schedule. Deliberately does
  * NOT run in the same Lambda/VPC as the main API or Stage B — a VPC-attached
  * Lambda has no route to an external IMAP server without a NAT Gateway
@@ -39,6 +40,33 @@ import { config } from '../config.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
 
 const ATTACHMENT_EXT = /\.(csv|xlsx|xls)$/i;
+
+/** Pine Labs sends no attachment, only a public "Download MPR" link to this host. */
+const PINELABS_LINK = /https:\/\/settlement-content\.pinelabs\.com\/[0-9a-f-]{36}/gi;
+const MAX_LINK_BYTES = 20 * 1024 * 1024;
+
+interface MailFile {
+  name: string;
+  body: Buffer;
+  type: string;
+}
+
+export function pinelabsMprLinks(messageText: string): string[] {
+  return [...new Set(messageText.match(PINELABS_LINK) ?? [])];
+}
+
+// shortcut: the size cap applies after the whole body is read, fine for ~20 KB reports, switch to streaming if Pine Labs ever sends big ones.
+export async function downloadPinelabsMpr(url: string): Promise<MailFile> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+  const body = Buffer.from(await res.arrayBuffer());
+  if (body.length > MAX_LINK_BYTES) throw new Error(`file over ${MAX_LINK_BYTES} bytes for ${url}`);
+  const named = /filename="?([^";]+)"?/i.exec(res.headers.get('content-disposition') ?? '')?.[1];
+  // The server's own name already carries "POS_AuthMerchantMpr" / "ConsolidatedMerchantMpr", which is what `detectAdapter` keys on.
+  const name = named ? decodeURIComponent(named) : `pinelabs_${url.slice(url.lastIndexOf('/') + 1)}.xlsx`;
+  if (!ATTACHMENT_EXT.test(name)) throw new Error(`unexpected file type "${name}" for ${url}`);
+  return { name, body, type: res.headers.get('content-type') ?? 'application/octet-stream' };
+}
 
 async function resolveImapPassword(): Promise<string> {
   if (config.mprMailbox.imapAppPasswordLocal) return config.mprMailbox.imapAppPasswordLocal;
@@ -188,6 +216,7 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
 
         messagesFromAllowedSenders++;
         const attachments = parsed.attachments.filter((a) => ATTACHMENT_EXT.test(a.filename ?? ''));
+        const links = pinelabsMprLinks(`${parsed.html || ''} ${parsed.text ?? ''}`);
 
         if (backfill?.dryRun) {
           preview.push({
@@ -195,20 +224,29 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
             from: fromAddress ?? '',
             date: parsed.date?.toISOString().slice(0, 10) ?? '',
             subject: parsed.subject ?? '',
-            attachments: attachments.map((a) => a.filename!),
+            attachments: [...attachments.map((a) => a.filename!), ...links.map((l) => `link:${l}`)],
           });
           continue;
         }
 
+        // Download every link before uploading anything, so a failed link leaves the message unread in INBOX for the next run to retry whole.
+        const files: MailFile[] = attachments.map((a) => ({ name: a.filename!, body: a.content, type: a.contentType }));
+        try {
+          for (const url of links) files.push(await downloadPinelabsMpr(url));
+        } catch (err) {
+          console.warn(`[mail-fetch] Pinelabs link download failed for "${parsed.subject}", leaving it in ${folder}: ${(err as Error).message}`);
+          continue;
+        }
+
         const dateKey = new Date().toISOString().slice(0, 10);
-        for (const att of attachments) {
-          const key = `${config.mprMailbox.s3PendingPrefix}${dateKey}/${randomUUID()}_${sanitizeFilename(att.filename!)}`;
+        for (const file of files) {
+          const key = `${config.mprMailbox.s3PendingPrefix}${dateKey}/${randomUUID()}_${sanitizeFilename(file.name)}`;
           await s3.send(
             new PutObjectCommand({
               Bucket: config.objectStore.bucket,
               Key: key,
-              Body: att.content,
-              ContentType: att.contentType,
+              Body: file.body,
+              ContentType: file.type,
             }),
           );
           attachmentsUploaded++;
