@@ -178,6 +178,8 @@ export const config = {
     /** S3 key prefixes within `objectStore.bucket` — Stage A writes under `pending`, Stage B relocates to `processed` once a file has been folded into a persisted MprSessionDTO. */
     s3PendingPrefix: str('MPR_S3_PENDING_PREFIX', 'mpr-inbound/pending/'),
     s3ProcessedPrefix: str('MPR_S3_PROCESSED_PREFIX', 'mpr-inbound/processed/'),
+    /** Where Stage B puts a bank file that fails to parse, so it is never silently counted as processed. */
+    s3FailedPrefix: str('MPR_S3_FAILED_PREFIX', 'mpr-inbound/failed/'),
     /** Which bank files Stage A has fetched, per terminal and day — see `mailFetchLedger.ts`. Outside `pending/`, which Stage B reads as bank files. */
     s3LedgerKey: str('MPR_S3_LEDGER_KEY', 'mpr-inbound/fetch-ledger.json'),
     /** One JSON object per business date — see `reconciledStore.ts`. */

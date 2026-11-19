@@ -140,3 +140,42 @@ CREATE TABLE IF NOT EXISTS recon.mpr_day_cleared (
   session_id TEXT NOT NULL,
   PRIMARY KEY (business_date, outlet, bank, row_key)
 );
+
+-- MPR staging: bank rows loaded from Kotak / HDFC UPI files that haven't been
+-- reconciled yet — one table per bank format. A row is filed by its own
+-- transaction date (`txn_date`, read from the row) and deleted once it is
+-- matched or reported as Unexpected, so these only ever hold what is still
+-- waiting. `identity` is the match engine's row identity; `occurrence` numbers
+-- identical twins inside one file. `data` is the normalised row, as the engine
+-- reads it. See docs/superpowers/specs/2026-11-19-mpr-staging-layer-design.md.
+CREATE TABLE IF NOT EXISTS recon.mpr_stage_kotak (
+  seq BIGSERIAL,
+  identity TEXT NOT NULL,
+  occurrence INTEGER NOT NULL,
+  rrn TEXT,
+  txn_date TEXT,
+  terminal TEXT NOT NULL DEFAULT '',
+  outlet TEXT,
+  file_name TEXT NOT NULL,
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (identity, occurrence)
+);
+CREATE INDEX IF NOT EXISTS mpr_stage_kotak_rrn_idx ON recon.mpr_stage_kotak (rrn);
+CREATE INDEX IF NOT EXISTS mpr_stage_kotak_outlet_date_idx ON recon.mpr_stage_kotak (outlet, txn_date);
+
+CREATE TABLE IF NOT EXISTS recon.mpr_stage_hdfc_upi (
+  seq BIGSERIAL,
+  identity TEXT NOT NULL,
+  occurrence INTEGER NOT NULL,
+  rrn TEXT,
+  txn_date TEXT,
+  terminal TEXT NOT NULL DEFAULT '',
+  outlet TEXT,
+  file_name TEXT NOT NULL,
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (identity, occurrence)
+);
+CREATE INDEX IF NOT EXISTS mpr_stage_hdfc_upi_rrn_idx ON recon.mpr_stage_hdfc_upi (rrn);
+CREATE INDEX IF NOT EXISTS mpr_stage_hdfc_upi_outlet_date_idx ON recon.mpr_stage_hdfc_upi (outlet, txn_date);

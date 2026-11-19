@@ -10,6 +10,7 @@ import { createMemoryApprovalStore } from './memoryApprovalStore.js';
 import { createMemoryBohStore } from './memoryBohStore.js';
 import { createMemoryMprCounterStore } from './memoryMprCounterStore.js';
 import { createMemoryMprSessionStore } from './memoryMprSessionStore.js';
+import { createMemoryMprStagingStore } from './memoryMprStagingStore.js';
 import { createMemorySessionStore } from './memorySessionStore.js';
 import { createMemoryTdsStore } from './memoryTdsStore.js';
 import { getPool } from './postgres/pool.js';
@@ -19,6 +20,7 @@ import { createPostgresApprovalStore } from './postgres/postgresApprovalStore.js
 import { createPostgresBohStore } from './postgres/postgresBohStore.js';
 import { createPostgresMprCounterStore } from './postgres/postgresMprCounterStore.js';
 import { createPostgresMprSessionStore } from './postgres/postgresMprSessionStore.js';
+import { createPostgresMprStagingStore } from './postgres/postgresMprStagingStore.js';
 import { createPostgresSessionStore } from './postgres/postgresSessionStore.js';
 import { createPostgresTdsStore } from './postgres/postgresTdsStore.js';
 import { createS3ObjectStore } from './s3ObjectStore.js';
@@ -29,6 +31,7 @@ import type {
   BohStore,
   MprCounterStore,
   MprSessionStore,
+  MprStagingStore,
   ObjectStore,
   SessionStore,
   TdsStore,
@@ -40,6 +43,7 @@ let advanceStore: AdvanceStore | null = null;
 let bohStore: BohStore | null = null;
 let mprSessionStore: MprSessionStore | null = null;
 let mprCounterStore: MprCounterStore | null = null;
+let mprStagingStore: MprStagingStore | null = null;
 let approvalStore: ApprovalStore | null = null;
 let tdsStore: TdsStore | null = null;
 let actionLogStore: ActionLogStore | null = null;
@@ -122,6 +126,18 @@ export function getMprCounterStore(): MprCounterStore {
   return mprCounterStore;
 }
 
+export function getMprStagingStore(): MprStagingStore {
+  if (mprStagingStore) return mprStagingStore;
+
+  if (config.sessionStore.driver === 'postgres') {
+    mprStagingStore = createPostgresMprStagingStore(getPool());
+    return mprStagingStore;
+  }
+
+  mprStagingStore = createMemoryMprStagingStore();
+  return mprStagingStore;
+}
+
 export function getApprovalStore(): ApprovalStore {
   if (approvalStore) return approvalStore;
 
@@ -164,6 +180,7 @@ export type {
   ApprovalStore,
   BohStore,
   MprSessionStore,
+  MprStagingStore,
   ObjectStore,
   SessionStore,
   TdsStore,

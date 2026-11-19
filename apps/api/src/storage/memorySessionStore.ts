@@ -71,6 +71,14 @@ export function createMemorySessionStore(): SessionStore {
         .sort((a, b) => a.meta.createdAt.localeCompare(b.meta.createdAt));
     },
 
+    async submittedDays(since) {
+      return new Set(
+        [...sessions.values()]
+          .filter((s) => s.meta.status === 'submitted' && !!s.meta.businessDate && s.meta.businessDate >= since)
+          .map((s) => `${s.meta.outlet}|${s.meta.businessDate}`),
+      );
+    },
+
     async snapshotCountsForDay(businessDate, outlet) {
       const day = [...sessions.values()].filter(
         (s) => s.meta.status === 'submitted' && s.meta.businessDate === businessDate && (!outlet || s.meta.outlet === outlet),

@@ -18,7 +18,7 @@ import type {
   UploadRole,
   UserRole,
 } from '@toit/contracts';
-import type { BankCounter, ClearedRow, CounterBank, DayTotals } from '@toit/mpr-core';
+import type { BankCounter, ClearedRow, CounterBank, DayTotals, MprRow } from '@toit/mpr-core';
 import type { Advance, AdvanceApplication, BohEntry, OutletCode, TdsEntry } from '@toit/recon-core';
 
 // ── Object storage: raw uploaded files, byte-for-byte ────────────────────
@@ -80,6 +80,12 @@ export interface SessionStore {
    * (including `.snapshot`), unlike `list()`'s slim `SessionListItemDTO`.
    */
   listPendingMpr(): Promise<SessionDTO[]>;
+  /**
+   * `${outlet}|${businessDate}` of every `submitted` session dated `since` or
+   * later, whether or not MPR has folded it in yet — the ingest's "has this
+   * outlet's POS day been submitted?" (a draft or discarded session is not).
+   */
+  submittedDays(since: string): Promise<Set<string>>;
   /**
    * What the saved POS-recon JSON of one business day holds, counted in the
    * database without loading the snapshots: settlement-ledger rows per
@@ -223,6 +229,49 @@ export interface ActionLogStore {
   /** Also prunes anything past the retention window — self-cleaning, no separate scheduled job. */
   record(entry: Omit<ActionLogEntryDTO, 'id'>): Promise<void>;
   list(role: UserRole, limit?: number): Promise<ActionLogEntryDTO[]>;
+}
+
+// ── MPR staging: bank rows waiting to be reconciled ──────────────────────
+//
+// One table per bank format. A row is loaded from a bank file, filed by its own
+// transaction date, and deleted once reconciled (or reported as Unexpected) —
+// see docs/superpowers/specs/2026-11-19-mpr-staging-layer-design.md.
+
+export type StagedBank = 'kotak' | 'hdfc_upi';
+
+export interface StagedRowInput {
+  bank: StagedBank;
+  /** The engine's row identity (`source|rrn|amount|txnDate|settlementDate`). */
+  identity: string;
+  /** 1-based: identical twin rows inside one file get 1, 2, … */
+  occurrence: number;
+  rrn: string | null;
+  /** `yyyy-mm-dd` read from the row itself; null when unreadable. */
+  txnDate: string | null;
+  /** From the file name (`''` when unknown). */
+  terminal: string;
+  /** Outlet the terminal belongs to; null when unknown. */
+  outlet: string | null;
+  /** The engine's `_file` for this row. */
+  fileName: string;
+  row: MprRow;
+}
+
+export interface StagedRow extends StagedRowInput {
+  /** Load order within the bank. */
+  seq: number;
+}
+
+export interface MprStagingStore {
+  readonly driver: 'memory' | 'postgres';
+  /** Returns how many rows were new — one whose (bank, identity, occurrence) is already staged is skipped. */
+  insertRows(rows: StagedRowInput[]): Promise<number>;
+  /** Every bank's rows, in load order within each bank. */
+  listAll(): Promise<StagedRow[]>;
+  /** Deletes every occurrence of each identity; returns how many rows went. */
+  deleteByIdentity(bank: StagedBank, identities: string[]): Promise<number>;
+  /** Empties the tables — tests and rebuilds only. */
+  reset(): Promise<void>;
 }
 
 // ── MPR per-day counters ─────────────────────────────────────────────────

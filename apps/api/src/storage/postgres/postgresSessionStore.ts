@@ -103,6 +103,15 @@ export function createPostgresSessionStore(pool: Pool): SessionStore {
       return rows.map((r) => r.data);
     },
 
+    async submittedDays(since) {
+      const { rows } = await pool.query<{ outlet: string; d: string }>(
+        `SELECT DISTINCT outlet, data->'meta'->>'businessDate' AS d FROM recon.sessions
+         WHERE status = 'submitted' AND (data->'meta'->>'businessDate') >= $1`,
+        [since],
+      );
+      return new Set(rows.map((r) => `${r.outlet}|${r.d}`));
+    },
+
     async snapshotCountsForDay(businessDate, outlet) {
       // Only the day's own session(s) get their arrays expanded — the business-date test reads each submitted session's header, never its ledger.
       const day = `s.status = 'submitted' AND s.data->'meta'->>'businessDate' = $1 AND ($2::text IS NULL OR s.outlet = $2)`;
