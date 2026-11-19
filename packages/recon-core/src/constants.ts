@@ -100,7 +100,10 @@ export const AMOUNT_EPSILON = 0.5;
 // way — its own payment mode stays visible per-row via `ZipRow.paymentMode`
 // wherever the UI already shows that (`PinelabsPanel`'s "Payment name"
 // column), not via a separate tab/tile.
-export const PINELABS_NAMES = ['pinelabs apos', 'manual apos', 'card/upi', 'card', 'paper pos'];
+// "PINELABS-CI" is another Pinelabs payment-mode variant (POS); folds into
+// the same bucket as the others above rather than its own tile — see this
+// section's doc comment.
+export const PINELABS_NAMES = ['pinelabs apos', 'manual apos', 'card/upi', 'card', 'paper pos', 'pinelabs-ci'];
 export const SWIGGY_NAMES = ['swiggy', 'zomato'];
 export const CASH_NAMES = ['cash'];
 export const UPI_NAMES = ['hdfc static upi', 'kotak static upi'];

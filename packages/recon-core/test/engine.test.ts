@@ -202,6 +202,7 @@ describe('routePayName()', () => {
     // see PINELABS_NAMES's own doc comment.
     assert.equal(routePayName('Paper POS'), 'pinelabs');
     assert.equal(routePayName('PAPER POS'), 'pinelabs');
+    assert.equal(routePayName('PINELABS-CI'), 'pinelabs');
     assert.equal(routePayName('Swiggy-Online'), 'swiggy');
     assert.equal(routePayName('ZOMATO'), 'swiggy');
     assert.equal(routePayName('Cash'), 'cash');
