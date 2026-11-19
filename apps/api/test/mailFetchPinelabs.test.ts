@@ -10,8 +10,13 @@ describe('pinelabsMprLinks()', () => {
     assert.deepEqual(pinelabsMprLinks(`<a href="${URL}">Download MPR</a> [${URL}]`), [URL]);
   });
 
+  it('finds the link inside the AWS click-tracker Pine Labs added on 17 Nov, as the real address', () => {
+    const wrapped = `https://yv2mjwwy.r.ap-south-1.awstrack.me/L0/https:%2F%2Fsettlement-content.pinelabs.com%2F${ID}/1/010901a1eb55da46-e61a444f/QnU2c4W5lZUhwB6cg-jSScUECAE=258`;
+    assert.deepEqual(pinelabsMprLinks(`<a href="${wrapped}">Download MPR</a> ${wrapped}`), [URL]);
+  });
+
   it('ignores other hosts and look-alikes', () => {
-    assert.deepEqual(pinelabsMprLinks(`https://settlement-content.pinelabs.com.evil.com/${ID} http://settlement-content.pinelabs.com/${ID} https://example.com/${ID}`), []);
+    assert.deepEqual(pinelabsMprLinks(`https://settlement-content.pinelabs.com.evil.com/${ID} https://example.com/${ID} settlement-content.pinelabs.com/not-an-id`), []);
   });
 });
 

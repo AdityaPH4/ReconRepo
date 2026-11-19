@@ -43,8 +43,8 @@ import { istToday, ledgerReport, MAIL_SOURCES, missingDaily, pruneLedger, record
 
 const ATTACHMENT_EXT = /\.(csv|xlsx|xls)$/i;
 
-/** Pine Labs sends no attachment, only a public "Download MPR" link to this host. */
-const PINELABS_LINK = /https:\/\/settlement-content\.pinelabs\.com\/[0-9a-f-]{36}/gi;
+/** Pine Labs sends no attachment, only a public "Download MPR" link. Since 17 Nov that link is wrapped in an AWS click-tracker holding the real address URL-encoded (`...%2F<id>`), so match the id after the host in either form and always fetch from the real host. */
+const PINELABS_LINK = /settlement-content\.pinelabs\.com(?:\/|%2F)([0-9a-f-]{36})/gi;
 const MAX_LINK_BYTES = 20 * 1024 * 1024;
 
 interface MailFile {
@@ -54,7 +54,7 @@ interface MailFile {
 }
 
 export function pinelabsMprLinks(messageText: string): string[] {
-  return [...new Set(messageText.match(PINELABS_LINK) ?? [])];
+  return [...new Set([...messageText.matchAll(PINELABS_LINK)].map((m) => `https://settlement-content.pinelabs.com/${m[1]!.toLowerCase()}`))];
 }
 
 // shortcut: the size cap applies after the whole body is read, fine for ~20 KB reports, switch to streaming if Pine Labs ever sends big ones.
@@ -165,6 +165,8 @@ export interface MailBackfillOptions {
   dryRun?: boolean;
   /** Extra sender substrings for this run only, to try a sender that isn't in `MPR_SENDER_ALLOWLIST` yet. */
   extraSenders?: string[];
+  /** Search only these senders (of the allowlist plus `extraSenders`), e.g. to re-fetch one bank's mail without re-uploading the others. */
+  onlySenders?: string[];
 }
 
 export interface MailPreviewItem {
@@ -191,7 +193,9 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
     console.log('[mail-fetch] IMAP_USER not configured — skipping.');
     return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] } };
   }
-  const senders = [...config.mprMailbox.senderAllowlist, ...(backfill?.extraSenders ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean)];
+  const lower = (xs: string[] = []) => xs.map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const only = lower(backfill?.onlySenders);
+  const senders = [...config.mprMailbox.senderAllowlist, ...lower(backfill?.extraSenders)].filter((s) => !only.length || only.includes(s));
   if (!senders.length) {
     // No allowlist configured — searching with no `from` filter at all
     // would mean pulling every unseen message in the mailbox, which is
