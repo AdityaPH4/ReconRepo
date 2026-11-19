@@ -173,13 +173,13 @@ export const config = {
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
-    /** How far back each sender's IMAP search looks (`SINCE`) — a defensive bound against ever re-scanning years of an actively-used mailbox's backlog, not the dedup mechanism (that's the processed-folder move). A genuinely slow-arriving bank file older than this would need a wider window or a manual check. */
-    searchWindowDays: int('MPR_SEARCH_WINDOW_DAYS', 30),
     /** IMAP folder Stage A moves a handled message to — the dedup mechanism (a moved message can never be found again by Stage A's own `INBOX`-scoped search), not just a human-tidiness nicety. */
     processedFolder: str('MPR_PROCESSED_FOLDER', 'MPR-Processed'),
     /** S3 key prefixes within `objectStore.bucket` — Stage A writes under `pending`, Stage B relocates to `processed` once a file has been folded into a persisted MprSessionDTO. */
     s3PendingPrefix: str('MPR_S3_PENDING_PREFIX', 'mpr-inbound/pending/'),
     s3ProcessedPrefix: str('MPR_S3_PROCESSED_PREFIX', 'mpr-inbound/processed/'),
+    /** Which bank files Stage A has fetched, per terminal and day — see `mailFetchLedger.ts`. Outside `pending/`, which Stage B reads as bank files. */
+    s3LedgerKey: str('MPR_S3_LEDGER_KEY', 'mpr-inbound/fetch-ledger.json'),
     /** One JSON object per business date — see `reconciledStore.ts`. */
     s3ReconciledPrefix: str('MPR_S3_RECONCILED_PREFIX', 'mpr-reconciled/'),
     /** `yyyy-mm-dd` — Layer-2 (MPR) reconciliation only covers business dates on or after this one; anything earlier is out of scope by business decision (pre-dates the MPR rollout) and should never surface as a session awaiting MPR resolution. See `SessionStore.listPendingMpr()`. */

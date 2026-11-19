@@ -2,7 +2,7 @@
  * Stage A of automated MPR (Layer 2) ingestion.
  *
  * Connects over IMAP to the bank/aggregator mailbox (`config.mprMailbox`),
- * finds unread messages from an allowlisted sender, and uploads their
+ * finds recent messages from an allowlisted sender, and uploads their
  * `.csv`/`.xlsx`/`.xls` attachments (and the files behind Pine Labs'
  * "Download MPR" links, which come with no attachment) to S3 for Stage B
  * (`mprIngestService.ts`) to pick up on its own schedule. Deliberately does
@@ -19,8 +19,9 @@
  * IMAP SEARCH itself is scoped `FROM <allowed sender>` per allowlist entry
  * — the server does the filtering; nothing not already matching a sender
  * ever gets downloaded/parsed, regardless of how much unrelated traffic
- * the mailbox otherwise carries. `MPR_SEARCH_WINDOW_DAYS` bounds each
- * search to recent messages only, as a further defensive cap.
+ * the mailbox otherwise carries. A normal run only looks back
+ * `MAX_CATCH_UP_DAYS` (7) days, read or unread, and only searches the senders
+ * whose daily files are still missing (`mailFetchLedger.ts`).
  *
  * "Already processed" tracking is the IMAP move itself, not a database
  * table: a handled message is moved out of `INBOX` into
@@ -32,12 +33,13 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, type S3Client } from '@aws-sdk/client-s3';
 import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config } from '../config.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
+import { istToday, ledgerReport, MAIL_SOURCES, missingDaily, pruneLedger, recordFile, sendersToSearch, windowStart, type Ledger } from './mailFetchLedger.js';
 
 const ATTACHMENT_EXT = /\.(csv|xlsx|xls)$/i;
 
@@ -96,6 +98,49 @@ function sanitizeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+/** `null` when there is no ledger yet (or it can't be read): the caller rebuilds it from the processed folder. */
+async function loadLedger(s3: S3Client): Promise<Ledger | null> {
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: config.objectStore.bucket, Key: config.mprMailbox.s3LedgerKey }));
+    return JSON.parse(await res.Body!.transformToString()) as Ledger;
+  } catch (err) {
+    if ((err as { name?: string }).name !== 'NoSuchKey') console.warn(`[mail-fetch] could not read the fetch ledger: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+// shortcut: a failed save only costs the report and some extra searching, so it never stops a fetch; fix the bucket permission if the warning shows up.
+async function saveLedger(s3: S3Client, ledger: Ledger, today: string): Promise<void> {
+  pruneLedger(ledger, today);
+  try {
+    await s3.send(
+      new PutObjectCommand({ Bucket: config.objectStore.bucket, Key: config.mprMailbox.s3LedgerKey, Body: JSON.stringify(ledger), ContentType: 'application/json' }),
+    );
+  } catch (err) {
+    console.warn(`[mail-fetch] could not save the fetch ledger: ${(err as Error).message}`);
+  }
+}
+
+function attachmentNames(node: { disposition?: string; parameters?: { name?: string }; dispositionParameters?: { filename?: string }; childNodes?: unknown[] } | undefined, out: string[] = []): string[] {
+  if (!node) return out;
+  const name = node.dispositionParameters?.filename || node.parameters?.name;
+  if (name) out.push(name);
+  for (const child of node.childNodes ?? []) attachmentNames(child as Parameters<typeof attachmentNames>[0], out);
+  return out;
+}
+
+/** First run with no ledger: what the processed folder already holds was fetched earlier, so mark it from the attachment names alone (no downloads). */
+export async function seedLedger(client: ImapFlow, ledger: Ledger, since: Date): Promise<void> {
+  await client.mailboxOpen(config.mprMailbox.processedFolder);
+  for (const sender of MAIL_SOURCES.flatMap((s) => s.senders)) {
+    const uids = (await client.search({ from: sender, since }, { uid: true })) || [];
+    if (!uids.length) continue;
+    for await (const msg of client.fetch(uids, { bodyStructure: true }, { uid: true })) {
+      for (const name of attachmentNames(msg.bodyStructure as Parameters<typeof attachmentNames>[0])) recordFile(ledger, name, 'seeded');
+    }
+  }
+}
+
 function isAllowedSender(fromAddress: string | undefined, senders: string[]): boolean {
   if (!fromAddress) return false;
   const lower = fromAddress.toLowerCase();
@@ -137,12 +182,14 @@ export interface MailFetchResult {
   attachmentsUploaded: number;
   /** Dry-run backfill only: what would be fetched. */
   preview?: MailPreviewItem[];
+  /** Newest file date fetched per bank, and daily files still absent for days that have ended. */
+  ledger: { lastFetched: Record<string, string>; missing: string[] };
 }
 
 export async function runMailFetch(backfill?: MailBackfillOptions): Promise<MailFetchResult> {
   if (!config.mprMailbox.imapUser) {
     console.log('[mail-fetch] IMAP_USER not configured — skipping.');
-    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0 };
+    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] } };
   }
   const senders = [...config.mprMailbox.senderAllowlist, ...(backfill?.extraSenders ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean)];
   if (!senders.length) {
@@ -151,7 +198,7 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
     // exactly the expensive, unbounded scan this design avoids. Refuse
     // rather than silently doing that.
     console.log('[mail-fetch] MPR_SENDER_ALLOWLIST is empty — refusing to scan the whole mailbox, skipping.');
-    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0 };
+    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] } };
   }
 
   const isoDate = /^\d{4}-\d{2}-\d{2}$/;
@@ -168,6 +215,9 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
     logger: false,
   });
   const s3 = createRawS3Client(config.objectStore);
+  const today = istToday();
+  const loaded = await loadLedger(s3);
+  const ledger: Ledger = loaded ?? {};
 
   let messagesFromAllowedSenders = 0;
   let attachmentsUploaded = 0;
@@ -184,10 +234,18 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
       // the common case on every run after the first.
     }
 
-    const since = backfill ? new Date(`${backfill.since}T00:00:00+05:30`) : new Date(Date.now() - config.mprMailbox.searchWindowDays * 24 * 60 * 60 * 1000);
+    const windowSince = new Date(`${windowStart(today)}T00:00:00+05:30`);
+    const since = backfill ? new Date(`${backfill.since}T00:00:00+05:30`) : windowSince;
     const before = backfill?.before ? new Date(`${backfill.before}T00:00:00+05:30`) : undefined;
-    // A normal run only looks at unread INBOX mail; a backfill also reads the processed folder, and ignores the read flag.
-    const folders = backfill ? ['INBOX', config.mprMailbox.processedFolder] : ['INBOX'];
+    if (!loaded) {
+      await seedLedger(client, ledger, windowSince);
+      if (!backfill?.dryRun) await saveLedger(s3, ledger, today);
+    }
+    // A normal run reads INBOX, read or unread (handled mail was already moved out), and only searches the senders whose daily files are still missing.
+    // A backfill reads every sender, in INBOX and the processed folder.
+    const searchSenders = backfill ? senders : sendersToSearch(missingDaily(ledger, today), senders);
+    const folders = backfill ? ['INBOX', config.mprMailbox.processedFolder] : searchSenders.length ? ['INBOX'] : [];
+    if (!folders.length) console.log('[mail-fetch] every expected daily file is already fetched, nothing to search.');
 
     for (const folder of folders) {
       await client.mailboxOpen(folder);
@@ -196,8 +254,8 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
       // One IMAP SEARCH per allowlisted sender — the server filters by FROM
       // and SINCE itself, so a busy shared mailbox's unrelated unread traffic
       // is never downloaded or parsed at all, regardless of its volume.
-      for (const sender of senders) {
-        const criteria = { ...(backfill ? {} : { seen: false }), from: sender, since, ...(before ? { before } : {}) };
+      for (const sender of searchSenders) {
+        const criteria = { from: sender, since, ...(before ? { before } : {}) };
         const uids = (await client.search(criteria, { uid: true })) || [];
         for (const uid of uids) candidateUids.add(uid);
       }
@@ -252,6 +310,10 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
           attachmentsUploaded++;
         }
 
+        // Saved before the move below: a crash in between re-fetches the message (Stage B reads identical files once), where the other order would leave a false gap.
+        const fetchedAt = new Date().toISOString();
+        if (files.map((f) => recordFile(ledger, f.name, fetchedAt)).some(Boolean)) await saveLedger(s3, ledger, today);
+
         // Only after every attachment of this message is durably uploaded —
         // move it out of INBOX so a future run can never re-process it,
         // whether or not it actually had a usable attachment (a message with
@@ -264,8 +326,9 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
     await client.logout();
   }
 
+  const report = ledgerReport(ledger, today);
   console.log(
-    `[mail-fetch] ${messagesScanned} candidate message(s) from allowlisted senders, ${messagesFromAllowedSenders} confirmed, uploaded ${attachmentsUploaded} attachment(s)`,
+    `[mail-fetch] ${messagesScanned} candidate message(s) from allowlisted senders, ${messagesFromAllowedSenders} confirmed, uploaded ${attachmentsUploaded} attachment(s); last fetched ${JSON.stringify(report.lastFetched)}; missing ${report.missing.length ? report.missing.join(', ') : 'none'}`,
   );
-  return { messagesScanned, messagesFromAllowedSenders, attachmentsUploaded, ...(backfill?.dryRun ? { preview: preview.slice(0, 500) } : {}) };
+  return { messagesScanned, messagesFromAllowedSenders, attachmentsUploaded, ledger: report, ...(backfill?.dryRun ? { preview: preview.slice(0, 500) } : {}) };
 }
