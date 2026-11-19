@@ -15,7 +15,7 @@ A Postgres middle layer between S3 and matching. Each file's rows are read, file
 3. Matching key is unchanged: RRN, across all days and outlets. The day never gates matching.
 4. A matched row (settled or amount-mismatch) is deleted from staging.
 5. **Unexpected rule:** a staged row that is still unmatched becomes Unexpected only when its outlet's POS day *D* (the row's date) **and** day *D-1* are both submitted. A day before `MPR_START_DATE` counts as submitted. Then it goes to the existing Unexpected list (now with outlet and date) and leaves staging. Duplicate-RRN rows follow the same rule.
-6. Resends never come back: rows whose RRN is already in the 30-day settled keys (existing `loadRecentSettledKeys`) are dropped at load, and swept from staging at the start of each run.
+6. Resends of settled rows never come back: rows whose RRN is already in the 30-day settled keys (existing `loadRecentSettledKeys`) are dropped at load, and any left staged are swept each run. This covers rows settled by RRN; see the limits below for the rest.
 7. Go-live uses no new job: requeue the needed `processed/` files with the existing `requeue-processed-files.mjs`; the normal load picks them up.
 
 ## Why D and D-1 (what the data showed — read-only look at live DB + S3)
@@ -25,18 +25,18 @@ A Postgres middle layer between S3 and matching. Each file's rows are read, file
 
 ## Flow of one `mpr-ingest` run
 1. Take a run lock (`pg_try_advisory_lock`); if another run holds it, return a no-op.
-2. **Load.** For each `pending/` file whose `detectAdapter` is KOTAK or HDFC_UPI: parse → insert rows dated on/after `MPR_START_DATE` (`ON CONFLICT DO NOTHING`, one transaction per file) → *after commit* move the file to `processed/`. A file that fails to parse goes to `mpr-inbound/failed/` and is logged — never silently "processed". Other files follow today's path.
-3. **Sweep** staged rows already in the settled keys.
+2. **Load.** For each `pending/` file whose `detectAdapter` is KOTAK or HDFC_UPI: parse → insert rows dated on/after `MPR_START_DATE` (`ON CONFLICT DO NOTHING`, one transaction per file) → *after commit* move the file to `processed/`. A file that fails to parse goes to `mpr-inbound/failed/` and is logged — never silently "processed". A file that hits any other error (database, storage) is left in `pending/`, listed in the run result and tried again next run — it does not stop the other files or banks. Other files follow today's path.
+3. **Sweep** staged rows already in the settled keys (what a crash after the accumulator save left behind).
 4. **Match.** Staged rows (in `seq` order, grouped back into per-file inputs) + old-path files + all open POS days → `runMatch` as today. The match engine is not changed. Read `submittedDays` **before** listing the pending sessions, so a day submitted mid-run can never count as submitted without having been matched (else a row could be called Unexpected too early).
 5. **Partition** each staged row into exactly one fate: *consumed* (appears as `mpr` in settled / amountMismatch / upiResults) · *emitted* (Unexpected or Duplicate-RRN and the rule in decision 5 holds) · *waiting* (everything else — and removed from the stored result).
-6. Persist in the existing order: run record → counters → BOH auto-clear → accumulators → **delete consumed and emitted staged rows** → flag sessions. A crash before the delete is safe: those RRNs are already in the accumulator, so step 3 sweeps them next run.
-7. Release the lock. The run result gains `staging: { loaded, consumed, emitted, waiting by bank/outlet, oldestWaiting, unmappedTerminals, failedFiles }`.
+6. Persist in the existing order: run record → counters → BOH auto-clear → accumulators → **delete consumed and emitted staged rows** → flag sessions. A crash before the delete is safe for matched rows — their RRNs are already in the accumulator, so step 3 sweeps them next run. Rows already reported as Unexpected are reported again (a visible duplicate, like a crash anywhere else in the run).
+7. Release the lock. The run result gains `staging: { loaded, swept, consumed, emitted, waiting by bank/outlet, oldestWaiting, undated, awaitingSubmission, unmappedTerminals, failedFiles, erroredFiles }` — `awaitingSubmission` counts waiting rows per unsubmitted POS day, i.e. which days to submit to release them. A run with nothing new (no batch files, no open POS days, no newly staged rows) does nothing and writes no run record.
 
 ## Tables (schema `recon`, `IF NOT EXISTS`, created by a tracked script run **before** the new image)
 `recon.mpr_stage_kotak`, `recon.mpr_stage_hdfc_upi` (later `_pinelabs`, `_amex`).
 Columns: `seq BIGSERIAL`, `identity TEXT` (the engine's row identity: `source|rrn|amount|txnDate|settlementDate`), `occurrence INT` (twins inside one file), `rrn TEXT`, `txn_date TEXT` (yyyy-mm-dd, null if unreadable), `terminal TEXT`, `outlet TEXT`, `file_name TEXT`, `loaded_at TIMESTAMPTZ DEFAULT now()`, `data JSONB` (the normalised row, lossless for the engine). PK `(identity, occurrence)`; indexes on `rrn` and `(outlet, txn_date)`.
 Identical rows across files collapse to one (first load wins) — dedupe no longer depends on file order. Twins inside one file are both kept, so they still surface as Duplicate RRN.
-Rows with an unreadable date never become Unexpected; they wait and are listed in the run result. A row from a terminal with no known outlet counts as belonging to **every** outlet: it becomes Unexpected once D and D-1 are submitted at all of them (so no mapping is ever required); such terminals are listed in the run result.
+Rows with an unreadable date (including one that is not a real calendar day) never become Unexpected; they wait and are counted in the run result (`undated`). A row from a terminal with no known outlet counts as belonging to **every** outlet: it becomes Unexpected once D and D-1 are submitted at all of them (so no mapping is ever required); such terminals are listed in the run result.
 
 ## Terminal → outlet (constants beside `MAIL_SOURCES`; terminal comes from the file name via `classifyFile`)
 Kotak: 0064746, 0215583 → BLRT · 0172757, 0176988 → BAGT · 0215585 → PUNT.
@@ -63,6 +63,10 @@ Pine Labs (phase 2): store name via existing `storeToOutlet`. Amex (phase 3): SE
 - No screen for waiting rows yet (counts in the run output only).
 - Manual upload API (`POST /api/mpr-sessions`, no screen uses it) stays outside staging.
 - Re-submitting an already-matched day cannot re-match rows already deleted (never happened since 1 Oct; same as today).
+- The settled-keys check knows rows settled by RRN. A row settled another way — a multi-RRN HDFC cell, a Static UPI order matched by amount and time, or an advance/justification — is not in it, so if the bank resends that file the row can come back as Unexpected; and a resent file re-reports Unexpected rows that were already reported. The same happens today, before staging.
+- Static UPI matching by amount (±₹0.50, within one hour) and excess justifications (by amount only) are existing match-engine rules. They can claim a waiting row that belongs to another outlet, and rows now wait longer than before. Not seen in the replay of the real files (the only UPI match was by RRN, at the right outlet).
+- Identical twin rows inside one HDFC file: if one is matched, the pair is consumed together and the other shows only in the Duplicate-RRN entry.
+- Days that are never submitted hold their rows (and, for an unknown terminal, every outlet's) indefinitely; `awaitingSubmission` in the run result names them.
 - Separate existing bug, not fixed here: ingest writes back whole session DTOs and can revive a discarded session as `submitted`.
 - Password-protected `payoutreport@` HDFC files and the "HDFC card" source are unchanged.
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { runMatch, type MprRow, type ParsedMprFile, type TaggedLedgerRow } from '@toit/mpr-core';
 import { outletOfTerminal } from '../src/services/mailFetchLedger.ts';
-import { partitionStaged, readyToReport, rowIdentity, rowsToParsedFiles, toStagedRows, unexpectedIdentity, type PartitionContext } from '../src/services/mprStaging.ts';
+import { missingDays, partitionStaged, readyToReport, rowIdentity, rowsToParsedFiles, toStagedRows, unexpectedIdentity, type PartitionContext } from '../src/services/mprStaging.ts';
 import type { StagedRow } from '../src/storage/types.ts';
 
 const kotakRow = (rrn: string, o: Partial<MprRow> = {}): MprRow => ({
@@ -46,6 +46,14 @@ describe('toStagedRows()', () => {
     assert.deepEqual([out[0]!.terminal, out[0]!.outlet, out[0]!.bank, out[0]!.fileName], ['0064746', 'BLRT', 'kotak', '0790431A0064746_2026_11_17.xlsx']);
   });
 
+  it('treats a date with the right shape but no such day as unreadable, so it cannot reach date arithmetic', () => {
+    // `11/16/2026` read as d/m/y is `2026-16-11`; `2026-02-30` would silently roll over to 2 March.
+    const rows = [kotakRow('111111111111', { txnDate: '2026-16-11' }), kotakRow('222222222222', { txnDate: '2026-02-30' })];
+    const out = toStagedRows(file(rows), 'kotak', '0790431A0064746_2026_11_17.xlsx', '2026-10-01');
+    assert.deepEqual(out.map((r) => r.txnDate), [null, null]);
+    assert.doesNotThrow(() => readyToReport(out[0]!, ctx(BOTH_DAYS)));
+  });
+
   it('reads the terminal of an HDFC file, and leaves the outlet empty for one nobody maps', () => {
     const hdfc = (term: string) => `940367-Merchant_Payout_Report_${term}_STID_24026629_01-Nov-2026_06.57.xlsx`;
     const row = kotakRow('555555555555', { _source: 'HDFC_UPI' });
@@ -80,6 +88,15 @@ describe('readyToReport()', () => {
 
   it('never reports a row whose date could not be read', () => {
     assert.equal(readyToReport(row({ txnDate: null }), ctx(BOTH_DAYS)), false);
+    assert.equal(readyToReport(row({ txnDate: '2026-16-11' }), ctx(BOTH_DAYS)), false); // not even a calendar day: no throw
+  });
+
+  it('names the POS days a row is still waiting on', () => {
+    assert.deepEqual(missingDays(row(), ctx([])), ['BLRT|2026-11-15', 'BLRT|2026-11-16']);
+    assert.deepEqual(missingDays(row(), ctx(['BLRT|2026-11-16'])), ['BLRT|2026-11-15']);
+    assert.deepEqual(missingDays(row(), ctx(BOTH_DAYS)), []);
+    assert.deepEqual(missingDays(row({ txnDate: '2026-10-01' }), ctx([])), ['BLRT|2026-10-01']); // 30 Sep is before the start date
+    assert.equal(missingDays(row({ txnDate: null }), ctx([])), null);
   });
 });
 

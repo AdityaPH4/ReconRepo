@@ -27,7 +27,12 @@ export const rowIdentity = (r: Pick<MprRow, '_source' | 'rrn' | 'grossAmount' | 
 export const unexpectedIdentity = (u: Pick<UnexpectedMprRow, '_source' | 'rrn' | 'mprAmount' | 'mprTxnDate' | 'mprDate'>): string =>
   `${u._source}|${u.rrn}|${u.mprAmount}|${u.mprTxnDate}|${u.mprDate}`;
 
-const readableDate = (s: string | null | undefined): string | null => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null);
+/** `yyyy-mm-dd` that is a real calendar day, else null — `2026-16-11` (a `11/16/2026` read as d/m/y) must not reach date arithmetic, which throws. */
+function readableDate(s: string | null | undefined): string | null {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : s;
+}
 
 /**
  * One parsed bank file → the rows to stage. A row dated before `startDate` is out of MPR's scope and dropped;
@@ -74,13 +79,23 @@ export interface PartitionContext {
 }
 
 /**
- * Whether an unmatched row may be called Unexpected: its outlet's POS day (the row's own date) and the day before
- * are both submitted. The day before, because a 1 AM sale is dated the next day but belongs to the previous POS day.
+ * The POS days (`${outlet}|${yyyy-mm-dd}`) an unmatched row is still waiting on: its outlet's day (the row's own date) and
+ * the day before — a 1 AM sale is dated the next day but belongs to the previous POS day — that are not yet submitted.
+ * A terminal with no known outlet waits on every outlet. Null when the row's date can't be read: nothing it could wait on.
  */
+export function missingDays(row: Pick<StagedRow, 'txnDate' | 'outlet'>, ctx: PartitionContext): string[] | null {
+  const day = readableDate(row.txnDate);
+  if (!day) return null;
+  const out: string[] = [];
+  for (const o of row.outlet ? [row.outlet] : ctx.outlets) {
+    for (const d of [addDays(day, -1), day]) if (d >= ctx.startDate && !ctx.submitted.has(`${o}|${d}`)) out.push(`${o}|${d}`);
+  }
+  return out;
+}
+
+/** Whether an unmatched row may be called Unexpected: nothing it waits on is left, and its date is known. */
 export function readyToReport(row: Pick<StagedRow, 'txnDate' | 'outlet'>, ctx: PartitionContext): boolean {
-  if (!row.txnDate) return false;
-  const days = [row.txnDate, addDays(row.txnDate, -1)];
-  return (row.outlet ? [row.outlet] : ctx.outlets).every((o) => days.every((d) => d < ctx.startDate || ctx.submitted.has(`${o}|${d}`)));
+  return missingDays(row, ctx)?.length === 0;
 }
 
 export interface Partition {

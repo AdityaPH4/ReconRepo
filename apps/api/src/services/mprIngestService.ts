@@ -35,10 +35,11 @@
  * window produces a visible, auditable duplicate (an already-flagged session
  * reprocessed, an already-moved S3 object re-read, or an accumulator write
  * repeated — upserts are idempotent by key), never silent wrong money. A staged
- * row left behind by a crash after the accumulator save is swept at the start
- * of the next run (its RRN is already in the settled keys). A file is moved out
- * of `pending/` only after its rows are committed, so a database error leaves
- * it there for the next run.
+ * row the match consumed, left behind by a crash after the accumulator save, is
+ * swept by the next run (its RRN is already in the settled keys); one that was
+ * reported as Unexpected is reported again — a visible duplicate. A file is
+ * moved out of `pending/` only after its rows are committed, so an error leaves
+ * it there for the next run, without stopping the other files.
  *
  * A session is only flagged `mprIncludedInSessionId` once every one of its
  * rows has a conclusive outcome — settled, mismatched, ambiguous, or "No
@@ -67,7 +68,7 @@ import { tryIngestLock } from '../storage/ingestLock.js';
 import { autoClearBohFromNoRrn } from './bohMprAutoClear.js';
 import { applyRunToCounters } from './mprCounterService.js';
 import { enrichMprMatchResult, runMprReconciliation, type MprInputFile, type MprSnapshotInput } from './mprService.js';
-import { partitionStaged, rowsToParsedFiles, STAGED_ADAPTERS, toStagedRows } from './mprStaging.js';
+import { missingDays, partitionStaged, rowsToParsedFiles, STAGED_ADAPTERS, toStagedRows, type PartitionContext } from './mprStaging.js';
 import { loadReconciledDay, loadRecentSettledKeys, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
 import { getMprSessionStore, getMprStagingStore, getSessionStore } from '../storage/index.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
@@ -134,7 +135,7 @@ async function deleteStaged(staging: MprStagingStore, rows: StagedRow[]): Promis
 export interface StagingReport {
   /** Rows newly staged from this run's files. */
   loaded: number;
-  /** Staged rows dropped because their RRN was already reconciled (a resent file, or a crash's leftover). */
+  /** Rows dropped because their RRN was already reconciled — a bank resending a file (at load), or what a crash left staged. */
   swept: number;
   consumed: number;
   emitted: number;
@@ -142,13 +143,40 @@ export interface StagingReport {
   waiting: Record<string, number>;
   /** Earliest transaction date among the rows still waiting. */
   oldestWaiting: string | null;
+  /** Waiting rows whose transaction date could not be read — they can never become Unexpected. */
+  undated: number;
+  /** Waiting rows by the unsubmitted POS day (`${outlet} ${yyyy-mm-dd}`) holding each back — submitting that day releases them. */
+  awaitingSubmission: Record<string, number>;
   /** Terminals whose files named no known outlet. */
   unmappedTerminals: string[];
   /** Files that could not be read — moved to `failed/`. */
   failedFiles: string[];
+  /** Files that hit an error while loading (database, storage) — left in `pending/`, tried again next run. */
+  erroredFiles: string[];
 }
 
-const emptyStaging = (): StagingReport => ({ loaded: 0, swept: 0, consumed: 0, emitted: 0, waiting: {}, oldestWaiting: null, unmappedTerminals: [], failedFiles: [] });
+const emptyStaging = (): StagingReport => ({
+  loaded: 0, swept: 0, consumed: 0, emitted: 0, waiting: {}, oldestWaiting: null, undated: 0, awaitingSubmission: {}, unmappedTerminals: [], failedFiles: [], erroredFiles: [],
+});
+
+/** Fills the report's "what is still waiting, and why" part. `all` is every staged row this run saw. */
+function describeWaiting(report: StagingReport, waiting: StagedRow[], all: StagedRow[], ctx: PartitionContext): void {
+  for (const r of waiting) {
+    const k = `${r.bank} ${r.outlet ?? 'unmapped'}`;
+    report.waiting[k] = (report.waiting[k] ?? 0) + 1;
+    const holding = missingDays(r, ctx);
+    if (holding === null) {
+      report.undated++;
+      continue;
+    }
+    if (r.txnDate && (!report.oldestWaiting || r.txnDate < report.oldestWaiting)) report.oldestWaiting = r.txnDate;
+    for (const day of holding) {
+      const key = day.replace('|', ' ');
+      report.awaitingSubmission[key] = (report.awaitingSubmission[key] ?? 0) + 1;
+    }
+  }
+  report.unmappedTerminals = [...new Set(all.filter((r) => !r.outlet && r.terminal).map((r) => `${r.bank} ${r.terminal}`))].sort();
+}
 
 export interface MprIngestResult {
   ranReconciliation: boolean;
@@ -200,7 +228,14 @@ async function ingest(s3: S3Client, clock: Date): Promise<MprIngestResult> {
 
   const pendingKeys = await listPendingKeys(s3);
 
+  // Independent of the per-date accumulators below (which only cover business dates this run's own snapshots touch) — a resent bank
+  // file's rows have no Layer-1 session of their own, so recognizing them as "already reconciled" needs a broader, session-agnostic
+  // lookback. See `loadRecentSettledKeys`'s own doc comment.
+  const recentSettledKeys = await loadRecentSettledKeys(s3, clock);
+  const alreadyReconciled = (r: { rrn: string | null }) => !!r.rrn && recentSettledKeys.has(r.rrn);
+
   // 1. Load: Kotak / HDFC UPI files go into staging and move on as soon as their rows are saved; other banks stay for the batch below.
+  // A file that errors is left where it is for the next run, and does not stop the others (nor the other banks) from going through.
   const batchKeys: string[] = [];
   let stagedFiles = 0;
   for (const key of pendingKeys) {
@@ -211,37 +246,44 @@ async function ingest(s3: S3Client, clock: Date): Promise<MprIngestResult> {
       batchKeys.push(key);
       continue;
     }
-    const res = await s3.send(new GetObjectCommand({ Bucket: config.objectStore.bucket, Key: key }));
-    const parsed = parseMprFile(name, await streamToBuffer(res.Body), adapter);
-    if (parsed.error) {
-      console.error(`[mpr-ingest] ${name}: ${parsed.error} — moved to failed/`);
-      await relocate(s3, key, config.mprMailbox.s3FailedPrefix);
-      report.failedFiles.push(name);
-      continue;
+    try {
+      const res = await s3.send(new GetObjectCommand({ Bucket: config.objectStore.bucket, Key: key }));
+      const parsed = parseMprFile(name, await streamToBuffer(res.Body), adapter);
+      if (parsed.error) {
+        console.error(`[mpr-ingest] ${name}: ${parsed.error} — moved to failed/`);
+        await relocate(s3, key, config.mprMailbox.s3FailedPrefix);
+        report.failedFiles.push(name);
+        continue;
+      }
+      const rows = toStagedRows(parsed, bank, name, startDate);
+      const fresh = rows.filter((r) => !alreadyReconciled(r)); // a bank resending a file: rows already reconciled are not staged again
+      report.swept += rows.length - fresh.length;
+      report.loaded += await staging.insertRows(fresh);
+      await relocate(s3, key, config.mprMailbox.s3ProcessedPrefix); // only after the rows are committed
+      stagedFiles++;
+    } catch (err) {
+      console.error(`[mpr-ingest] ${name}: ${(err as Error).message} — left in pending/ for the next run`);
+      report.erroredFiles.push(name);
     }
-    report.loaded += await staging.insertRows(toStagedRows(parsed, bank, name, startDate));
-    await relocate(s3, key, config.mprMailbox.s3ProcessedPrefix); // only after the rows are committed
-    stagedFiles++;
   }
 
-  // 2. Sweep: a staged row whose RRN is already reconciled — a bank resending a file, or what a crash left behind — is not waiting for anything.
-  // Independent of the per-date accumulators below (which only cover business dates this run's own snapshots touch) — a resent bank
-  // file's rows have no Layer-1 session of their own, so recognizing them as "already reconciled" needs a broader, session-agnostic
-  // lookback. See `loadRecentSettledKeys`'s own doc comment.
-  const recentSettledKeys = await loadRecentSettledKeys(s3, clock);
+  // 2. Sweep: a staged row whose RRN is reconciled by now — what a crash after the accumulator save left behind — is not waiting for anything.
   const allStaged = await staging.listAll();
-  const swept = allStaged.filter((r) => r.rrn && recentSettledKeys.has(r.rrn));
-  if (swept.length) await deleteStaged(staging, swept);
-  report.swept = swept.length;
-  const stagedRows = allStaged.filter((r) => !(r.rrn && recentSettledKeys.has(r.rrn)));
+  const leftovers = allStaged.filter(alreadyReconciled);
+  if (leftovers.length) await deleteStaged(staging, leftovers);
+  report.swept += leftovers.length;
+  const stagedRows = allStaged.filter((r) => !alreadyReconciled(r));
 
   // The submitted days are read BEFORE the open sessions: a day submitted mid-run can then never count as submitted
   // without having been matched (that would call a row Unexpected too early).
   const submitted = await sessionStore.submittedDays(startDate);
   const pendingSessions = await sessionStore.listPendingMpr();
+  const ctx: PartitionContext = { submitted, outlets: OUTLET_CODES, startDate };
 
-  if (!batchKeys.length && !pendingSessions.length && !stagedRows.length) {
-    console.log('[mpr-ingest] nothing pending on either side — no-op.');
+  // Nothing new on any side: the staged rows were judged with exactly these inputs on an earlier run, so there is nothing to match.
+  if (!batchKeys.length && !pendingSessions.length && !report.loaded) {
+    console.log('[mpr-ingest] nothing new on either side — no-op.');
+    describeWaiting(report, stagedRows, stagedRows, ctx);
     return emptyResult({ bankFilesProcessed: stagedFiles, staging: report });
   }
 
@@ -262,7 +304,7 @@ async function ingest(s3: S3Client, clock: Date): Promise<MprIngestResult> {
 
   const outcome = runMprReconciliation(jsonInputs, mprInputs, rowsToParsedFiles(stagedRows));
   // Which staged rows the match consumed, which now count as Unexpected, and which keep waiting (those are dropped from the result).
-  const partition = partitionStaged(stagedRows, outcome.result, { submitted, outlets: OUTLET_CODES, startDate });
+  const partition = partitionStaged(stagedRows, outcome.result, ctx);
 
   const mprSessionId = randomUUID();
   const now = clock.toISOString();
@@ -336,18 +378,13 @@ async function ingest(s3: S3Client, clock: Date): Promise<MprIngestResult> {
 
   report.consumed = partition.consumed.length;
   report.emitted = partition.emitted.length;
-  for (const r of partition.waiting) {
-    const k = `${r.bank} ${r.outlet ?? 'unmapped'}`;
-    report.waiting[k] = (report.waiting[k] ?? 0) + 1;
-    if (r.txnDate && (!report.oldestWaiting || r.txnDate < report.oldestWaiting)) report.oldestWaiting = r.txnDate;
-  }
-  report.unmappedTerminals = [...new Set(stagedRows.filter((r) => !r.outlet && r.terminal).map((r) => `${r.bank} ${r.terminal}`))].sort();
+  describeWaiting(report, partition.waiting, stagedRows, ctx);
 
   console.log(
     `[mpr-ingest] created MPR session ${mprSession.meta.id} — ${mprInputs.length + stagedFiles} bank file(s), ${jsonInputs.length} snapshot(s), ` +
       `${sourceSessionsFlagged} source session(s) flagged, ${reconciled.stillOpenSessionIds.size} left open for retry, ` +
       `${bohAutoClear.cleared} BOH auto-cleared (${bohAutoClear.skippedAmbiguous} skipped, ambiguous); ` +
-      `staging: ${report.loaded} loaded, ${report.swept} swept, ${report.consumed} consumed, ${report.emitted} emitted, ${partition.waiting.length} waiting, ${report.failedFiles.length} failed`,
+      `staging: ${report.loaded} loaded, ${report.swept} swept, ${report.consumed} consumed, ${report.emitted} emitted, ${partition.waiting.length} waiting, ${report.failedFiles.length} failed, ${report.erroredFiles.length} errored`,
   );
 
   return {
