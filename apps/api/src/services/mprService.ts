@@ -13,6 +13,7 @@ import { detectAdapter, parseMprFile, runMatch } from '@toit/mpr-core';
 import type {
   MatchInput,
   MatchResult,
+  ParsedMprFile,
   TaggedLedgerRow,
   TaggedUpiJustification,
   TaggedUpiTransaction,
@@ -61,9 +62,14 @@ interface UploadedSnapshot {
   upi?: { transactions?: unknown[]; justifications?: unknown[] };
 }
 
+/**
+ * `preParsed` are bank files already read elsewhere — the rows MPR staging is holding, grouped back into files. They
+ * join the run after the freshly parsed ones; no byte-identical check applies (staging dropped duplicate rows when it loaded them).
+ */
 export function runMprReconciliation(
   jsonFiles: Array<MprInputFile | MprSnapshotInput>,
   mprFiles: MprInputFile[],
+  preParsed: ParsedMprFile[] = [],
 ): MprRunOutcome {
   const sessions: TaggedLedgerRow[] = [];
   const upiPRRows: TaggedUpiTransaction[] = [];
@@ -141,7 +147,7 @@ export function runMprReconciliation(
     return false;
   });
 
-  const mprParsed = uniqueFiles.map((f) => parseMprFile(f.originalName, f.buffer, detectAdapter(f.originalName)));
+  const mprParsed = [...uniqueFiles.map((f) => parseMprFile(f.originalName, f.buffer, detectAdapter(f.originalName))), ...preParsed];
   const mprFileMeta: ParsedMprFileMetaDTO[] = mprParsed.map((p) => ({
     filename: p.filename,
     detected: p.source,

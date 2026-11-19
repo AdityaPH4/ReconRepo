@@ -12,6 +12,16 @@
  * the manual upload endpoint uses — a session this produces is
  * indistinguishable in shape from one a human created by hand.
  *
+ * Kotak and HDFC UPI files do not go through that batch directly. Their rows
+ * are loaded into Postgres staging tables (see `mprStaging.ts` and
+ * docs/superpowers/specs/2026-11-19-mpr-staging-layer-design.md) and the file
+ * moves on as soon as its rows are saved — so a POS day submitted after its
+ * bank file arrived still finds its rows. Every run matches ALL staged rows
+ * against ALL open POS days; a row leaves staging when it is matched, or when
+ * nothing matches it and its outlet's POS days are submitted (then it is
+ * reported as Unexpected). Other banks keep the old path: parsed in memory
+ * with the batch, files moved after the run.
+ *
  * VPC-attached (needs RDS) but reaches S3 through the free S3 Gateway VPC
  * Endpoint, never the open internet — no NAT Gateway needed, unlike Stage A
  * which needs real internet access for IMAP and so deliberately runs
@@ -19,13 +29,16 @@
  *
  * Ordering matters for safety under a crash/partial failure: persist the
  * `MprSessionDTO` first, THEN save the updated per-day reconciled
- * accumulators, THEN flag each source session's `mprIncludedInSessionId`,
- * THEN relocate the consumed S3 objects. A crash at any point leaves the
- * system safely retryable — worst case, a narrow window produces a
- * visible, auditable duplicate (an already-flagged session reprocessed, an
- * already-moved S3 object re-read, or an accumulator write repeated —
- * upserts are idempotent by key), never silent wrong money. See the
- * approved plan for the full reasoning.
+ * accumulators, THEN delete the staged rows it consumed, THEN flag each source
+ * session's `mprIncludedInSessionId`, THEN relocate the consumed S3 objects. A
+ * crash at any point leaves the system safely retryable — worst case, a narrow
+ * window produces a visible, auditable duplicate (an already-flagged session
+ * reprocessed, an already-moved S3 object re-read, or an accumulator write
+ * repeated — upserts are idempotent by key), never silent wrong money. A staged
+ * row left behind by a crash after the accumulator save is swept at the start
+ * of the next run (its RRN is already in the settled keys). A file is moved out
+ * of `pending/` only after its rows are committed, so a database error leaves
+ * it there for the next run.
  *
  * A session is only flagged `mprIncludedInSessionId` once every one of its
  * rows has a conclusive outcome — settled, mismatched, ambiguous, or "No
@@ -47,14 +60,18 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3';
 import type { MprSessionDTO } from '@toit/contracts';
-import { applyReconciledAccumulator, type ReconciledDay } from '@toit/mpr-core';
+import { applyReconciledAccumulator, detectAdapter, parseMprFile, type ReconciledDay } from '@toit/mpr-core';
+import { OUTLET_CODES } from '@toit/recon-core';
 import { config } from '../config.js';
+import { tryIngestLock } from '../storage/ingestLock.js';
 import { autoClearBohFromNoRrn } from './bohMprAutoClear.js';
 import { applyRunToCounters } from './mprCounterService.js';
 import { enrichMprMatchResult, runMprReconciliation, type MprInputFile, type MprSnapshotInput } from './mprService.js';
+import { partitionStaged, rowsToParsedFiles, STAGED_ADAPTERS, toStagedRows } from './mprStaging.js';
 import { loadReconciledDay, loadRecentSettledKeys, mergeReconciledItems, saveReconciledDay } from './reconciledStore.js';
-import { getMprSessionStore, getSessionStore } from '../storage/index.js';
+import { getMprSessionStore, getMprStagingStore, getSessionStore } from '../storage/index.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
+import type { MprStagingStore, StagedBank, StagedRow } from '../storage/types.js';
 
 /** Automated runs are attributed to a fixed, recognizable identity — never a real user email — so a human scanning `/mpr` can tell an automated run apart from a manual one at a glance. */
 const AUTOMATION_ACTOR = 'automation@mpr-ingest';
@@ -95,6 +112,44 @@ async function listPendingKeys(s3: S3Client): Promise<string[]> {
   return keys;
 }
 
+/** S3 has no atomic rename: copy then delete. `pending/<date>/<file>` → `<toPrefix><date>/<file>`. */
+async function relocate(s3: S3Client, key: string, toPrefix: string): Promise<void> {
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: config.objectStore.bucket,
+      CopySource: `${config.objectStore.bucket}/${key}`,
+      Key: key.replace(config.mprMailbox.s3PendingPrefix, toPrefix),
+    }),
+  );
+  await s3.send(new DeleteObjectCommand({ Bucket: config.objectStore.bucket, Key: key }));
+}
+
+async function deleteStaged(staging: MprStagingStore, rows: StagedRow[]): Promise<void> {
+  const byBank = new Map<StagedBank, Set<string>>();
+  for (const r of rows) byBank.set(r.bank, (byBank.get(r.bank) ?? new Set()).add(r.identity));
+  for (const [bank, identities] of byBank) await staging.deleteByIdentity(bank, [...identities]);
+}
+
+/** What staging did this run — printed in the Lambda's output so what is waiting is visible without a screen for it. */
+export interface StagingReport {
+  /** Rows newly staged from this run's files. */
+  loaded: number;
+  /** Staged rows dropped because their RRN was already reconciled (a resent file, or a crash's leftover). */
+  swept: number;
+  consumed: number;
+  emitted: number;
+  /** Rows still waiting, by `${bank} ${outlet}` (`unmapped` when the terminal has no known outlet). */
+  waiting: Record<string, number>;
+  /** Earliest transaction date among the rows still waiting. */
+  oldestWaiting: string | null;
+  /** Terminals whose files named no known outlet. */
+  unmappedTerminals: string[];
+  /** Files that could not be read — moved to `failed/`. */
+  failedFiles: string[];
+}
+
+const emptyStaging = (): StagingReport => ({ loaded: 0, swept: 0, consumed: 0, emitted: 0, waiting: {}, oldestWaiting: null, unmappedTerminals: [], failedFiles: [] });
+
 export interface MprIngestResult {
   ranReconciliation: boolean;
   mprSessionId: string | null;
@@ -107,26 +162,91 @@ export interface MprIngestResult {
   bohAutoCleared: number;
   /** "No RRN" rows that matched more than one open BOH entry at the same outlet+date+amount — left open rather than guessed. */
   bohSkippedAmbiguous: number;
+  staging: StagingReport;
+  /** Set when the run did nothing because another run was in progress. */
+  skipped?: string;
 }
 
-export async function runMprIngest(): Promise<MprIngestResult> {
-  const s3 = createRawS3Client(config.objectStore);
+const emptyResult = (o: Partial<MprIngestResult> = {}): MprIngestResult => ({
+  ranReconciliation: false, mprSessionId: null, bankFilesProcessed: 0, jsonSnapshotsProcessed: 0, sourceSessionsFlagged: 0,
+  sourceSessionsStillOpen: 0, bohAutoCleared: 0, bohSkippedAmbiguous: 0, staging: emptyStaging(), ...o,
+});
+
+export interface MprIngestDeps {
+  /** Tests pass a fake; production builds the real client. */
+  s3?: S3Client;
+  /** Tests pin the clock; it sets how far back the settled-key lookback reaches. */
+  now?: Date;
+}
+
+export async function runMprIngest(deps: MprIngestDeps = {}): Promise<MprIngestResult> {
+  const release = await tryIngestLock();
+  if (!release) {
+    console.log('[mpr-ingest] another run is in progress — skipping.');
+    return emptyResult({ skipped: 'another run is in progress' });
+  }
+  try {
+    return await ingest(deps.s3 ?? createRawS3Client(config.objectStore), deps.now ?? new Date());
+  } finally {
+    await release();
+  }
+}
+
+async function ingest(s3: S3Client, clock: Date): Promise<MprIngestResult> {
   const sessionStore = getSessionStore();
+  const staging = getMprStagingStore();
+  const startDate = config.mprMailbox.startDate;
+  const report = emptyStaging();
 
   const pendingKeys = await listPendingKeys(s3);
+
+  // 1. Load: Kotak / HDFC UPI files go into staging and move on as soon as their rows are saved; other banks stay for the batch below.
+  const batchKeys: string[] = [];
+  let stagedFiles = 0;
+  for (const key of pendingKeys) {
+    const name = originalNameFromKey(key);
+    const adapter = detectAdapter(name);
+    const bank = adapter ? STAGED_ADAPTERS[adapter] : undefined;
+    if (!adapter || !bank) {
+      batchKeys.push(key);
+      continue;
+    }
+    const res = await s3.send(new GetObjectCommand({ Bucket: config.objectStore.bucket, Key: key }));
+    const parsed = parseMprFile(name, await streamToBuffer(res.Body), adapter);
+    if (parsed.error) {
+      console.error(`[mpr-ingest] ${name}: ${parsed.error} — moved to failed/`);
+      await relocate(s3, key, config.mprMailbox.s3FailedPrefix);
+      report.failedFiles.push(name);
+      continue;
+    }
+    report.loaded += await staging.insertRows(toStagedRows(parsed, bank, name, startDate));
+    await relocate(s3, key, config.mprMailbox.s3ProcessedPrefix); // only after the rows are committed
+    stagedFiles++;
+  }
+
+  // 2. Sweep: a staged row whose RRN is already reconciled — a bank resending a file, or what a crash left behind — is not waiting for anything.
+  // Independent of the per-date accumulators below (which only cover business dates this run's own snapshots touch) — a resent bank
+  // file's rows have no Layer-1 session of their own, so recognizing them as "already reconciled" needs a broader, session-agnostic
+  // lookback. See `loadRecentSettledKeys`'s own doc comment.
+  const recentSettledKeys = await loadRecentSettledKeys(s3, clock);
+  const allStaged = await staging.listAll();
+  const swept = allStaged.filter((r) => r.rrn && recentSettledKeys.has(r.rrn));
+  if (swept.length) await deleteStaged(staging, swept);
+  report.swept = swept.length;
+  const stagedRows = allStaged.filter((r) => !(r.rrn && recentSettledKeys.has(r.rrn)));
+
+  // The submitted days are read BEFORE the open sessions: a day submitted mid-run can then never count as submitted
+  // without having been matched (that would call a row Unexpected too early).
+  const submitted = await sessionStore.submittedDays(startDate);
   const pendingSessions = await sessionStore.listPendingMpr();
 
-  if (!pendingKeys.length && !pendingSessions.length) {
+  if (!batchKeys.length && !pendingSessions.length && !stagedRows.length) {
     console.log('[mpr-ingest] nothing pending on either side — no-op.');
-    return {
-      ranReconciliation: false, mprSessionId: null, bankFilesProcessed: 0,
-      jsonSnapshotsProcessed: 0, sourceSessionsFlagged: 0, sourceSessionsStillOpen: 0,
-      bohAutoCleared: 0, bohSkippedAmbiguous: 0,
-    };
+    return emptyResult({ bankFilesProcessed: stagedFiles, staging: report });
   }
 
   const mprInputs: MprInputFile[] = [];
-  for (const key of pendingKeys) {
+  for (const key of batchKeys) {
     const res = await s3.send(new GetObjectCommand({ Bucket: config.objectStore.bucket, Key: key }));
     const buffer = await streamToBuffer(res.Body);
     mprInputs.push({ buffer, originalName: originalNameFromKey(key) });
@@ -140,10 +260,12 @@ export async function runMprIngest(): Promise<MprIngestResult> {
       label: `${s.meta.outlet}-${s.meta.businessDate ?? 'unknown'}-${s.meta.id.slice(0, 8)}.json`,
     }));
 
-  const outcome = runMprReconciliation(jsonInputs, mprInputs);
+  const outcome = runMprReconciliation(jsonInputs, mprInputs, rowsToParsedFiles(stagedRows));
+  // Which staged rows the match consumed, which now count as Unexpected, and which keep waiting (those are dropped from the result).
+  const partition = partitionStaged(stagedRows, outcome.result, { submitted, outlets: OUTLET_CODES, startDate });
 
   const mprSessionId = randomUUID();
-  const now = new Date().toISOString();
+  const now = clock.toISOString();
 
   // Load every touched business date's accumulator up front, then let the
   // pure matcher-adjacent logic in @toit/mpr-core decide what's genuinely
@@ -152,13 +274,7 @@ export async function runMprIngest(): Promise<MprIngestResult> {
   const accumulatorsByDate = new Map<string, ReconciledDay>(
     await Promise.all(outcome.businessDates.map(async (d) => [d, await loadReconciledDay(s3, d)] as const)),
   );
-  // Independent of `accumulatorsByDate` above (which only covers business
-  // dates *this run's own* JSON snapshots touch) — a resent bank file's
-  // rows have no Layer-1 session of their own, so recognizing them as
-  // "already reconciled" needs a broader, session-agnostic lookback. See
-  // `loadRecentSettledKeys`'s own doc comment.
-  const recentSettledKeys = await loadRecentSettledKeys(s3);
-  const reconciled = applyReconciledAccumulator(outcome.result, accumulatorsByDate, mprSessionId, now, recentSettledKeys);
+  const reconciled = applyReconciledAccumulator(partition.result, accumulatorsByDate, mprSessionId, now, recentSettledKeys);
 
   const mprSession: MprSessionDTO = {
     meta: {
@@ -193,7 +309,10 @@ export async function runMprIngest(): Promise<MprIngestResult> {
     await saveReconciledDay(s3, { businessDate, updatedAt: now, items: mergeReconciledItems(existing.items, newItems) });
   }
 
-  // Only after the accumulator is saved — flag every source session that
+  // Only after the accumulator is saved — the staged rows this run matched or reported are done with.
+  await deleteStaged(staging, [...partition.consumed, ...partition.emitted]);
+
+  // Only after that — flag every source session that
   // was folded in without error AND has no row left genuinely open, so
   // the next run's listPendingMpr() correctly excludes it. A session with
   // a still-open row (no bank file for it *yet*) is deliberately left
@@ -212,34 +331,34 @@ export async function runMprIngest(): Promise<MprIngestResult> {
     sourceSessionsFlagged++;
   }
 
-  // Only after that flagging is done — relocate the consumed S3 objects.
-  // S3 has no atomic rename: copy then delete.
-  for (const key of pendingKeys) {
-    const destKey = key.replace(config.mprMailbox.s3PendingPrefix, config.mprMailbox.s3ProcessedPrefix);
-    await s3.send(
-      new CopyObjectCommand({
-        Bucket: config.objectStore.bucket,
-        CopySource: `${config.objectStore.bucket}/${key}`,
-        Key: destKey,
-      }),
-    );
-    await s3.send(new DeleteObjectCommand({ Bucket: config.objectStore.bucket, Key: key }));
+  // Only after that flagging is done — relocate the consumed S3 objects of the banks still on the batch path.
+  for (const key of batchKeys) await relocate(s3, key, config.mprMailbox.s3ProcessedPrefix);
+
+  report.consumed = partition.consumed.length;
+  report.emitted = partition.emitted.length;
+  for (const r of partition.waiting) {
+    const k = `${r.bank} ${r.outlet ?? 'unmapped'}`;
+    report.waiting[k] = (report.waiting[k] ?? 0) + 1;
+    if (r.txnDate && (!report.oldestWaiting || r.txnDate < report.oldestWaiting)) report.oldestWaiting = r.txnDate;
   }
+  report.unmappedTerminals = [...new Set(stagedRows.filter((r) => !r.outlet && r.terminal).map((r) => `${r.bank} ${r.terminal}`))].sort();
 
   console.log(
-    `[mpr-ingest] created MPR session ${mprSession.meta.id} — ${mprInputs.length} bank file(s), ${jsonInputs.length} snapshot(s), ` +
+    `[mpr-ingest] created MPR session ${mprSession.meta.id} — ${mprInputs.length + stagedFiles} bank file(s), ${jsonInputs.length} snapshot(s), ` +
       `${sourceSessionsFlagged} source session(s) flagged, ${reconciled.stillOpenSessionIds.size} left open for retry, ` +
-      `${bohAutoClear.cleared} BOH auto-cleared (${bohAutoClear.skippedAmbiguous} skipped, ambiguous)`,
+      `${bohAutoClear.cleared} BOH auto-cleared (${bohAutoClear.skippedAmbiguous} skipped, ambiguous); ` +
+      `staging: ${report.loaded} loaded, ${report.swept} swept, ${report.consumed} consumed, ${report.emitted} emitted, ${partition.waiting.length} waiting, ${report.failedFiles.length} failed`,
   );
 
   return {
     ranReconciliation: true,
     mprSessionId: mprSession.meta.id,
-    bankFilesProcessed: mprInputs.length,
+    bankFilesProcessed: mprInputs.length + stagedFiles,
     jsonSnapshotsProcessed: jsonInputs.length,
     sourceSessionsFlagged,
     sourceSessionsStillOpen: reconciled.stillOpenSessionIds.size,
     bohAutoCleared: bohAutoClear.cleared,
     bohSkippedAmbiguous: bohAutoClear.skippedAmbiguous,
+    staging: report,
   };
 }
