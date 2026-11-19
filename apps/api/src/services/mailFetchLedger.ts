@@ -22,6 +22,18 @@ export const MAIL_SOURCES: MailSource[] = [
   { bank: 'amex', senders: ['reddybabu.bgk@ph4.in', 'aditya@ph4.in'], daily: [] },
 ];
 
+/**
+ * `${bank}|${terminal}` → the outlet that terminal's money belongs to. Worked out from settled POS rows — the bank files
+ * themselves name only the company or generic counters. A terminal missing here counts as every outlet's (see `mprStaging.ts`).
+ */
+export const TERMINAL_OUTLETS: Record<string, string> = {
+  'kotak|0064746': 'BLRT', 'kotak|0215583': 'BLRT', 'kotak|0172757': 'BAGT', 'kotak|0176988': 'BAGT', 'kotak|0215585': 'PUNT',
+  'hdfc_upi|DPL922': 'PUNT', 'hdfc_upi|HNB400': 'PUNT', 'hdfc_upi|HNB402': 'PUNT', 'hdfc_upi|HNB393': 'PUNT',
+  'hdfc_upi|P15309': 'BLRT', 'hdfc_upi|JLM595': 'BAGT',
+};
+
+export const outletOfTerminal = (bank: 'kotak' | 'hdfc_upi', terminal: string): string | null => TERMINAL_OUTLETS[`${bank}|${terminal}`] ?? null;
+
 /** Furthest back a normal run reaches: covers a late or skipped day; anything older is a manual backfill. */
 export const MAX_CATCH_UP_DAYS = 7;
 

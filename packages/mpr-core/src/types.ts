@@ -178,6 +178,9 @@ export interface UnexpectedMprRow {
   mprTxnDate?: string | null;
   _source: AdapterKey;
   _file: string;
+  /** Rows that came through MPR staging only: the outlet the file's terminal belongs to (absent when unknown), and the row's own transaction date (`yyyy-mm-dd`). */
+  outlet?: string;
+  txnDate?: string | null;
 }
 
 /** `ambiguous` — the Transaction Date + Card (last 4) key collided on either side; never guessed. */
