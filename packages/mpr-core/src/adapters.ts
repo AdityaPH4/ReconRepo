@@ -67,6 +67,22 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
     // Footer rows have a null RRN column — drop them.
     nullRRNStrategy: 'skip_null',
   },
+  HDFC_CARD: {
+    label: 'HDFC Card MPR',
+    color: '#be123c',
+    // Not a bank export's own header — the fixed CSV header `mailFetchService.ts`
+    // writes after decrypting and regex-parsing the password-protected
+    // `payoutreport@hdfcbank.bank.in` PDF (free-text `CR P2M ...` lines, no
+    // columns at all). Dates are kept in the PDF's own `dd-mm-yy` shape —
+    // `normDate`'s `dm4` branch already reads that correctly.
+    headerFingerprint: ['RRN', 'Txn Amt', 'Txn Date', 'Settlement Date'],
+    fields: {
+      rrn: ['RRN'],
+      grossAmount: ['Txn Amt'],
+      txnDate: ['Txn Date'],
+      settlementDate: ['Settlement Date'],
+    },
+  },
   HDFC_LINK: {
     label: 'HDFC Link',
     color: '#1d4ed8',
@@ -95,6 +111,9 @@ export const ADAPTERS: Record<AdapterKey, AdapterDef> = {
  * that's matched as a filename prefix, not just the old `0790431` substring.
  */
 export function detectAdapter(filename: string): AdapterKey | null {
+  // Checked first — this exact prefix is only ever written by `mailFetchService.ts`'s
+  // own HDFC-card PDF-to-CSV conversion, never a real bank filename.
+  if (/^hdfccard_/i.test(filename)) return 'HDFC_CARD';
   if (/kotak.*mpr|mpr.*kotak|0790431|^0790/i.test(filename)) return 'KOTAK';
   if (/pinelabs|pos.*authmerchan|merchantmpr|^mpr__/i.test(filename)) return 'PINELABS';
   if (/merchant_payout_report.*stid|925792/i.test(filename)) return 'HDFC_UPI';

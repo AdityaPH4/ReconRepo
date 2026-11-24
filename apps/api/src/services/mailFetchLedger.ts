@@ -8,7 +8,7 @@
  */
 
 export interface MailSource {
-  bank: 'kotak' | 'hdfc_upi' | 'pinelabs' | 'amex';
+  bank: 'kotak' | 'hdfc_upi' | 'pinelabs' | 'amex' | 'hdfc_card';
   /** Lowercase addresses, same form as `MPR_SENDER_ALLOWLIST` (which still gates what is read). */
   senders: string[];
   /** Terminals that send a file every day. Empty: this bank doesn't send daily, so a quiet day is not a gap. */
@@ -20,11 +20,16 @@ export const MAIL_SOURCES: MailSource[] = [
   { bank: 'hdfc_upi', senders: ['upi@hdfcbank.bank.in'], daily: ['JLM595', 'P15309', 'DPL922'] },
   { bank: 'pinelabs', senders: ['no-reply-billing@pinelabs.com'], daily: [] },
   { bank: 'amex', senders: ['reddybabu.bgk@ph4.in', 'aditya@ph4.in'], daily: [] },
+  // Not daily: of the 19 merchant IDs HDFC sends under this sender, only one
+  // (43156170) has a configured password so far — see `HDFC_CARD_PDF_PASSWORDS`.
+  // `daily: []` means an unconfigured merchant's quiet days are never flagged missing.
+  { bank: 'hdfc_card', senders: ['payoutreport@hdfcbank.bank.in'], daily: [] },
 ];
 
 /**
  * `${bank}|${terminal}` → the outlet that terminal's money belongs to. Worked out from settled POS rows — the bank files
  * themselves name only the company or generic counters. A terminal missing here counts as every outlet's (see `mprStaging.ts`).
+ * No HDFC-card merchant ID is mapped yet (none confirmed) — every one of them falls through to that same "every outlet" wait.
  */
 export const TERMINAL_OUTLETS: Record<string, string> = {
   'kotak|0064746': 'BLRT', 'kotak|0215583': 'BLRT', 'kotak|0172757': 'BAGT', 'kotak|0176988': 'BAGT', 'kotak|0215585': 'PUNT',
@@ -32,7 +37,7 @@ export const TERMINAL_OUTLETS: Record<string, string> = {
   'hdfc_upi|P15309': 'BLRT', 'hdfc_upi|JLM595': 'BAGT',
 };
 
-export const outletOfTerminal = (bank: 'kotak' | 'hdfc_upi', terminal: string): string | null => TERMINAL_OUTLETS[`${bank}|${terminal}`] ?? null;
+export const outletOfTerminal = (bank: 'kotak' | 'hdfc_upi' | 'hdfc_card', terminal: string): string | null => TERMINAL_OUTLETS[`${bank}|${terminal}`] ?? null;
 
 /** Furthest back a normal run reaches: covers a late or skipped day; anything older is a manual backfill. */
 export const MAX_CATCH_UP_DAYS = 7;
@@ -67,6 +72,9 @@ export function classifyFile(name: string): FileClass | null {
   if (m) return { bank: 'pinelabs', terminal: '', date: `20${m[1]}-${m[2]}-${m[3]}` };
   m = /^FTD_(\d\d)(\d\d)(\d\d)_.*MerchantMpr/.exec(name); // consolidated report, ddmmyy
   if (m) return { bank: 'pinelabs', terminal: '', date: `20${m[3]}-${m[2]}-${m[1]}` };
+  // `mailFetchService.ts`'s own HDFC-card PDF→CSV conversion names the result `hdfccard_<merchantId>_<yyyy-mm-dd>.csv`.
+  m = /^hdfccard_(\w+)_(\d{4}-\d{2}-\d{2})/.exec(name);
+  if (m) return { bank: 'hdfc_card', terminal: m[1]!, date: m[2]! };
   return null;
 }
 

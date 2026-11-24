@@ -5,7 +5,7 @@
 
 import type { MprStagingStore, StagedBank, StagedRow } from './types.js';
 
-const BANK_ORDER: StagedBank[] = ['kotak', 'hdfc_upi']; // same order the Postgres store lists them in
+const BANK_ORDER: StagedBank[] = ['kotak', 'hdfc_upi', 'hdfc_card']; // same order the Postgres store lists them in
 
 export function createMemoryMprStagingStore(): MprStagingStore {
   const rows = new Map<string, StagedRow>();

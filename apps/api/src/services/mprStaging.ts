@@ -17,7 +17,7 @@ import type { StagedBank, StagedRow, StagedRowInput } from '../storage/types.js'
 import { addDays, classifyFile, outletOfTerminal } from './mailFetchLedger.js';
 
 /** Banks whose files go through staging, by the adapter the file name resolves to. */
-export const STAGED_ADAPTERS: Partial<Record<AdapterKey, StagedBank>> = { KOTAK: 'kotak', HDFC_UPI: 'hdfc_upi' };
+export const STAGED_ADAPTERS: Partial<Record<AdapterKey, StagedBank>> = { KOTAK: 'kotak', HDFC_UPI: 'hdfc_upi', HDFC_CARD: 'hdfc_card' };
 
 /** The match engine's own row identity (`engine/match.ts`) — what makes two rows "the same row" across files. */
 export const rowIdentity = (r: Pick<MprRow, '_source' | 'rrn' | 'grossAmount' | 'txnDateRaw' | 'txnDate' | 'settlementDate'>): string =>

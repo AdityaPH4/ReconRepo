@@ -1,6 +1,6 @@
-// Creates the two MPR staging tables (same SQL as the staging section of apps/api/src/storage/postgres/schema.sql).
+// Creates the MPR staging tables (same SQL as the staging section of apps/api/src/storage/postgres/schema.sql).
 // Additive and idempotent: IF NOT EXISTS, touches nothing else. Run it BEFORE deploying the ingest image that uses them.
-// Undo with: DROP TABLE recon.mpr_stage_kotak, recon.mpr_stage_hdfc_upi;
+// Undo with: DROP TABLE recon.mpr_stage_kotak, recon.mpr_stage_hdfc_upi, recon.mpr_stage_hdfc_card;
 import pg from 'pg';
 import fs from 'node:fs';
 

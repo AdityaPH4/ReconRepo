@@ -67,7 +67,7 @@ export interface TaggedUpiJustification {
 
 // ── Bank adapters ────────────────────────────────────────────────────────
 
-export type AdapterKey = 'KOTAK' | 'PINELABS' | 'AMEX' | 'HDFC_UPI' | 'HDFC_LINK';
+export type AdapterKey = 'KOTAK' | 'PINELABS' | 'AMEX' | 'HDFC_UPI' | 'HDFC_LINK' | 'HDFC_CARD';
 
 /**
  * Closed shape, deliberately no index signature — `normaliseTransactionRows()`

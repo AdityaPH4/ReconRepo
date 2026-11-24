@@ -179,3 +179,19 @@ CREATE TABLE IF NOT EXISTS recon.mpr_stage_hdfc_upi (
 );
 CREATE INDEX IF NOT EXISTS mpr_stage_hdfc_upi_rrn_idx ON recon.mpr_stage_hdfc_upi (rrn);
 CREATE INDEX IF NOT EXISTS mpr_stage_hdfc_upi_outlet_date_idx ON recon.mpr_stage_hdfc_upi (outlet, txn_date);
+
+CREATE TABLE IF NOT EXISTS recon.mpr_stage_hdfc_card (
+  seq BIGSERIAL,
+  identity TEXT NOT NULL,
+  occurrence INTEGER NOT NULL,
+  rrn TEXT,
+  txn_date TEXT,
+  terminal TEXT NOT NULL DEFAULT '',
+  outlet TEXT,
+  file_name TEXT NOT NULL,
+  loaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  data JSONB NOT NULL,
+  PRIMARY KEY (identity, occurrence)
+);
+CREATE INDEX IF NOT EXISTS mpr_stage_hdfc_card_rrn_idx ON recon.mpr_stage_hdfc_card (rrn);
+CREATE INDEX IF NOT EXISTS mpr_stage_hdfc_card_outlet_date_idx ON recon.mpr_stage_hdfc_card (outlet, txn_date);

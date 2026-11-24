@@ -237,7 +237,7 @@ export interface ActionLogStore {
 // transaction date, and deleted once reconciled (or reported as Unexpected) —
 // see docs/superpowers/specs/2026-11-19-mpr-staging-layer-design.md.
 
-export type StagedBank = 'kotak' | 'hdfc_upi';
+export type StagedBank = 'kotak' | 'hdfc_upi' | 'hdfc_card';
 
 export interface StagedRowInput {
   bank: StagedBank;

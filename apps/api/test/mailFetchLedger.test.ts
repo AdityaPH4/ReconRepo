@@ -22,6 +22,7 @@ describe('classifyFile()', () => {
     assert.deepEqual(classifyFile('Export_Report11182026_200625.xls'), { bank: 'amex', terminal: '', date: '2026-11-18' });
     assert.deepEqual(classifyFile('261115_0530_Ph4food&beveragesprivatelimited_POS_AuthMerchantMpr.xlsx'), { bank: 'pinelabs', terminal: '', date: '2026-11-15' });
     assert.deepEqual(classifyFile('FTD_161126_Ph4food&beveragesprivatelimited_POS_ConsolidatedMerchantMpr.xlsx'), { bank: 'pinelabs', terminal: '', date: '2026-11-16' });
+    assert.deepEqual(classifyFile('hdfccard_43156170_2026-11-20.csv'), { bank: 'hdfc_card', terminal: '43156170', date: '2026-11-20' });
   });
 
   it('ignores a name it does not know', () => {

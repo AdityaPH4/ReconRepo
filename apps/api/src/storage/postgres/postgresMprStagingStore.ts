@@ -7,7 +7,7 @@ import type { MprRow } from '@toit/mpr-core';
 import type { Pool } from 'pg';
 import type { MprStagingStore, StagedBank, StagedRow } from '../types.js';
 
-const TABLE: Record<StagedBank, string> = { kotak: 'recon.mpr_stage_kotak', hdfc_upi: 'recon.mpr_stage_hdfc_upi' };
+const TABLE: Record<StagedBank, string> = { kotak: 'recon.mpr_stage_kotak', hdfc_upi: 'recon.mpr_stage_hdfc_upi', hdfc_card: 'recon.mpr_stage_hdfc_card' };
 const BANKS = Object.keys(TABLE) as StagedBank[];
 /** Rows per INSERT — a requeued month of files stays a sane statement size. */
 const CHUNK = 2000;

@@ -46,6 +46,7 @@ describe('detectAdapter()', () => {
     assert.equal(detectAdapter('Merchant_Payout_Report_STID.xlsx'), 'HDFC_UPI');
     assert.equal(detectAdapter('925792_report.xlsx'), 'HDFC_UPI');
     assert.equal(detectAdapter('HDFC_Link_Settlement.csv'), 'HDFC_LINK');
+    assert.equal(detectAdapter('hdfccard_43156170_2026-11-20.csv'), 'HDFC_CARD');
     assert.equal(detectAdapter('unknown_bank_file.xlsx'), null);
   });
 });
@@ -218,6 +219,18 @@ describe('parseMprFile() — Pinelabs hardcoded header row', () => {
     assert.equal(parsed.error, undefined);
     assert.equal(parsed.rows.length, 1);
     assert.equal((parsed.rows[0] as { rrn: string }).rrn, '200000000099');
+  });
+});
+
+describe('parseMprFile() — HDFC Card', () => {
+  it('reads the CSV `mailFetchService.ts` writes after decrypting the PDF, dates in the PDF\'s own dd-mm-yy shape', () => {
+    const csv = ['RRN,Txn Amt,Txn Date,Settlement Date', '359567545133,105.00,18-11-26,19-11-26'].join('\n');
+    const parsed = parseMprFile('hdfccard_43156170_2026-11-20.csv', Buffer.from(csv, 'utf8'), detectAdapter('hdfccard_43156170_2026-11-20.csv'));
+    assert.equal(parsed.source, 'HDFC_CARD');
+    assert.equal(parsed.error, undefined);
+    assert.equal(parsed.rows.length, 1);
+    const row = parsed.rows[0] as { rrn: string; grossAmount: number; txnDate: string | null; settlementDate: string | null };
+    assert.deepEqual([row.rrn, row.grossAmount, row.txnDate, row.settlementDate], ['359567545133', 105, '2026-11-18', '2026-11-19']);
   });
 });
 

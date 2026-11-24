@@ -5,7 +5,11 @@
  * finds recent messages from an allowlisted sender, and uploads their
  * `.csv`/`.xlsx`/`.xls` attachments (and the files behind Pine Labs'
  * "Download MPR" links, which come with no attachment) to S3 for Stage B
- * (`mprIngestService.ts`) to pick up on its own schedule. Deliberately does
+ * (`mprIngestService.ts`) to pick up on its own schedule. One sender,
+ * `payoutreport@hdfcbank.bank.in`, sends a password-protected PDF instead —
+ * for a merchant ID with a configured password (`HDFC_CARD_PDF_PASSWORDS`),
+ * it's decrypted and converted to the same CSV shape right here, so Stage B
+ * never needs to know it was ever a PDF (see `hdfcCardPdf.ts`). Deliberately does
  * NOT run in the same Lambda/VPC as the main API or Stage B — a VPC-attached
  * Lambda has no route to an external IMAP server without a NAT Gateway
  * (a real fixed monthly cost this design avoids), so this one runs outside
@@ -39,9 +43,13 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { config } from '../config.js';
 import { createRawS3Client } from '../storage/s3ObjectStore.js';
+import { convertHdfcCardPdf, HdfcCardPasswordError } from './hdfcCardPdf.js';
 import { istToday, ledgerReport, MAIL_SOURCES, missingDaily, pruneLedger, recordFile, sendersToSearch, windowStart, type Ledger } from './mailFetchLedger.js';
 
 const ATTACHMENT_EXT = /\.(csv|xlsx|xls)$/i;
+
+/** The one sender whose PDF attachments are ever decrypted — see `hdfcCardPdf.ts`. */
+const HDFC_CARD_SENDER = 'payoutreport@hdfcbank.bank.in';
 
 /** Pine Labs sends no attachment, only a public "Download MPR" link. Since 17 Nov that link is wrapped in an AWS click-tracker holding the real address URL-encoded (`...%2F<id>`), so match the id after the host in either form and always fetch from the real host. */
 const PINELABS_LINK = /settlement-content\.pinelabs\.com(?:\/|%2F)([0-9a-f-]{36})/gi;
@@ -85,6 +93,26 @@ async function resolveImapPassword(): Promise<string> {
     throw new Error(`SSM parameter "${config.mprMailbox.imapAppPasswordParam}" has no value.`);
   }
   return res.Parameter.Value;
+}
+
+/** `{merchantId: password}` for the HDFC-card PDF source — `{}` when none is configured (that bank's mail is then left exactly as it is today: moved, nothing extracted). */
+async function resolveHdfcCardPasswords(): Promise<Record<string, string>> {
+  const raw = config.mprMailbox.hdfcCardPdfPasswordsLocal
+    ? config.mprMailbox.hdfcCardPdfPasswordsLocal
+    : config.mprMailbox.hdfcCardPdfPasswordsParam
+      ? ((
+          await new SSMClient({ region: config.objectStore.region }).send(
+            new GetParameterCommand({ Name: config.mprMailbox.hdfcCardPdfPasswordsParam, WithDecryption: true }),
+          )
+        ).Parameter?.Value ?? '')
+      : '';
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as Record<string, string>;
+  } catch (err) {
+    console.warn(`[mail-fetch] HDFC_CARD_PDF_PASSWORDS is not valid JSON, ignoring: ${(err as Error).message}`);
+    return {};
+  }
 }
 
 /**
@@ -186,12 +214,14 @@ export interface MailFetchResult {
   preview?: MailPreviewItem[];
   /** Newest file date fetched per bank, and daily files still absent for days that have ended. */
   ledger: { lastFetched: Record<string, string>; missing: string[] };
+  /** HDFC-card PDF(s) seen this run whose merchant ID has no configured password, or whose configured one was rejected — `${merchantId} ${filename}`. Check before assuming a quiet merchant ID has simply sent nothing. */
+  hdfcCardBadPasswords: string[];
 }
 
 export async function runMailFetch(backfill?: MailBackfillOptions): Promise<MailFetchResult> {
   if (!config.mprMailbox.imapUser) {
     console.log('[mail-fetch] IMAP_USER not configured — skipping.');
-    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] } };
+    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] }, hdfcCardBadPasswords: [] };
   }
   const lower = (xs: string[] = []) => xs.map((x) => x.trim().toLowerCase()).filter(Boolean);
   const only = lower(backfill?.onlySenders);
@@ -202,7 +232,7 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
     // exactly the expensive, unbounded scan this design avoids. Refuse
     // rather than silently doing that.
     console.log('[mail-fetch] MPR_SENDER_ALLOWLIST is empty — refusing to scan the whole mailbox, skipping.');
-    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] } };
+    return { messagesScanned: 0, messagesFromAllowedSenders: 0, attachmentsUploaded: 0, ledger: { lastFetched: {}, missing: [] }, hdfcCardBadPasswords: [] };
   }
 
   const isoDate = /^\d{4}-\d{2}-\d{2}$/;
@@ -211,6 +241,8 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
   }
 
   const password = await resolveImapPassword();
+  const hdfcCardPasswords = await resolveHdfcCardPasswords();
+  const hdfcCardBadPasswords: string[] = [];
   const client = new ImapFlow({
     host: config.mprMailbox.imapHost,
     port: config.mprMailbox.imapPort,
@@ -279,6 +311,8 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
         messagesFromAllowedSenders++;
         const attachments = parsed.attachments.filter((a) => ATTACHMENT_EXT.test(a.filename ?? ''));
         const links = pinelabsMprLinks(`${parsed.html || ''} ${parsed.text ?? ''}`);
+        const isHdfcCard = isAllowedSender(fromAddress, [HDFC_CARD_SENDER]);
+        const hdfcCardPdfs = isHdfcCard ? parsed.attachments.filter((a) => /\.pdf$/i.test(a.filename ?? '')) : [];
 
         if (backfill?.dryRun) {
           preview.push({
@@ -286,7 +320,7 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
             from: fromAddress ?? '',
             date: parsed.date?.toISOString().slice(0, 10) ?? '',
             subject: parsed.subject ?? '',
-            attachments: [...attachments.map((a) => a.filename!), ...links.map((l) => `link:${l}`)],
+            attachments: [...attachments.map((a) => a.filename!), ...links.map((l) => `link:${l}`), ...hdfcCardPdfs.map((a) => a.filename!)],
           });
           continue;
         }
@@ -298,6 +332,34 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
         } catch (err) {
           console.warn(`[mail-fetch] Pinelabs link download failed for "${parsed.subject}", leaving it in ${folder}: ${(err as Error).message}`);
           continue;
+        }
+
+        // HDFC card: one password-protected PDF per merchant ID, named `<merchantId>-ddmmyyyy[...].pdf`.
+        // Only a merchant ID with a configured password is ever decrypted — an
+        // unconfigured one is left exactly as it is today (the message is still
+        // handled/moved; nothing is extracted from it). See `hdfcCardPdf.ts`.
+        for (const pdf of hdfcCardPdfs) {
+          const name = pdf.filename ?? '';
+          const m = /^(\w+)-(\d\d)(\d\d)(\d{4})/.exec(name);
+          const merchantId = m?.[1];
+          const reportDate = m ? `${m[4]}-${m[3]}-${m[2]}` : null;
+          if (!merchantId || !reportDate) {
+            console.warn(`[mail-fetch] HDFC card attachment "${name}" doesn't match the expected filename shape, skipping.`);
+            continue;
+          }
+          const pw = hdfcCardPasswords[merchantId];
+          if (!pw) continue; // not yet onboarded — silent, same as before this source was decrypted
+          try {
+            const csv = await convertHdfcCardPdf(pdf.content, pw, name);
+            files.push({ name: `hdfccard_${merchantId}_${reportDate}.csv`, body: csv, type: 'text/csv' });
+          } catch (err) {
+            if (err instanceof HdfcCardPasswordError) {
+              hdfcCardBadPasswords.push(`${merchantId} ${name}`);
+              console.warn(`[mail-fetch] HDFC card merchant ${merchantId}: configured password rejected for "${name}" — check HDFC_CARD_PDF_PASSWORDS.`);
+            } else {
+              console.warn(`[mail-fetch] HDFC card "${name}" could not be parsed, skipping: ${(err as Error).message}`);
+            }
+          }
         }
 
         const dateKey = new Date().toISOString().slice(0, 10);
@@ -334,5 +396,5 @@ export async function runMailFetch(backfill?: MailBackfillOptions): Promise<Mail
   console.log(
     `[mail-fetch] ${messagesScanned} candidate message(s) from allowlisted senders, ${messagesFromAllowedSenders} confirmed, uploaded ${attachmentsUploaded} attachment(s); last fetched ${JSON.stringify(report.lastFetched)}; missing ${report.missing.length ? report.missing.join(', ') : 'none'}`,
   );
-  return { messagesScanned, messagesFromAllowedSenders, attachmentsUploaded, ledger: report, ...(backfill?.dryRun ? { preview: preview.slice(0, 500) } : {}) };
+  return { messagesScanned, messagesFromAllowedSenders, attachmentsUploaded, ledger: report, hdfcCardBadPasswords, ...(backfill?.dryRun ? { preview: preview.slice(0, 500) } : {}) };
 }

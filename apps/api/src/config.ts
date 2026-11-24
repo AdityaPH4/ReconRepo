@@ -186,6 +186,17 @@ export const config = {
     s3ReconciledPrefix: str('MPR_S3_RECONCILED_PREFIX', 'mpr-reconciled/'),
     /** `yyyy-mm-dd` — Layer-2 (MPR) reconciliation only covers business dates on or after this one; anything earlier is out of scope by business decision (pre-dates the MPR rollout) and should never surface as a session awaiting MPR resolution. See `SessionStore.listPendingMpr()`. */
     startDate: str('MPR_START_DATE', '2026-10-01'),
+    /**
+     * HDFC's own "card" payout report (`payoutreport@hdfcbank.bank.in`) is one
+     * password-protected PDF per merchant ID, the password being that
+     * merchant's own HDFC merchant ID — a real secret, never hardcoded. JSON
+     * map `{"<merchantId>": "<password>"}`; a merchant ID missing here is left
+     * alone (same as today, before this source was decrypted at all) rather
+     * than guessed. See `hdfcCardPdf.ts`.
+     */
+    hdfcCardPdfPasswordsParam: str('HDFC_CARD_PDF_PASSWORDS_PARAM', ''),
+    /** Local-dev-only escape hatch, same pattern as `imapAppPasswordLocal`. Takes precedence over the SSM param when both are set. */
+    hdfcCardPdfPasswordsLocal: str('HDFC_CARD_PDF_PASSWORDS', ''),
   },
 } as const;
 
