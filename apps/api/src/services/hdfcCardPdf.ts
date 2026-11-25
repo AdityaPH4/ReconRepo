@@ -19,7 +19,34 @@
  * every other bank adapter.
  */
 
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+/**
+ * pdfjs-dist's Node build evaluates `new DOMMatrix()` at module load (a
+ * rendering-path constant, `SCALE_MATRIX`) whether or not anything here ever
+ * renders a page. It only gets a real DOMMatrix from its optional native
+ * `@napi-rs/canvas` dependency — which fails to load across a cross-platform
+ * build (a known npm bug, npm/cli#4828: the lockfile pins the binary for
+ * whichever platform `npm install` last ran on, so a Linux Docker build
+ * can't load the macOS one), crashing the whole Lambda at cold start.
+ * `getTextContent()` (all this module calls) never touches a DOMMatrix
+ * instance — only `CanvasGraphics` (actual rendering) does — so a stub that
+ * merely exists, with no real matrix math, is enough.
+ *
+ * A plain top-level `import` can't fix this: ES module imports are hoisted
+ * and evaluated before any of this file's own top-level code runs, however
+ * the lines are ordered — so the polyfill has to run first, then pdfjs-dist
+ * has to be loaded dynamically, not statically. Also means pdfjs-dist is
+ * only ever loaded the first time an HDFC-card PDF actually shows up, not
+ * on every cold start. Confirmed by reproducing the exact crash in a
+ * linux/node:22 container (matching the Lambda image) and confirming this
+ * fixes it there, and in Lambda.
+ */
+async function loadPdfjs() {
+  const g = globalThis as { DOMMatrix?: unknown };
+  if (typeof g.DOMMatrix === 'undefined') {
+    g.DOMMatrix = class DOMMatrix {};
+  }
+  return import('pdfjs-dist/legacy/build/pdf.mjs');
+}
 
 /** Thrown when the given password is wrong for this PDF — distinct from a parse error, so the caller can report it separately (e.g. "check HDFC_CARD_PDF_PASSWORDS") instead of silently filing it as a bad file. */
 export class HdfcCardPasswordError extends Error {}
@@ -63,6 +90,7 @@ function reconstructLines(items: Array<{ str?: string; transform?: number[] }>):
 /** Decrypts the PDF with pdfjs-dist and concatenates every page's reconstructed text. */
 async function extractText(pdfBytes: Buffer, password: string): Promise<string> {
   try {
+    const { getDocument } = await loadPdfjs();
     const doc = await getDocument({ data: new Uint8Array(pdfBytes), password, verbosity: 0 }).promise;
     let text = '';
     for (let i = 1; i <= doc.numPages; i++) {
